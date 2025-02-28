@@ -1,0 +1,5 @@
+dump/*
+data/*
+*/__pycache__/*
+.vscode/*
+*.swp
