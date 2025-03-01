@@ -33,6 +33,10 @@ class File:
         self.filename = filename
         self.id = str(uuid.uuid4()) if id is None else id  # Use the new method to generate a valid ID
         self.cloud_uri = cloud_uri
+    
+    def delete(self):
+        if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
+            client.files.delete(name=self.cloud_uri.name) # type: ignore
 
     @staticmethod
     def _generate_valid_video_file_id():
@@ -117,6 +121,10 @@ class Message:
         self.id = str(uuid.uuid4())
         self.attachments = attachments if attachments is not None else []
 
+    def delete(self):
+        for file in self.attachments:
+            file.delete()
+
     def for_ai(self, msg: "Message") -> list[str]:
         content_str = f"{self.role}: {self.time_stamp.strftime("[%H:%M]")} {self.content}"
         ai_content: list = [types.Part.from_text(text=content_str)]
@@ -145,10 +153,15 @@ class ChatHistory:
         self.chat.append(msg)
         socketio.emit("chat_update", self.jsonify())
 
-    def delete(self, msg_id: str):
-        """Deletes a message from the chat history."""
+    def delete_message(self, msg_id):
+        new_chat = []
+        for msg in self.chat:
+            if msg.id == msg_id:
+                msg.delete()
+            else:
+                new_chat.append(msg)
+        self.chat = new_chat
         original_length = len(self.chat)
-        self.chat = [msg for msg in self.chat if msg.id != msg_id]
         if len(self.chat) < original_length:
             socketio.emit("chat_update", self.jsonify())
             return True
