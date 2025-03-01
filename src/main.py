@@ -13,6 +13,7 @@ import json
 import os
 import base64
 import time
+import datetime
 import json
 
 app = Flask("Friday")
@@ -45,6 +46,15 @@ class File:
             valid_id = "file-id" # Default ID if the UUID generates an empty string after cleaning.
         return valid_id
 
+    @staticmethod
+    def is_expiration_valid(expiration_time: datetime.datetime | None) -> bool:
+        if expiration_time is None:
+            return True
+        now = datetime.datetime.now(datetime.UTC)
+        ten_minutes_from_now = now + datetime.timedelta(minutes=10)
+
+        return expiration_time >= ten_minutes_from_now
+
     def for_ai(self):
         if self.type.startswith("text/"):
             return f"\\nFile_name: {self.filename}\\nFile_Content: {self.content.decode('utf-8')}"  # Decode text files
@@ -52,24 +62,17 @@ class File:
             return PIL.Image.open(BytesIO(self.content))
         elif self.type.startswith("video/"):
             # Use cloud URI if available, otherwise upload
-            x = False
+            if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
+                return self.cloud_uri
             full_filename = f"{self.id}{os.path.splitext(self.filename)[1].replace('.', '--', 1)}" # Construct the full filename with extension
-            try:
-                client.files.get(name=full_filename)
-                x = True
-            except Exception as e:
-                ...
-            if x:
-                return self.cloud_uri
-            else:
-                self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type, "name": full_filename})
-                # Check whether the file is ready to be used.
-                while self.cloud_uri.state.name == "PROCESSING":
-                    time.sleep(1)
-                    self.cloud_uri = client.files.get(name=self.cloud_uri.name)
-                if self.cloud_uri.state.name == "FAILED":
-                    raise ValueError(self.cloud_uri.state.name)
-                return self.cloud_uri
+            self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type, "name": full_filename})
+            # Check whether the file is ready to be used.
+            while self.cloud_uri.state.name == "PROCESSING":
+                time.sleep(1)
+                self.cloud_uri = client.files.get(name=self.cloud_uri.name)
+            if self.cloud_uri.state.name == "FAILED":
+                raise ValueError(self.cloud_uri.state.name)
+            return self.cloud_uri
         return None
     
     def jsonify(self):
