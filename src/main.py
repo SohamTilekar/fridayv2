@@ -49,26 +49,31 @@ class File:
     def is_expiration_valid(expiration_time: datetime.datetime | None) -> bool:
         if expiration_time is None:
             return True
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now()
         ten_minutes_from_now = now + datetime.timedelta(minutes=10)
 
         return expiration_time >= ten_minutes_from_now
 
     def for_ai(self, msg: "Message"):
         if self.type.startswith("text/"):
-            return f"\\nFile_name: {self.filename}\\nFile_Content: {self.content.decode('utf-8')}"  # Decode text files
-        elif self.type.startswith("image/"):
-            return PIL.Image.open(BytesIO(self.content))
-        elif self.type.startswith("video/"):
+            return types.Part.from_text(text=f"\\nFile_name: {self.filename}\\nFile_Content: {self.content.decode('utf-8')}")  # Decode text files
+        elif self.type.startswith(("image/", "video/", "application/pdf")):
             # Use cloud URI if available, otherwise upload
             if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
                 return self.cloud_uri
-            full_filename = f"{self.id}{os.path.splitext(self.filename)[1].replace('.', '--', 1)}" # Construct the full filename with extension
+            
+            if self.type.startswith("image/"):
+                prefix = "Processing Image:"
+            elif self.type.startswith("video/"):
+                prefix = "Processing Video:"
+            else:
+                prefix = "Processing PDF:"
+
             for attempt in range(config.MAX_RETRIES):
                 try:
-                    msg.content = f"Uploading Video: {self.filename}"
+                    msg.content = f"{prefix} {self.filename}"
                     socketio.emit("updated_msg", msg.jsonify())
-                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type, "name": full_filename})
+                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type})
                     # Check whether the file is ready to be used.
                     while self.cloud_uri.state.name == "PROCESSING":
                         time.sleep(1)
@@ -101,18 +106,20 @@ class File:
 class Message:
     role: Literal["ai", "user"]
     content: str
+    time_stamp: datetime.datetime
     attachments: list[File]
     id: str
 
-    def __init__(self, content: str, role: Literal["ai", "user"], attachments: Optional[list[File]] = None):
+    def __init__(self, content: str, role: Literal["ai", "user"], attachments: Optional[list[File]] = None, time_stamp: Optional[datetime.datetime] = None):
+        self.time_stamp = time_stamp if time_stamp else datetime.datetime.now()
         self.content = content
         self.role = role
         self.id = str(uuid.uuid4())
         self.attachments = attachments if attachments is not None else []
 
     def for_ai(self, msg: "Message") -> list[str]:
-        content_str = f"{self.role}: {self.content}"
-        ai_content: list = [content_str]
+        content_str = f"{self.role}: {self.time_stamp.strftime("[%H:%M]")} {self.content}"
+        ai_content: list = [types.Part.from_text(text=content_str)]
         for file in self.attachments:
             ai_content.append(file.for_ai(msg))
         return ai_content
@@ -122,13 +129,14 @@ class Message:
             "role": self.role,
             "content": self.content,
             "id": self.id,
+            "time_stamp": self.time_stamp.isoformat(),  # Convert datetime to ISO format string
             "attachments": [file.jsonify() for file in self.attachments]
         }
 
     @staticmethod
     def from_jsonify(data: dict):
         attachments = [File.from_jsonify(file_data) for file_data in data.get('attachments', [])]
-        return Message(data['content'], data['role'], attachments)
+        return Message(data['content'], data['role'], attachments, datetime.datetime.fromisoformat(data["time_stamp"]))
 
 class ChatHistory:
     chat: list[Message] = []
@@ -149,7 +157,7 @@ class ChatHistory:
     def __len__(self):
         return len(self.chat)
 
-    def to_str_list(self, msg: Message) -> list:
+    def for_ai(self, msg: Message) -> list:
         result = []
         for msg_list in [msg.for_ai(msg) for msg in self.chat]:
             result.extend(msg_list)
@@ -197,11 +205,12 @@ def completeChat(message: str, files: Optional[list[File]] = None):
                 x += 1
                 response = client.models.generate_content_stream(
                     model="gemini-2.0-flash",
-                    contents=chat_history.to_str_list(msg),
+                    contents=chat_history.for_ai(msg),
                     config=types.GenerateContentConfig(
                         system_instruction=prompt.SYSTEM_INSTUNCTION,
                         temperature=0.25,
-                        max_output_tokens=8190
+                        max_output_tokens=8192,
+                        top_p=0.2,
                     )
                 )
                 for content in response:
@@ -209,9 +218,10 @@ def completeChat(message: str, files: Optional[list[File]] = None):
                         msg.content += content.text
                         socketio.emit("updated_msg", msg.jsonify())
                 tokens: int = client.models.count_tokens(model="gemini-2.0-flash", contents=msg.content).total_tokens or 0
-                if tokens >= 8100*x:
+                if tokens >= 8150*x:
                     continue # Recalling AI cz max output tokens are passed
                 break
+            msg.time_stamp = datetime.datetime.now()
             break
         except Exception as e:
             if attempt < config.MAX_RETRIES - 1:

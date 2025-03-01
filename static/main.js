@@ -128,6 +128,9 @@ function displayAttachments(msgDiv, attachments) {
         video.style.marginRight = "5px"; // Add some spacing
         video.controls = false;
         video.muted = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.play();
 
         // Create a source element for the video
         const source = document.createElement("source");
@@ -143,8 +146,8 @@ function displayAttachments(msgDiv, attachments) {
         fileLink.download = file.filename; // Set the filename for download
         fileLink.textContent = file.filename;
         attachmentsDiv.appendChild(fileLink);
+        attachmentsDiv.appendChild(document.createElement("br")); // Add a line break
       }
-      attachmentsDiv.appendChild(document.createElement("br")); // Add a line break
     });
 
     msgDiv.appendChild(attachmentsDiv);
@@ -162,18 +165,17 @@ function addMessageToChatBox(chatBox, msg) {
   msgDiv.classList.add("message");
   msgDiv.id = msg.id;
   msgDiv.classList.add(msg.role === "user" ? "user-msg" : "ai-msg");
-  if (msg.content !== "" && msg.content.startsWith("Uploading Video: ")) {
+  if (msg.content && msg.content.startsWith("Processing ")) {
     const thinkingDiv = document.createElement("div");
     thinkingDiv.classList.add("thinking-loader");
     thinkingDiv.innerHTML = `
-      Uploading Video: 
+      ${msg.content}
       <div class="dot"></div>
       <div class="dot"></div>
       <div class="dot"></div>
     `;
     msgDiv.appendChild(thinkingDiv);
-  }
-  else if(msg.content !== "")
+  }  else if(msg.content !== "")
       msgDiv.innerHTML = marked.parse(msg.content);
   else {
     const thinkingDiv = document.createElement("div");
@@ -200,7 +202,15 @@ function addMessageToChatBox(chatBox, msg) {
     `<i class="bi bi-trash-fill"></i> Delete`,
   );
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
+
+  // Create a span for the timestamp
+  const timestampSpan = document.createElement("span");
+  timestampSpan.classList.add("timestamp");
+  const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  timestampSpan.textContent = timestamp;
+
   msgDiv.appendChild(deleteButton);
+  msgDiv.appendChild(timestampSpan);
 
   displayAttachments(msgDiv, msg.attachments);
 
@@ -238,7 +248,15 @@ function updateMessageInChatBox(msg) {
     `<i class="bi bi-trash-fill"></i> Delete`,
   );
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
+
+  // Create a span for the timestamp
+  const timestampSpan = document.createElement("span");
+  timestampSpan.classList.add("timestamp");
+  const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  timestampSpan.textContent = timestamp;
+
   msgDiv.appendChild(deleteButton);
+  msgDiv.appendChild(timestampSpan);
 
   displayAttachments(msgDiv, msg.attachments);
 
@@ -272,7 +290,6 @@ function initializeChat() {
 }
 
 socket.on("connect", () => {
-  console.log("Reconnected to the server.");
   socket.emit("get_chat_history");
 });
 
@@ -292,7 +309,6 @@ function displayFileNames() {
   fileContents.forEach((fileData, index) => {
     const fileBox = document.createElement("div");
     fileBox.classList.add("file-box"); // Add a class for styling
-    console.log("fileData.type: ", fileData.type);
     if (fileData.type.startsWith("image/")) {
       // Create an image element for image files
       const img = document.createElement("img");
@@ -311,6 +327,9 @@ function displayFileNames() {
       video.style.marginRight = "5px"; // Add some spacing
       video.controls = false;
       video.muted = true;
+      video.autoplay = true;
+      video.loop = true;
+      video.play();
       fileBox.appendChild(video);
     } else {
       // Create a span for the filename for other files
@@ -365,51 +384,11 @@ document
       for (let i = 0; i < this.files.length; i++) {
         const file = this.files[i];
         const supportedImageTypes = [
-          "image/blp",
-          "image/bmp",
-          "image/dds",
-          "image/dib",
-          "image/eps",
-          "image/gif",
-          "image/icns",
-          "image/ico",
-          "image/im",
-          "image/jpeg",
-          "image/jpeg2000",
-          "image/mpo",
-          "image/msp",
-          "image/pcx",
-          "image/pfm",
           "image/png",
-          "image/ppm",
-          "image/sgi",
-          "image/spider",
-          "image/tga",
-          "image/tiff",
+          "image/jpeg",
           "image/webp",
-          "image/xbm",
-          "image/cur",
-          "image/dcx",
-          "image/fits",
-          "image/fli",
-          "image/flic",
-          "image/fpx",
-          "image/ftex",
-          "image/gbr",
-          "image/gd",
-          "image/imt",
-          "image/iptc",
-          "image/mcidas",
-          "image/mic",
-          "image/pcd",
-          "image/pixar",
-          "image/psd",
-          "image/qoi",
-          "image/sun",
-          "image/wal",
-          "image/wmf",
-          "image/emf",
-          "image/xpm",
+          "image/heic",
+          "image/heif"
         ];
         const supportedVidTypes = [
           "video/mp4",
@@ -426,6 +405,7 @@ document
           file.type.startsWith("text/")
           || supportedImageTypes.includes(file.type)
           || supportedVidTypes.includes(file.type)
+          || file.type === "application/pdf"
         ) {
           try {
             let content = await readFileAsBase64(file); // Read as Base64 for images
@@ -530,12 +510,10 @@ async function uploadVideoInChunks(base64Video, filename, videoId) {
             idx: i,
             filename: filename
         });
-        console.log(`Sent chunk ${i + 1} of ${totalChunks}`);
         // await new Promise(resolve => setTimeout(resolve, 10)); // Optional: Add a small delay
     }
 
     socket.emit("end_upload_video", videoId); // Notify server of upload completion
-    console.log(`Video "${filename}" uploaded successfully!`);
 }
 
 // Helper function to read a file as Base64

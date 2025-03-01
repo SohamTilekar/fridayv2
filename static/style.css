@@ -182,10 +182,16 @@ pre {
     cursor: pointer;
     color: var(--foreground);
     font-size: 0.75rem;
-    padding: 0.25rem 0.5rem; /* Add padding */
+    padding: 0.25rem 0.5rem;
 }
 
 .delete-msg-btn {
+    margin-left: 0.625rem;
+}
+
+.timestamp {
+    font-size: 0.75rem;
+    color: var(--muted);
     margin-left: 0.625rem;
 }
 
