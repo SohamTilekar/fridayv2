@@ -14,7 +14,6 @@ import os
 import base64
 import time
 import datetime
-import json
 
 app = Flask("Friday")
 socketio = SocketIO(app)
@@ -55,7 +54,7 @@ class File:
 
         return expiration_time >= ten_minutes_from_now
 
-    def for_ai(self):
+    def for_ai(self, msg: "Message"):
         if self.type.startswith("text/"):
             return f"\\nFile_name: {self.filename}\\nFile_Content: {self.content.decode('utf-8')}"  # Decode text files
         elif self.type.startswith("image/"):
@@ -65,14 +64,25 @@ class File:
             if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
                 return self.cloud_uri
             full_filename = f"{self.id}{os.path.splitext(self.filename)[1].replace('.', '--', 1)}" # Construct the full filename with extension
-            self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type, "name": full_filename})
-            # Check whether the file is ready to be used.
-            while self.cloud_uri.state.name == "PROCESSING":
-                time.sleep(1)
-                self.cloud_uri = client.files.get(name=self.cloud_uri.name)
-            if self.cloud_uri.state.name == "FAILED":
-                raise ValueError(self.cloud_uri.state.name)
-            return self.cloud_uri
+            for attempt in range(config.MAX_RETRIES):
+                try:
+                    msg.content = f"Uploading Video: {self.filename}"
+                    socketio.emit("updated_msg", msg.jsonify())
+                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type, "name": full_filename})
+                    # Check whether the file is ready to be used.
+                    while self.cloud_uri.state.name == "PROCESSING":
+                        time.sleep(1)
+                        self.cloud_uri = client.files.get(name=self.cloud_uri.name)
+                    if self.cloud_uri.state.name == "FAILED":
+                        raise ValueError(self.cloud_uri.state.name)
+                    msg.content = ""
+                    socketio.emit("updated_msg", msg.jsonify())
+                    return self.cloud_uri
+                except Exception as e:
+                    if attempt < config.MAX_RETRIES - 1:
+                        time.sleep(config.RETRY_DELAY)
+                    else:
+                        raise e  # Re-raise the exception to be caught in completeChat
         return None
     
     def jsonify(self):
@@ -100,13 +110,11 @@ class Message:
         self.id = str(uuid.uuid4())
         self.attachments = attachments if attachments is not None else []
 
-    def for_ai(self) -> list[str]:
+    def for_ai(self, msg: "Message") -> list[str]:
         content_str = f"{self.role}: {self.content}"
         ai_content: list = [content_str]
         for file in self.attachments:
-            file_content = file.for_ai()
-            if file_content:
-                ai_content.append(file_content)
+            ai_content.append(file.for_ai(msg))
         return ai_content
 
     def jsonify(self) -> dict[str, str | Literal["ai", "user"] | list]:
@@ -141,13 +149,10 @@ class ChatHistory:
     def __len__(self):
         return len(self.chat)
 
-    def to_str_list(self) -> list:
+    def to_str_list(self, msg: Message) -> list:
         result = []
-        for msg_list in [msg.for_ai() for msg in self.chat]:
-            if isinstance(msg_list, list):
-                result.extend(msg_list)
-            else:
-                result.append(msg_list)
+        for msg_list in [msg.for_ai(msg) for msg in self.chat]:
+            result.extend(msg_list)
         return result
 
     def jsonify(self) -> list[dict[str, str | Literal["ai", "user"] | list]]:
@@ -184,27 +189,37 @@ def completeChat(message: str, files: Optional[list[File]] = None):
     # Append a placeholder for the AI reply
     chat_history.append(Message("", "ai"))
     idx = len(chat_history) - 1
-    try:
-        response = client.models.generate_content_stream(
-            model="gemini-2.0-flash",
-            contents=chat_history.to_str_list(),
-            config=types.GenerateContentConfig(
-                system_instruction=prompt.SYSTEM_INSTUNCTION,
-                temperature=0.25
-            )
-        )
-        for content in response:
-            if content.text:
-                msg = chat_history.chat[idx]
-                if not msg:
-                    break
-                msg.content += content.text
+    msg = chat_history.chat[idx]
+    for attempt in range(config.MAX_RETRIES):
+        try:
+            x = 0
+            while (True):
+                x += 1
+                response = client.models.generate_content_stream(
+                    model="gemini-2.0-flash",
+                    contents=chat_history.to_str_list(msg),
+                    config=types.GenerateContentConfig(
+                        system_instruction=prompt.SYSTEM_INSTUNCTION,
+                        temperature=0.25,
+                        max_output_tokens=8190
+                    )
+                )
+                for content in response:
+                    if content.text:
+                        msg.content += content.text
+                        socketio.emit("updated_msg", msg.jsonify())
+                tokens: int = client.models.count_tokens(model="gemini-2.0-flash", contents=msg.content).total_tokens or 0
+                if tokens >= 8100*x:
+                    continue # Recalling AI cz max output tokens are passed
+                break
+            break
+        except Exception as e:
+            if attempt < config.MAX_RETRIES - 1:
+                time.sleep(config.RETRY_DELAY)
+            else:
+                error_message = f"Failed to generate response after multiple retries: {str(e)}"
+                msg.content = error_message
                 socketio.emit("updated_msg", msg.jsonify())
-    except Exception as e:
-        msg = chat_history.chat[idx]
-        msg.content = f"Error: {e}"
-        socketio.emit("updated_msg", msg.jsonify())
-
 
 @app.route('/favicon.ico')
 def favicon():
@@ -261,8 +276,6 @@ def handle_send_message(data):
             decoded_content = base64.b64decode(content)
             file_attachments.append(File(decoded_content, file_type, filename, None, File._generate_valid_video_file_id()))
             del videos[id]
-        else:
-            print("Unsupported file type")
 
     completeChat(message, file_attachments)
 

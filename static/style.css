@@ -229,6 +229,7 @@ pre {
     display: flex;
     align-items: center;
     justify-content: flex-start;
+    margin: 1rem;
 }
 
 .dot {

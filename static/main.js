@@ -162,10 +162,22 @@ function addMessageToChatBox(chatBox, msg) {
   msgDiv.classList.add("message");
   msgDiv.id = msg.id;
   msgDiv.classList.add(msg.role === "user" ? "user-msg" : "ai-msg");
-  if (msg.content !== "") msgDiv.innerHTML = marked.parse(msg.content);
+  if (msg.content !== "" && msg.content.startsWith("Uploading Video: ")) {
+    const thinkingDiv = document.createElement("div");
+    thinkingDiv.classList.add("thinking-loader");
+    thinkingDiv.innerHTML = `
+      Uploading Video: 
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    `;
+    msgDiv.appendChild(thinkingDiv);
+  }
+  else if(msg.content !== "")
+      msgDiv.innerHTML = marked.parse(msg.content);
   else {
     const thinkingDiv = document.createElement("div");
-    thinkingDiv.classList.add("ai-msg", "message", "thinking-loader");
+    thinkingDiv.classList.add("thinking-loader");
     thinkingDiv.innerHTML = `
     <div class="dot"></div>
     <div class="dot"></div>
