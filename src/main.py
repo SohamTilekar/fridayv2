@@ -1,6 +1,3 @@
-# File_name: main.py
-# File_ID: file_001
-
 import re
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_socketio import SocketIO
@@ -56,7 +53,7 @@ class File:
         elif self.type.startswith("video/"):
             # Use cloud URI if available, otherwise upload
             x = False
-            full_filename = f"{self.id}{os.path.splitext(self.filename)[1].replace('.', "--", 1)}" # Construct the full filename with extension
+            full_filename = f"{self.id}{os.path.splitext(self.filename)[1].replace('.', '--', 1)}" # Construct the full filename with extension
             try:
                 client.files.get(name=full_filename)
                 x = True
@@ -215,6 +212,23 @@ def favicon():
 def root():
     return render_template('index.html')
 
+videos: dict[str, tuple[dict[int, str], bool]] = {} # ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
+
+@socketio.on("start_upload_video")
+def start_upload_video(id: str):
+    videos[id] = ({}, False)
+
+@socketio.on("upload_video_chunck")
+def upload_video_chunck(data: dict[str, str | int]):
+    id: str = data["id"] # type: ignore
+    chunck: str = data["chunck"] # type: ignore
+    idx: int = data["idx"] # type: ignore
+    videos[id][0][idx] = chunck
+
+@socketio.on("end_upload_video")
+def end_upload_video(id: str):
+    videos[id] = (videos[id][0], True)
+
 @socketio.on("send_message")
 def handle_send_message(data):
     message = data.get("message", "")
@@ -222,20 +236,30 @@ def handle_send_message(data):
     file_data_list = data.get("files", [])
 
     for file_data in file_data_list:
-        filename: str = file_data.get("filename")
-        content_base64: str = file_data.get("content")
         file_type: str = file_data.get("type")
+        filename: str = file_data.get("filename")
 
-        if filename and content_base64 and file_type.startswith(("text/", "image/")):
+        if file_type.startswith(("text/", "image/")):
+            content_base64: str = file_data.get("content")
             file_content = base64.b64decode(content_base64)
             file_attachments.append(File(file_content, file_type, filename))
-        elif filename and content_base64 and file_type.startswith(("video/")):
-            file_content = base64.b64decode(content_base64)
-            id = File._generate_valid_video_file_id()
-            local_file_path = os.path.join(config.VIDEO_DIR, id+os.path.splitext(filename)[1])
-            with open(local_file_path, "wb") as f:
-                f.write(file_content)
-            file_attachments.append(File(file_content, file_type, filename, None, id))
+        elif file_type.startswith(("video/")):
+            id: str = file_data.get("id")
+            while(not videos.get(id)):
+                time.sleep(0.1)
+            while(not videos[id][1]):
+                time.sleep(0.2)
+            vid = videos[id][0]
+            x = 0
+            content: str = ""
+            while(vid.get(x) is not None):
+                content += vid[x]
+                x += 1
+            decoded_content = base64.b64decode(content)
+            file_attachments.append(File(decoded_content, file_type, filename, None, File._generate_valid_video_file_id()))
+            del videos[id]
+        else:
+            print("Unsupported file type")
 
     completeChat(message, file_attachments)
 
@@ -253,7 +277,9 @@ def handle_delete_message(data):
 if __name__ == "__main__":
     chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
     chat_history.load_from_json(chat_history_file)
-    socketio.run(app, host='127.0.0.1', port=5000, debug=True, use_reloader=False)
-    chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
-    chat_history.save_to_json(chat_history_file)
-    print("Chat history saved.")
+    try:
+        socketio.run(app, host='127.0.0.1', port=5000, debug=True, use_reloader=False)
+    finally:
+        chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
+        chat_history.save_to_json(chat_history_file)
+        print("Chat history saved.")

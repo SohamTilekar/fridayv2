@@ -120,14 +120,21 @@ function displayAttachments(msgDiv, attachments) {
         img.style.display = "block"; // Ensure it's displayed as a block element
         attachmentsDiv.appendChild(img);
       } else if (file.type.startsWith("video/")) {
+        // Handle video files
         const video = document.createElement("video");
-        video.src = `data:${file.type};base64,${file.content}`;
         video.alt = file.name;
         video.style.maxWidth = "50px"; // Adjust as needed
         video.style.maxHeight = "50px"; // Adjust as needed
         video.style.marginRight = "5px"; // Add some spacing
         video.controls = false;
         video.muted = true;
+
+        // Create a source element for the video
+        const source = document.createElement("source");
+        source.src = `data:${file.type};base64,${file.content}`;
+        source.type = file.type; // Set the correct MIME type
+
+        video.appendChild(source);
         attachmentsDiv.appendChild(video);
       } else {
         // For other file types (e.g., text), create a link
@@ -226,7 +233,6 @@ function updateMessageInChatBox(msg) {
   enhanceCodeBlocks(msgDiv);
   enhanceCodeInlines(msgDiv);
   const chatBox = document.getElementById("chat-box");
-  chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 /**
@@ -436,44 +442,88 @@ document
     displayFileNames(); // Display the file names
   });
 
-/**
- * Sends a message to the server.
- */
+// Constants
+const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
+let videoId = null; // Unique ID for the video being uploaded
+
+// Helper function to generate a unique ID (UUID v4)
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+// Modified sendMessage function
 async function sendMessage() {
-  const input = document.getElementById("message-input");
-  const message = input.value;
+    const input = document.getElementById("message-input");
+    const message = input.value;
 
-  const formData = new FormData();
-  formData.append("message", message);
+    const filesData = [];
 
-  // Prepare files data for sending via Socket.IO
-  const filesData = [];
-  for (let i = 0; i < fileContents.length; i++) {
-    const fileData = fileContents[i];
-    try {
-      let base64Content = fileData.content;
-      filesData.push({
-        filename: fileData.name,
-        content: base64Content,
-        type: fileData.type,
-      });
-    } catch (error) {
-      console.error("Error processing file:", error);
-      addMessageToChatBox(document.getElementById("chat-box"), {
-        role: "ai",
-        content: `Error processing file ${fileData.name}: ${error.message}`,
-      });
-      return;
+    for (let i = 0; i < fileContents.length; i++) {
+        const fileData = fileContents[i];
+        if (fileData.type.startsWith("video/")) {
+            // Upload video in chunks
+            videoId = generateUUID(); // Generate a unique video ID
+            await uploadVideoInChunks(fileData.content, fileData.name, videoId);
+            filesData.push({
+                filename: fileData.name,
+                type: fileData.type,
+                id: videoId // Send the videoId to the server
+            });
+        } else {
+            // Send other file types as before
+            try {
+                let base64Content = fileData.content;
+                filesData.push({
+                    filename: fileData.name,
+                    content: base64Content,
+                    type: fileData.type,
+                });
+            } catch (error) {
+                console.error("Error processing file:", error);
+                addMessageToChatBox(document.getElementById("chat-box"), {
+                    role: "ai",
+                    content: `Error processing file ${fileData.name}: ${error.message}`,
+                });
+                return;
+            }
+        }
     }
-  }
 
-  input.value = "";
-  fileContents = [];
-  displayFileNames();
-  updateTextareaRows();
+    input.value = "";
+    fileContents = [];
+    displayFileNames();
+    updateTextareaRows();
 
-  // Emit the 'send_message' event to the server
-  socket.emit("send_message", { message: message, files: filesData });
+    // Emit the 'send_message' event to the server
+    socket.emit("send_message", { message: message, files: filesData });
+}
+
+// New function to upload video in chunks
+async function uploadVideoInChunks(base64Video, filename, videoId) {
+    const totalChunks = Math.ceil(base64Video.length / CHUNK_SIZE);
+
+    socket.emit("start_upload_video", videoId); // Notify server of upload start
+
+    for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, base64Video.length);
+        const chunk = base64Video.substring(start, end);
+
+        socket.emit("upload_video_chunck", {
+            id: videoId,
+            chunck: chunk,
+            idx: i,
+            filename: filename
+        });
+        console.log(`Sent chunk ${i + 1} of ${totalChunks}`);
+        // await new Promise(resolve => setTimeout(resolve, 10)); // Optional: Add a small delay
+    }
+
+    socket.emit("end_upload_video", videoId); // Notify server of upload completion
+    console.log(`Video "${filename}" uploaded successfully!`);
 }
 
 // Helper function to read a file as Base64
