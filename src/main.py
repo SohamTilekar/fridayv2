@@ -10,7 +10,7 @@ import prompt
 import config
 import uuid
 from io import BytesIO  # Import BytesIO
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 import json
 import os
 import base64
@@ -100,7 +100,7 @@ class File:
                         raise  # Re-raise the exception to be caught in completeChat
         raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
     
-    def jsonify(self):
+    def jsonify(self) -> dict:
         return {
             "type": self.type,
             "filename": self.filename,
@@ -113,20 +113,72 @@ class File:
         content = base64.b64decode(data['content'])
         return File(content, data['type'], data['filename'], None, data['id'])
 
+class GroundingSupport:
+    grounding_chunk_indices: list[int]
+    segment: dict[str, int | str] # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
+    def __init__(self,
+        grounding_chunk_indices: list[int],
+        segment: dict[str, int | str] # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
+    ):
+        self.grounding_chunk_indices = grounding_chunk_indices
+        self.segment = segment
+    
+    def jsonify(self) -> dict:
+        return {
+            "grounding_chunk_indices": self.grounding_chunk_indices,
+            "segment": self.segment,
+        }
+
+    @staticmethod
+    def from_jsonify(data: dict):
+        return GroundingSupport(data["grounding_chunk_indices"], data["segment"])
+
+class GroundingMetaData:
+    first_offset: int
+    rendered_content: str
+    grounding_chuncks: list[tuple[str, str]] # list[tuple[str: title, str: uri]]
+    grounding_supports: list[GroundingSupport]
+    def __init__(self,
+                 grounding_chuncks: list[tuple[str, str]],
+                 grounding_supports: list[GroundingSupport],
+                 first_offset: int = 0,
+                 rendered_content: str = "",
+                ):
+        self.grounding_chuncks = grounding_chuncks
+        self.grounding_supports = grounding_supports
+        self.first_offset = first_offset
+        self.rendered_content = rendered_content
+    
+    def jsonify(self) -> dict:
+        return {
+            "first_offset": self.first_offset,
+            "rendered_content": self.rendered_content,
+            "grounding_chuncks": self.grounding_chuncks,
+            "grounding_supports": [gsp.jsonify() for gsp in self.grounding_supports],
+        }
+
+    @staticmethod
+    def from_jsonify(data: dict):
+        return GroundingMetaData(data["grounding_chuncks"],
+                                 [GroundingSupport.from_jsonify(sup) for sup in data["grounding_supports"]],
+                                 data.get("first_offset",0),
+                                 data.get("rendered_content",""))
+
 class Message:
     role: Literal["model", "user"]
     content: str
     time_stamp: datetime.datetime
     attachments: list[File]
+    grounding_metadata: GroundingMetaData
     id: str
 
-    def __init__(self, content: str, role: Literal["model", "user"], attachments: Optional[list[File]] = None, time_stamp: Optional[datetime.datetime] = None):
+    def __init__(self, content: str, role: Literal["model", "user"], grounding_metadata: Optional[GroundingMetaData] = None, attachments: Optional[list[File]] = None, time_stamp: Optional[datetime.datetime] = None):
         self.time_stamp = time_stamp if time_stamp else datetime.datetime.now()
         self.content = content
         self.role = role
         self.id = str(uuid.uuid4())
         self.attachments = attachments if attachments is not None else []
-
+        self.grounding_metadata = grounding_metadata if grounding_metadata else GroundingMetaData([], [])
     def delete(self):
         for file in self.attachments:
             file.delete()
@@ -140,19 +192,20 @@ class Message:
             ai_content.append(types.Part.from_text(text=self.content))
         return types.Content(parts=ai_content, role=self.role)
 
-    def jsonify(self) -> dict[str, str | Literal["model", "user"] | list]:
+    def jsonify(self) -> dict[str, str | Literal["model", "user"] | list | Any]:
         return {
             "role": self.role,
             "content": self.content,
+            "grounding_metadata": self.grounding_metadata.jsonify(),
             "id": self.id,
-            "time_stamp": self.time_stamp.isoformat(),  # Convert datetime to ISO format string
+            "time_stamp": self.time_stamp.isoformat(),
             "attachments": [file.jsonify() for file in self.attachments]
         }
 
     @staticmethod
     def from_jsonify(data: dict):
         attachments = [File.from_jsonify(file_data) for file_data in data.get('attachments', [])]
-        return Message(data['content'], data['role'], attachments, datetime.datetime.fromisoformat(data["time_stamp"]))
+        return Message(data['content'], data['role'], GroundingMetaData.from_jsonify(data["grounding_metadata"]), attachments, datetime.datetime.fromisoformat(data["time_stamp"]))
 
 class ChatHistory:
     chat: list[Message] = []
@@ -209,7 +262,7 @@ def completeChat(message: str, files: Optional[list[File]] = None):
     if files is None:
         files = []
     if message or files:  # Only append if there's content or files
-        chat_history.append(Message(message, "user", files))
+        chat_history.append(Message(message, "user", None, files))
 
     # Append a placeholder for the AI reply
     chat_history.append(Message("", "model"))
@@ -235,12 +288,37 @@ def completeChat(message: str, files: Optional[list[File]] = None):
                     print("-----------------------")
                     print("content=", content)
                     print("-----------------------")
+                    if content.candidates\
+                        and content.candidates[0].grounding_metadata\
+                        and content.candidates[0].grounding_metadata.grounding_chunks\
+                        and content.candidates[0].grounding_metadata.grounding_supports:
+                        for chunck in content.candidates[0].grounding_metadata.grounding_chunks:
+                            if chunck.web:
+                                msg.grounding_metadata.grounding_chuncks.append(
+                                    (
+                                        chunck.web.title,
+                                        chunck.web.uri
+                                    ) # type: ignore
+                                )
+                        for suport in content.candidates[0].grounding_metadata.grounding_supports:
+                            start_index = msg.content.find(suport.segment.text, suport.segment.start_index) # type: ignore
+                            msg.grounding_metadata.grounding_supports.append(
+                                GroundingSupport(suport.grounding_chunk_indices, { # type: ignore
+                                    "text": suport.segment.text, # type: ignore
+                                    "start_index": start_index,
+                                    "end_index": start_index + (suport.segment.end_index - suport.segment.start_index) # type: ignore
+                                    }
+                                ) # type: ignore
+                            )
+                        msg.grounding_metadata.first_offset = content.candidates[0].grounding_metadata.grounding_supports[0].segment.end_index - content.candidates[0].grounding_metadata.grounding_supports[0].segment.start_index # type: ignore
+                        msg.grounding_metadata.rendered_content = msg.grounding_metadata.rendered_content
                     if content.text:
                         msg.content += content.text
                         socketio.emit("updated_msg", msg.jsonify())
+
                 tokens: int = client.models.count_tokens(model="gemini-2.0-flash", contents=msg.content).total_tokens or 0
                 if tokens >= 8150*x:
-                    continue # Recalling AI cz max output tokens are passed
+                    continue # Recalling AI cz mostlikely max output tokens are reached
                 break
             msg.time_stamp = datetime.datetime.now()
             break
