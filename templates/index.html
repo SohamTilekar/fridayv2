@@ -17,16 +17,14 @@
             href="https://unpkg.com/highlightjs@9.16.2/styles/atom-one-dark.css"
         />
         <link rel="stylesheet" href="static/style.css" />
-
-        <!-- Socket.IO client library -->
-        <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
         <!-- Highlight.js -->
         <script
             src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"
+            crossorigin="anonymous"
             defer
         ></script>
-        <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/marked-highlight/lib/index.umd.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js" crossorigin="anonymous" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/marked-highlight/lib/index.umd.js" crossorigin="anonymous" defer></script>
         <script
             src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"
             integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r"
@@ -39,6 +37,8 @@
             crossorigin="anonymous"
             defer
         ></script>
+        <!-- Socket.IO client library -->
+        <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     </head>
 
     <body onload="initializeChat()">

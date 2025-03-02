@@ -1,12 +1,14 @@
 import re
+from rich import print
+import rich
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_socketio import SocketIO
 from google import genai
 from google.genai import types
+import rich.bar
 import prompt
 import config
 import uuid
-import PIL.Image
 from io import BytesIO  # Import BytesIO
 from typing import Literal, Optional
 import json
@@ -19,6 +21,10 @@ app = Flask("Friday")
 socketio = SocketIO(app)
 
 client = genai.Client(api_key=config.GOOGLE_API)
+
+google_search_tool = types.Tool(
+    google_search = types.GoogleSearch()
+)
 
 class File:
     type: str  # mime types
@@ -58,13 +64,13 @@ class File:
 
         return expiration_time >= ten_minutes_from_now
 
-    def for_ai(self, msg: "Message"):
+    def for_ai(self, msg: "Message") -> types.Part:
         if self.type.startswith("text/"):
             return types.Part.from_text(text=f"\\nFile_name: {self.filename}\\nFile_Content: {self.content.decode('utf-8')}")  # Decode text files
         elif self.type.startswith(("image/", "video/", "application/pdf")):
             # Use cloud URI if available, otherwise upload
             if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
-                return self.cloud_uri
+                return self.cloud_uri # type: ignore
             
             if self.type.startswith("image/"):
                 prefix = "Processing Image:"
@@ -86,13 +92,13 @@ class File:
                         raise ValueError(self.cloud_uri.state.name)
                     msg.content = ""
                     socketio.emit("updated_msg", msg.jsonify())
-                    return self.cloud_uri
-                except Exception as e:
+                    return self.cloud_uri # type: ignore
+                except Exception:
                     if attempt < config.MAX_RETRIES - 1:
                         time.sleep(config.RETRY_DELAY)
                     else:
-                        raise e  # Re-raise the exception to be caught in completeChat
-        return None
+                        raise  # Re-raise the exception to be caught in completeChat
+        raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
     
     def jsonify(self):
         return {
@@ -108,13 +114,13 @@ class File:
         return File(content, data['type'], data['filename'], None, data['id'])
 
 class Message:
-    role: Literal["ai", "user"]
+    role: Literal["model", "user"]
     content: str
     time_stamp: datetime.datetime
     attachments: list[File]
     id: str
 
-    def __init__(self, content: str, role: Literal["ai", "user"], attachments: Optional[list[File]] = None, time_stamp: Optional[datetime.datetime] = None):
+    def __init__(self, content: str, role: Literal["model", "user"], attachments: Optional[list[File]] = None, time_stamp: Optional[datetime.datetime] = None):
         self.time_stamp = time_stamp if time_stamp else datetime.datetime.now()
         self.content = content
         self.role = role
@@ -125,14 +131,16 @@ class Message:
         for file in self.attachments:
             file.delete()
 
-    def for_ai(self, msg: "Message") -> list[str]:
-        content_str = f"{self.role}: {self.time_stamp.strftime("[%H:%M]")} {self.content}"
-        ai_content: list = [types.Part.from_text(text=content_str)]
+    def for_ai(self, msg: "Message") -> types.Content:
+        ai_content: list[types.Part] = []
         for file in self.attachments:
             ai_content.append(file.for_ai(msg))
-        return ai_content
+        ai_content.append(types.Part.from_text(text=self.time_stamp.strftime("%H:%M")))
+        if self.content:
+            ai_content.append(types.Part.from_text(text=self.content))
+        return types.Content(parts=ai_content, role=self.role)
 
-    def jsonify(self) -> dict[str, str | Literal["ai", "user"] | list]:
+    def jsonify(self) -> dict[str, str | Literal["model", "user"] | list]:
         return {
             "role": self.role,
             "content": self.content,
@@ -161,22 +169,18 @@ class ChatHistory:
             else:
                 new_chat.append(msg)
         self.chat = new_chat
-        original_length = len(self.chat)
-        if len(self.chat) < original_length:
-            socketio.emit("chat_update", self.jsonify())
-            return True
-        return False
+        socketio.emit("chat_update", self.jsonify())
 
     def __len__(self):
         return len(self.chat)
 
-    def for_ai(self, msg: Message) -> list:
-        result = []
-        for msg_list in [msg.for_ai(msg) for msg in self.chat]:
-            result.extend(msg_list)
+    def for_ai(self, msg: Message) -> types.ContentListUnion:
+        result: types.ContentListUnion = []
+        for msg in self.chat:
+            result.append(msg.for_ai(msg))
         return result
 
-    def jsonify(self) -> list[dict[str, str | Literal["ai", "user"] | list]]:
+    def jsonify(self) -> list[dict[str, str | Literal["model", "user"] | list]]:
         return [msg.jsonify() for msg in self.chat]
 
     def save_to_json(self, filepath: str):
@@ -208,7 +212,7 @@ def completeChat(message: str, files: Optional[list[File]] = None):
         chat_history.append(Message(message, "user", files))
 
     # Append a placeholder for the AI reply
-    chat_history.append(Message("", "ai"))
+    chat_history.append(Message("", "model"))
     idx = len(chat_history) - 1
     msg = chat_history.chat[idx]
     for attempt in range(config.MAX_RETRIES):
@@ -224,9 +228,13 @@ def completeChat(message: str, files: Optional[list[File]] = None):
                         temperature=0.25,
                         max_output_tokens=8192,
                         top_p=0.2,
+                        tools=[google_search_tool],
                     )
                 )
                 for content in response:
+                    print("-----------------------")
+                    print("content=", content)
+                    print("-----------------------")
                     if content.text:
                         msg.content += content.text
                         socketio.emit("updated_msg", msg.jsonify())
@@ -309,9 +317,8 @@ def handle_get_chat_history():
 @socketio.on("delete_message")
 def handle_delete_message(data):
     msg_id = data.get("message_id")
-    if msg_id:
-        if chat_history.delete(msg_id):
-            socketio.emit("chat_update", chat_history.jsonify())
+    chat_history.delete_message(msg_id)
+    socketio.emit("chat_update", chat_history.jsonify())
 
 if __name__ == "__main__":
     chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
