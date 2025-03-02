@@ -1,3 +1,5 @@
+// main.js
+
 // Initialize Marked with Highlight.js
 const { Marked } = globalThis.marked;
 const { markedHighlight } = globalThis.markedHighlight;
@@ -7,38 +9,28 @@ const marked = new Marked(
     emptyLangClass: "hljs",
     langPrefix: "hljs language-",
     highlight(code, lang, info) {
-      let highlightedCode;
-
-      if (lang && hljs.getLanguage(lang)) {
-        highlightedCode = hljs.highlight(code, { language: lang }).value;
-      } else {
-        highlightedCode = hljs.highlight(code, { language: "plaintext" }).value;
-      }
-
-      return highlightedCode;
+      const language = lang && hljs.getLanguage(lang) ? lang : "plaintext";
+      return hljs.highlight(code, { language }).value;
     },
   }),
 );
+
 // --- Helper Functions ---
+
 /**
- * Creates a button element with the given class and inner HTML.
- * @param {string} className - The class name for the button.
- * @param {string} innerHTML - The inner HTML for the button.
- * @returns {HTMLButtonElement} - The created button element.
+ * Creates a button element.
  */
-function createButton(className, innerHTML) {
+const createButton = (className, innerHTML) => {
   const button = document.createElement("button");
   button.classList.add(className);
   button.innerHTML = innerHTML;
   return button;
-}
+};
 
 /**
- * Copies the given text to the clipboard and updates the button text.
- * @param {string} text - The text to copy to the clipboard.
- * @param {HTMLButtonElement} button - The button element to update.
+ * Copies text to clipboard and provides feedback.
  */
-async function copyToClipboard(text, button) {
+const copyToClipboard = async (text, button) => {
   try {
     await navigator.clipboard.writeText(text);
     button.innerHTML = `<i class="bi bi-clipboard-check"></i> Copied!`;
@@ -46,21 +38,18 @@ async function copyToClipboard(text, button) {
     console.error("Failed to copy text: ", err);
     button.innerHTML = `<i class="bi bi-clipboard-x-fill"></i> Failed to copy!`;
   } finally {
-    setTimeout(
-      () =>
-        (button.innerHTML = button.innerHTML =
-          `<i class="bi bi-clipboard"></i> Copy`),
-      1500,
-    );
+    setTimeout(() => {
+      button.innerHTML = `<i class="bi bi-clipboard"></i> Copy`;
+    }, 1500);
   }
-}
+};
 
 // --- Code Block Enhancement Functions ---
+
 /**
- * Enhances code blocks with a copy button and language label.
- * @param {HTMLElement} scope - The scope to search for code blocks.
+ * Enhances code blocks with copy button and language label.
  */
-function enhanceCodeBlocks(scope) {
+const enhanceCodeBlocks = (scope) => {
   scope.querySelectorAll("pre code").forEach((codeBlock) => {
     const pre = codeBlock.parentElement;
     const copyButton = createButton(
@@ -69,8 +58,10 @@ function enhanceCodeBlocks(scope) {
     );
     const langName = document.createElement("span");
     langName.classList.add("lang-label");
+    const lang = codeBlock.className.replace("hljs language-", "");
     if (codeBlock.className.indexOf("hljs language-") != -1)
-      langName.innerText = codeBlock.className.replace("hljs language-", "");
+      langName.innerText = lang;
+
     copyButton.addEventListener("click", () =>
       copyToClipboard(codeBlock.innerText, copyButton),
     );
@@ -84,109 +75,107 @@ function enhanceCodeBlocks(scope) {
 
     pre.insertBefore(container, pre.firstChild);
   });
-}
+};
 
 /**
  * Enhances inline code with a special class.
- * @param {HTMLElement} scope - The scope to search for code blocks.
  */
-function enhanceCodeInlines(scope) {
+const enhanceCodeInlines = (scope) => {
   scope.querySelectorAll("code").forEach((code) => {
     if (!code.classList.contains("code-block")) {
       code.classList.add("code-inline");
     }
   });
-}
+};
+
+// --- Attachment Display Function ---
+
+/**
+ * Creates an element to display attachments.
+ */
+const createAttachmentElement = (file) => {
+  if (file.type.startsWith("image/")) {
+    const img = document.createElement("img");
+    img.src = `data:${file.type};base64,${file.content}`;
+    img.alt = file.filename;
+    img.style.maxWidth = "50px";
+    img.style.maxHeight = "50px";
+    img.style.display = "block";
+    return img;
+  } else if (file.type.startsWith("video/")) {
+    const video = document.createElement("video");
+    video.alt = file.name;
+    video.style.maxWidth = "50px";
+    video.style.maxHeight = "50px";
+    video.style.marginRight = "5px";
+    video.controls = false;
+    video.muted = true;
+    video.autoplay = true;
+    video.loop = true;
+    video.src = `data:${file.type};base64,${file.content}`;
+    video.type = file.type;
+    video.play();
+    return video;
+  } else {
+    const fileLink = document.createElement("a");
+    fileLink.href = `data:${file.type};base64,${file.content}`;
+    fileLink.download = file.filename;
+    fileLink.textContent = file.filename;
+    return fileLink;
+  }
+};
 
 /**
  * Displays the attached files in the chat.
- * @param {HTMLElement} msgDiv - The message div element.
- * @param {array} attachments - An array of file objects.
  */
-function displayAttachments(msgDiv, attachments) {
+const displayAttachments = (msgDiv, attachments) => {
   if (attachments && attachments.length > 0) {
     const attachmentsDiv = document.createElement("div");
     attachmentsDiv.classList.add("attachments");
     attachmentsDiv.innerHTML = "<strong>Attachments:</strong><br>";
 
     attachments.forEach((file) => {
-      if (file.type.startsWith("image/")) {
-        // Create an image element
-        const img = document.createElement("img");
-        img.src = `data:${file.type};base64,${file.content}`;
-        img.alt = file.filename; // Set the alt attribute for accessibility
-        img.style.maxWidth = "50px"; // Limit the image width
-        img.style.maxHeight = "50px"; // Limit the image height
-        img.style.display = "block"; // Ensure it's displayed as a block element
-        attachmentsDiv.appendChild(img);
-      } else if (file.type.startsWith("video/")) {
-        // Handle video files
-        const video = document.createElement("video");
-        video.alt = file.name;
-        video.style.maxWidth = "50px"; // Adjust as needed
-        video.style.maxHeight = "50px"; // Adjust as needed
-        video.style.marginRight = "5px"; // Add some spacing
-        video.controls = false;
-        video.muted = true;
-        video.autoplay = true;
-        video.loop = true;
-        video.play();
-
-        // Create a source element for the video
-        const source = document.createElement("source");
-        source.src = `data:${file.type};base64,${file.content}`;
-        source.type = file.type; // Set the correct MIME type
-
-        video.appendChild(source);
-        attachmentsDiv.appendChild(video);
-      } else {
-        // For other file types (e.g., text), create a link
-        const fileLink = document.createElement("a");
-        fileLink.href = `data:${file.type};base64,${file.content}`; // Create a data URL
-        fileLink.download = file.filename; // Set the filename for download
-        fileLink.textContent = file.filename;
-        attachmentsDiv.appendChild(fileLink);
-        attachmentsDiv.appendChild(document.createElement("br")); // Add a line break
-      }
+      const attachmentElement = createAttachmentElement(file);
+      attachmentsDiv.appendChild(attachmentElement);
+      attachmentsDiv.appendChild(document.createElement("br"));
     });
 
     msgDiv.appendChild(attachmentsDiv);
   }
-}
+};
 
 // --- Message Handling Functions ---
+
 /**
  * Adds a message to the chat box.
- * @param {HTMLElement} chatBox - The chat box element.
- * @param {object} msg - The message object.
  */
-function addMessageToChatBox(chatBox, msg) {
+const addMessageToChatBox = (chatBox, msg) => {
   const msgDiv = document.createElement("div");
-  msgDiv.classList.add("message");
+  msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
   msgDiv.id = msg.id;
-  msgDiv.classList.add(msg.role === "user" ? "user-msg" : "ai-msg");
+
+  let messageContent = "";
   if (msg.content && msg.content.startsWith("Processing ")) {
-    const thinkingDiv = document.createElement("div");
-    thinkingDiv.classList.add("thinking-loader");
-    thinkingDiv.innerHTML = `
+    messageContent = `
       ${msg.content}
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
+      <div class="thinking-loader">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
     `;
-    msgDiv.appendChild(thinkingDiv);
-  }  else if(msg.content !== "")
-      msgDiv.innerHTML = marked.parse(msg.content);
-  else {
-    const thinkingDiv = document.createElement("div");
-    thinkingDiv.classList.add("thinking-loader");
-    thinkingDiv.innerHTML = `
-    <div class="dot"></div>
-    <div class="dot"></div>
-    <div class="dot"></div>
-`;
-    msgDiv.appendChild(thinkingDiv);
+  } else if (msg.content !== "") {
+    messageContent = marked.parse(msg.content);
+  } else {
+    messageContent = `
+      <div class="thinking-loader">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+    `;
   }
+  msgDiv.innerHTML = messageContent;
 
   const copyButton = createButton(
     "copy-msg-btn",
@@ -203,10 +192,12 @@ function addMessageToChatBox(chatBox, msg) {
   );
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
 
-  // Create a span for the timestamp
   const timestampSpan = document.createElement("span");
   timestampSpan.classList.add("timestamp");
-  const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   timestampSpan.textContent = timestamp;
 
   msgDiv.appendChild(deleteButton);
@@ -216,21 +207,19 @@ function addMessageToChatBox(chatBox, msg) {
 
   chatBox.appendChild(msgDiv);
   chatBox.scrollTop = chatBox.scrollHeight;
-}
+};
 
 /**
  * Deletes a message from the server and updates the chat.
- * @param {string} messageId - The ID of the message to delete.
  */
-function deleteMessage(messageId) {
+const deleteMessage = (messageId) => {
   socket.emit("delete_message", { message_id: messageId });
-}
+};
 
 /**
  * Updates a message in the chat box.
- * @param {object} msg - The updated message object.
  */
-function updateMessageInChatBox(msg) {
+const updateMessageInChatBox = (msg) => {
   const msgDiv = document.getElementById(msg.id);
   msgDiv.innerHTML = marked.parse(msg.content);
 
@@ -249,10 +238,12 @@ function updateMessageInChatBox(msg) {
   );
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
 
-  // Create a span for the timestamp
   const timestampSpan = document.createElement("span");
   timestampSpan.classList.add("timestamp");
-  const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   timestampSpan.textContent = timestamp;
 
   msgDiv.appendChild(deleteButton);
@@ -262,14 +253,12 @@ function updateMessageInChatBox(msg) {
 
   enhanceCodeBlocks(msgDiv);
   enhanceCodeInlines(msgDiv);
-  const chatBox = document.getElementById("chat-box");
-}
+};
 
 /**
  * Updates the entire chat display with the given history.
- * @param {array} history - An array of message objects.
  */
-function updateChatDisplay(history) {
+const updateChatDisplay = (history) => {
   const chatBox = document.getElementById("chat-box");
   chatBox.innerHTML = "";
   history.forEach((msg) => addMessageToChatBox(chatBox, msg));
@@ -277,9 +266,52 @@ function updateChatDisplay(history) {
   chatBox.scrollTop = chatBox.scrollHeight;
   enhanceCodeBlocks(chatBox);
   enhanceCodeInlines(chatBox);
-}
+};
 
-// --- Initialization and Socket Event Handling ---
+// --- File Handling Functions ---
+
+// Global variable to store file information (name and content)
+let fileContents = [];
+
+/**
+ * Displays file names in boxes with delete buttons.
+ */
+const displayFileNames = () => {
+  const displayArea = document.getElementById("file-display-area");
+  displayArea.innerHTML = "";
+  displayArea.style.display = "flex";
+  displayArea.style.flexWrap = "wrap";
+
+  fileContents.forEach((fileData, index) => {
+    const fileBox = document.createElement("div");
+    fileBox.classList.add("file-box");
+
+    let fileDisplayElement;
+    if (fileData.type.startsWith("image/")) {
+      fileDisplayElement = createAttachmentElement(fileData);
+    } else if (fileData.type.startsWith("video/")) {
+      fileDisplayElement = createAttachmentElement(fileData);
+    } else {
+      const fileNameSpan = document.createElement("span");
+      fileNameSpan.textContent = fileData.name;
+      fileDisplayElement = fileNameSpan;
+    }
+    fileBox.appendChild(fileDisplayElement);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.classList.add("delete-file-button");
+    deleteButton.innerHTML = '<i class="bi bi-x"></i>';
+    deleteButton.addEventListener("click", () => {
+      fileContents.splice(index, 1);
+      displayFileNames();
+    });
+    fileBox.appendChild(deleteButton);
+
+    displayArea.appendChild(fileBox);
+  });
+};
+
+// --- Socket Event Handling ---
 const socket = io();
 
 /**
@@ -287,7 +319,7 @@ const socket = io();
  */
 function initializeChat() {
   socket.emit("get_chat_history");
-}
+};
 
 socket.on("connect", () => {
   socket.emit("get_chat_history");
@@ -296,262 +328,222 @@ socket.on("connect", () => {
 socket.on("chat_update", updateChatDisplay);
 socket.on("updated_msg", updateMessageInChatBox);
 
-// Global variable to store file information (name and content)
-let fileContents = [];
-
-// Function to display file names in boxes with delete buttons
-function displayFileNames() {
-  const displayArea = document.getElementById("file-display-area");
-  displayArea.innerHTML = ""; // Clear previous content
-  displayArea.style.display = "flex"; // Display file boxes side by side
-  displayArea.style.flexWrap = "wrap"; // Allow wrapping to the next line
-
-  fileContents.forEach((fileData, index) => {
-    const fileBox = document.createElement("div");
-    fileBox.classList.add("file-box"); // Add a class for styling
-    if (fileData.type.startsWith("image/")) {
-      // Create an image element for image files
-      const img = document.createElement("img");
-      img.src = `data:${fileData.type};base64,${fileData.content}`;
-      img.alt = fileData.name;
-      img.style.maxWidth = "50px"; // Adjust as needed
-      img.style.maxHeight = "50px"; // Adjust as needed
-      img.style.marginRight = "5px"; // Add some spacing
-      fileBox.appendChild(img);
-    } else if (fileData.type.startsWith("video/")) {
-      const video = document.createElement("video");
-      video.src = `data:${fileData.type};base64,${fileData.content}`;
-      video.alt = fileData.name;
-      video.style.maxWidth = "50px"; // Adjust as needed
-      video.style.maxHeight = "50px"; // Adjust as needed
-      video.style.marginRight = "5px"; // Add some spacing
-      video.controls = false;
-      video.muted = true;
-      video.autoplay = true;
-      video.loop = true;
-      video.play();
-      fileBox.appendChild(video);
-    } else {
-      // Create a span for the filename for other files
-      const fileNameSpan = document.createElement("span");
-      fileNameSpan.textContent = fileData.name;
-      fileBox.appendChild(fileNameSpan);
-    }
-
-    const deleteButton = document.createElement("button");
-    deleteButton.classList.add("delete-file-button");
-    deleteButton.innerHTML = '<i class="bi bi-x"></i>'; // Cross icon
-    deleteButton.addEventListener("click", () => {
-      // Remove the file from the array
-      fileContents.splice(index, 1);
-      // Update the display
-      displayFileNames();
-    });
-    fileBox.appendChild(deleteButton);
-
-    displayArea.appendChild(fileBox);
-  });
-}
-
-// --- Event Listeners ---
-document.getElementById("chat-form").addEventListener("submit", function (e) {
-  e.preventDefault();
-  sendMessage();
-});
-
-document
-  .getElementById("message-input")
-  .addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && e.shiftKey) {
-      insertNewlineAtCursor(this);
-      e.preventDefault();
-      updateTextareaRows();
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-
-document.getElementById("message-input").addEventListener("input", function () {
-  updateTextareaRows();
-});
-
-// Update the file selected text and store the file contents
-document
-  .getElementById("file-input")
-  .addEventListener("change", async function () {
-    if (this.files && this.files.length > 0) {
-      for (let i = 0; i < this.files.length; i++) {
-        const file = this.files[i];
-        const supportedImageTypes = [
-          "image/png",
-          "image/jpeg",
-          "image/webp",
-          "image/heic",
-          "image/heif"
-        ];
-        const supportedVidTypes = [
-          "video/mp4",
-          "video/mpeg",
-          "video/mov",
-          "video/avi",
-          "video/x-flv",
-          "video/mpg",
-          "video/webm",
-          "video/wmv",
-          "video/3gpp"
-        ]
-        if (
-          file.type.startsWith("text/")
-          || supportedImageTypes.includes(file.type)
-          || supportedVidTypes.includes(file.type)
-          || file.type === "application/pdf"
-        ) {
-          try {
-            let content = await readFileAsBase64(file); // Read as Base64 for images
-            fileContents.push({
-              name: file.name,
-              type: file.type,
-              content: content,
-            });
-          } catch (error) {
-            console.error("Error reading file:", error);
-            fileContents.push({
-              name: file.name,
-              type: file.type,
-              content: `Error reading file: ${error.message}`,
-            });
-          }
-        } else {
-          addMessageToChatBox(document.getElementById("chat-box"), {
-            role: "ai",
-            content: `File ${file.name} is not a supported text or image file.`,
-          });
-        }
-      }
-    }
-
-    displayFileNames(); // Display the file names
-  });
-
-// Constants
+// --- Video Upload Constants and Functions ---
 const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 let videoId = null; // Unique ID for the video being uploaded
 
-// Helper function to generate a unique ID (UUID v4)
-function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
+/**
+ * Generates a unique ID (UUID v4).
+ */
+const generateUUID = () => {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    var r = (Math.random() * 16) | 0,
+      v = c == "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+/**
+ * Uploads video in chunks.
+ */
+const uploadVideoInChunks = async (base64Video, filename, videoId) => {
+  const totalChunks = Math.ceil(base64Video.length / CHUNK_SIZE);
+
+  socket.emit("start_upload_video", videoId);
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, base64Video.length);
+    const chunk = base64Video.substring(start, end);
+
+    socket.emit("upload_video_chunck", {
+      id: videoId,
+      chunck: chunk,
+      idx: i,
+      filename: filename,
     });
-}
+  }
 
-// Modified sendMessage function
-async function sendMessage() {
-    const input = document.getElementById("message-input");
-    const message = input.value;
+  socket.emit("end_upload_video", videoId);
+};
 
-    const filesData = [];
-
-    for (let i = 0; i < fileContents.length; i++) {
-        const fileData = fileContents[i];
-        if (fileData.type.startsWith("video/")) {
-            // Upload video in chunks
-            videoId = generateUUID(); // Generate a unique video ID
-            await uploadVideoInChunks(fileData.content, fileData.name, videoId);
-            filesData.push({
-                filename: fileData.name,
-                type: fileData.type,
-                id: videoId // Send the videoId to the server
-            });
-        } else {
-            // Send other file types as before
-            try {
-                let base64Content = fileData.content;
-                filesData.push({
-                    filename: fileData.name,
-                    content: base64Content,
-                    type: fileData.type,
-                });
-            } catch (error) {
-                console.error("Error processing file:", error);
-                addMessageToChatBox(document.getElementById("chat-box"), {
-                    role: "ai",
-                    content: `Error processing file ${fileData.name}: ${error.message}`,
-                });
-                return;
-            }
-        }
-    }
-
-    input.value = "";
-    fileContents = [];
-    displayFileNames();
-    updateTextareaRows();
-
-    // Emit the 'send_message' event to the server
-    socket.emit("send_message", { message: message, files: filesData });
-}
-
-// New function to upload video in chunks
-async function uploadVideoInChunks(base64Video, filename, videoId) {
-    const totalChunks = Math.ceil(base64Video.length / CHUNK_SIZE);
-
-    socket.emit("start_upload_video", videoId); // Notify server of upload start
-
-    for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, base64Video.length);
-        const chunk = base64Video.substring(start, end);
-
-        socket.emit("upload_video_chunck", {
-            id: videoId,
-            chunck: chunk,
-            idx: i,
-            filename: filename
-        });
-        // await new Promise(resolve => setTimeout(resolve, 10)); // Optional: Add a small delay
-    }
-
-    socket.emit("end_upload_video", videoId); // Notify server of upload completion
-}
-
-// Helper function to read a file as Base64
-function readFileAsBase64(file) {
+/**
+ * Reads a file as Base64.
+ */
+const readFileAsBase64 = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = () => {
-      resolve(reader.result.split(",")[1]); // Extract the base64 part
+      resolve(reader.result.split(",")[1]);
     };
 
     reader.onerror = () => {
       reject(reader.error);
     };
 
-    reader.readAsDataURL(file); // Read as Data URL
+    reader.readAsDataURL(file);
   });
-}
+};
+
+/**
+ * Sends a message with or without file attachments.
+ */
+const sendMessage = async () => {
+  const input = document.getElementById("message-input");
+  const message = input.value;
+
+  const filesData = [];
+
+  for (let i = 0; i < fileContents.length; i++) {
+    const fileData = fileContents[i];
+    if (fileData.type.startsWith("video/")) {
+      videoId = generateUUID();
+      await uploadVideoInChunks(fileData.content, fileData.name, videoId);
+      filesData.push({
+        filename: fileData.name,
+        type: fileData.type,
+        id: videoId,
+      });
+    } else {
+      try {
+        let base64Content = fileData.content;
+        filesData.push({
+          filename: fileData.name,
+          content: base64Content,
+          type: fileData.type,
+        });
+      } catch (error) {
+        console.error("Error processing file:", error);
+        addMessageToChatBox(document.getElementById("chat-box"), {
+          role: "ai",
+          content: `Error processing file ${fileData.name}: ${error.message}`,
+        });
+        return;
+      }
+    }
+  }
+
+  input.value = "";
+  fileContents = [];
+  displayFileNames();
+  updateTextareaRows();
+
+  socket.emit("send_message", { message: message, files: filesData });
+};
 
 // --- Textarea Helper Functions ---
+
 /**
  * Inserts a newline character at the cursor position in the textarea.
- * @param {HTMLTextAreaElement} textarea - The textarea element.
  */
-function insertNewlineAtCursor(textarea) {
+const insertNewlineAtCursor = (textarea) => {
   const start = textarea.selectionStart;
   const end = textarea.selectionEnd;
   const value = textarea.value;
-  textarea.value =
-    value.substring(0, start) + "\n" + value.substring(end);
+  textarea.value = value.substring(0, start) + "\n" + value.substring(end);
   textarea.selectionStart = textarea.selectionEnd = start + 1;
-}
+};
 
 /**
  * Updates the number of rows in the textarea based on the number of lines.
  */
-function updateTextareaRows() {
+const updateTextareaRows = () => {
   const textarea = document.getElementById("message-input");
   const lines = textarea.value.split("\n").length;
   textarea.rows = Math.min(lines, 7);
-}
+};
+
+// --- Event Listener Functions ---
+/**
+ * Handles the file input change event.
+ */
+const handleFileInputChange = async () => {
+  const fileInput = document.getElementById("file-input");
+  if (fileInput.files && fileInput.files.length > 0) {
+    const supportedImageTypes = [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/heic",
+      "image/heif",
+    ];
+    const supportedVidTypes = [
+      "video/mp4",
+      "video/mpeg",
+      "video/mov",
+      "video/avi",
+      "video/x-flv",
+      "video/mpg",
+      "video/webm",
+      "video/wmv",
+      "video/3gpp",
+    ];
+
+    for (let i = 0; i < fileInput.files.length; i++) {
+      const file = fileInput.files[i];
+
+      if (
+        file.type.startsWith("text/") ||
+        supportedImageTypes.includes(file.type) ||
+        supportedVidTypes.includes(file.type) ||
+        file.type === "application/pdf"
+      ) {
+        try {
+          let content = await readFileAsBase64(file);
+          fileContents.push({
+            name: file.name,
+            type: file.type,
+            content: content,
+          });
+        } catch (error) {
+          console.error("Error reading file:", error);
+          fileContents.push({
+            name: file.name,
+            type: file.type,
+            content: `Error reading file: ${error.message}`,
+          });
+        }
+      } else {
+        addMessageToChatBox(document.getElementById("chat-box"), {
+          role: "ai",
+          content: `File ${file.name} is not a supported text or image file.`,
+        });
+      }
+    }
+  }
+
+  displayFileNames();
+};
+
+/**
+ * Handles the message input keydown event.
+ */
+const handleMessageInputKeydown = (e) => {
+  const messageInput = document.getElementById("message-input");
+  if (e.key === "Enter" && e.shiftKey) {
+    insertNewlineAtCursor(messageInput);
+    e.preventDefault();
+    updateTextareaRows();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    sendMessage();
+  }
+};
+
+// --- Event Listeners ---
+document.getElementById("chat-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  sendMessage();
+});
+
+const messageInput = document.getElementById("message-input");
+messageInput.addEventListener("keydown", handleMessageInputKeydown);
+messageInput.addEventListener("input", updateTextareaRows);
+
+document
+  .getElementById("file-input")
+  .addEventListener("change", handleFileInputChange);
+
+// --- Initialization ---
+initializeChat();
