@@ -1,11 +1,9 @@
 import re
 from rich import print
-import rich
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, redirect, url_for
 from flask_socketio import SocketIO
 from google import genai
 from google.genai import types
-import rich.bar
 import prompt
 import config
 import uuid
@@ -23,7 +21,7 @@ socketio = SocketIO(app)
 client = genai.Client(api_key=config.GOOGLE_API)
 
 google_search_tool = types.Tool(
-    google_search = types.GoogleSearch()
+    google_search=types.GoogleSearch()
 )
 
 class File:
@@ -37,12 +35,13 @@ class File:
         self.content = content
         self.type = type
         self.filename = filename
-        self.id = str(uuid.uuid4()) if id is None else id  # Use the new method to generate a valid ID
+        # Use the new method to generate a valid ID
+        self.id = str(uuid.uuid4()) if id is None else id
         self.cloud_uri = cloud_uri
-    
+
     def delete(self):
         if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
-            client.files.delete(name=self.cloud_uri.name) # type: ignore
+            client.files.delete(name=self.cloud_uri.name)  # type: ignore
 
     @staticmethod
     def _generate_valid_video_file_id():
@@ -50,9 +49,11 @@ class File:
         # Generate a UUID, convert to string, make lowercase, and replace invalid characters with dashes.
         base_id = str(uuid.uuid4()).lower()[:35]
         # Ensure the ID doesn't start or end with a dash.  Add a prefix if needed.
-        valid_id = re.sub(r'^[^a-z0-9]+|[^a-z0-9]+$', '', base_id) # Remove leading/trailing non-alphanumeric characters
+        # Remove leading/trailing non-alphanumeric characters
+        valid_id = re.sub(r'^[^a-z0-9]+|[^a-z0-9]+$', '', base_id)
         if not valid_id:
-            valid_id = "file-id" # Default ID if the UUID generates an empty string after cleaning.
+            # Default ID if the UUID generates an empty string after cleaning.
+            valid_id = "file-id"
         return valid_id
 
     @staticmethod
@@ -66,12 +67,13 @@ class File:
 
     def for_ai(self, msg: "Message") -> types.Part:
         if self.type.startswith("text/"):
-            return types.Part.from_text(text=f"\\nFile_name: {self.filename}\\nFile_Content: {self.content.decode('utf-8')}")  # Decode text files
+            # Decode text files
+            return types.Part.from_text(text=f"\\nFile_name: {self.filename}\\nFile_Content: {self.content.decode('utf-8')}")
         elif self.type.startswith(("image/", "video/", "application/pdf")):
             # Use cloud URI if available, otherwise upload
             if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
-                return self.cloud_uri # type: ignore
-            
+                return self.cloud_uri  # type: ignore
+
             if self.type.startswith("image/"):
                 prefix = "Processing Image:"
             elif self.type.startswith("video/"):
@@ -83,28 +85,32 @@ class File:
                 try:
                     msg.content = f"{prefix} {self.filename}"
                     socketio.emit("updated_msg", msg.jsonify())
-                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type})
+                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={
+                                                         "display_name": self.filename, "mime_type": self.type})
                     # Check whether the file is ready to be used.
                     while self.cloud_uri.state.name == "PROCESSING":
                         time.sleep(1)
-                        self.cloud_uri = client.files.get(name=self.cloud_uri.name)
+                        self.cloud_uri = client.files.get(
+                            name=self.cloud_uri.name)
                     if self.cloud_uri.state.name == "FAILED":
                         raise ValueError(self.cloud_uri.state.name)
                     msg.content = ""
                     socketio.emit("updated_msg", msg.jsonify())
-                    return self.cloud_uri # type: ignore
+                    return self.cloud_uri  # type: ignore
                 except Exception:
                     if attempt < config.MAX_RETRIES - 1:
                         time.sleep(config.RETRY_DELAY)
                     else:
                         raise  # Re-raise the exception to be caught in completeChat
-        raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
-    
+        raise ValueError(f"Unsported File Type: {
+                         self.type} of file {self.filename}")
+
     def jsonify(self) -> dict:
         return {
             "type": self.type,
             "filename": self.filename,
-            "content": base64.b64encode(self.content).decode('utf-8', errors='ignore'),  # Base64 encode
+            # Base64 encode
+            "content": base64.b64encode(self.content).decode('utf-8', errors='ignore'),
             "id": self.id
         }
 
@@ -113,16 +119,20 @@ class File:
         content = base64.b64decode(data['content'])
         return File(content, data['type'], data['filename'], None, data['id'])
 
+
 class GroundingSupport:
     grounding_chunk_indices: list[int]
-    segment: dict[str, int | str] # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
+    # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
+    segment: dict[str, int | str]
+
     def __init__(self,
-        grounding_chunk_indices: list[int],
-        segment: dict[str, int | str] # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
-    ):
+                 grounding_chunk_indices: list[int],
+                 # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
+                 segment: dict[str, int | str]
+                 ):
         self.grounding_chunk_indices = grounding_chunk_indices
         self.segment = segment
-    
+
     def jsonify(self) -> dict:
         return {
             "grounding_chunk_indices": self.grounding_chunk_indices,
@@ -133,22 +143,25 @@ class GroundingSupport:
     def from_jsonify(data: dict):
         return GroundingSupport(data["grounding_chunk_indices"], data["segment"])
 
+
 class GroundingMetaData:
     first_offset: int
     rendered_content: str
-    grounding_chuncks: list[tuple[str, str]] # list[tuple[str: title, str: uri]]
+    # list[tuple[str: title, str: uri]]
+    grounding_chuncks: list[tuple[str, str]]
     grounding_supports: list[GroundingSupport]
+
     def __init__(self,
                  grounding_chuncks: list[tuple[str, str]],
                  grounding_supports: list[GroundingSupport],
                  first_offset: int = 0,
                  rendered_content: str = "",
-                ):
+                 ):
         self.grounding_chuncks = grounding_chuncks
         self.grounding_supports = grounding_supports
         self.first_offset = first_offset
         self.rendered_content = rendered_content
-    
+
     def jsonify(self) -> dict:
         return {
             "first_offset": self.first_offset,
@@ -161,8 +174,9 @@ class GroundingMetaData:
     def from_jsonify(data: dict):
         return GroundingMetaData(data["grounding_chuncks"],
                                  [GroundingSupport.from_jsonify(sup) for sup in data["grounding_supports"]],
-                                 data.get("first_offset",0),
-                                 data.get("rendered_content",""))
+                                 data["first_offset"],
+                                 data.get("rendered_content", ""))
+
 
 class Message:
     role: Literal["model", "user"]
@@ -178,7 +192,9 @@ class Message:
         self.role = role
         self.id = str(uuid.uuid4())
         self.attachments = attachments if attachments is not None else []
-        self.grounding_metadata = grounding_metadata if grounding_metadata else GroundingMetaData([], [])
+        self.grounding_metadata = grounding_metadata if grounding_metadata else GroundingMetaData([
+        ], [])
+
     def delete(self):
         for file in self.attachments:
             file.delete()
@@ -187,7 +203,8 @@ class Message:
         ai_content: list[types.Part] = []
         for file in self.attachments:
             ai_content.append(file.for_ai(msg))
-        ai_content.append(types.Part.from_text(text=self.time_stamp.strftime("%H:%M")))
+        ai_content.append(types.Part.from_text(
+            text=self.time_stamp.strftime("%H:%M")))
         if self.content:
             ai_content.append(types.Part.from_text(text=self.content))
         return types.Content(parts=ai_content, role=self.role)
@@ -204,8 +221,10 @@ class Message:
 
     @staticmethod
     def from_jsonify(data: dict):
-        attachments = [File.from_jsonify(file_data) for file_data in data.get('attachments', [])]
+        attachments = [File.from_jsonify(file_data)
+                       for file_data in data.get('attachments', [])]
         return Message(data['content'], data['role'], GroundingMetaData.from_jsonify(data["grounding_metadata"]), attachments, datetime.datetime.fromisoformat(data["time_stamp"]))
+
 
 class ChatHistory:
     chat: list[Message] = []
@@ -256,7 +275,9 @@ class ChatHistory:
         except json.JSONDecodeError:
             print("Error decoding chat history. Starting with an empty chat.")
 
+
 chat_history: ChatHistory = ChatHistory()
+
 
 def completeChat(message: str, files: Optional[list[File]] = None):
     if files is None:
@@ -284,41 +305,54 @@ def completeChat(message: str, files: Optional[list[File]] = None):
                         tools=[google_search_tool],
                     )
                 )
+                last_content: types.GenerateContentResponse | None = None
                 for content in response:
-                    print("-----------------------")
-                    print("content=", content)
-                    print("-----------------------")
-                    if content.candidates\
-                        and content.candidates[0].grounding_metadata\
-                        and content.candidates[0].grounding_metadata.grounding_chunks\
-                        and content.candidates[0].grounding_metadata.grounding_supports:
-                        for chunck in content.candidates[0].grounding_metadata.grounding_chunks:
+                    last_content = content
+                    if content.text:
+                        msg.content += content.text
+                        socketio.emit("updated_msg", msg.jsonify())
+                if last_content:
+                    if last_content.candidates and last_content.candidates[0].grounding_metadata and last_content.candidates[0].grounding_metadata.search_entry_point:
+                        msg.grounding_metadata.rendered_content = last_content.candidates[0].grounding_metadata.search_entry_point.rendered_content or ""
+                    if last_content.candidates and last_content.candidates[0].grounding_metadata and last_content.candidates[0].grounding_metadata.grounding_chunks:
+                        for chunck in last_content.candidates[0].grounding_metadata.grounding_chunks:
                             if chunck.web:
                                 msg.grounding_metadata.grounding_chuncks.append(
                                     (
                                         chunck.web.title,
                                         chunck.web.uri
-                                    ) # type: ignore
+                                    )  # type: ignore
                                 )
-                        for suport in content.candidates[0].grounding_metadata.grounding_supports:
-                            start_index = msg.content.find(suport.segment.text, suport.segment.start_index) # type: ignore
+                    if last_content.candidates\
+                            and last_content.candidates[0].grounding_metadata\
+                            and last_content.candidates[0].grounding_metadata.grounding_chunks\
+                            and last_content.candidates[0].grounding_metadata.grounding_supports\
+                            and last_content.candidates[0].grounding_metadata.web_search_queries:
+                        first = True
+                        for suport in last_content.candidates[0].grounding_metadata.grounding_supports:
+                            start_index = msg.content.find(suport.segment.text)  # type: ignore
+                            # if the Content is chunck at that time then sometimes the suport.segment.text can have a exta space
+                            if start_index == -1:
+                                continue
+                            if first:
+                                l: int = 0
+                                for s in last_content.candidates[0].grounding_metadata.web_search_queries:
+                                    l += len(s)
+                                msg.grounding_metadata.first_offset = start_index - suport.segment.start_index; # type: ignore
+                                first = False
                             msg.grounding_metadata.grounding_supports.append(
-                                GroundingSupport(suport.grounding_chunk_indices, { # type: ignore
-                                    "text": suport.segment.text, # type: ignore
+                                GroundingSupport(suport.grounding_chunk_indices, {  # type: ignore
+                                    "text": suport.segment.text,  # type: ignore
                                     "start_index": start_index,
-                                    "end_index": start_index + (suport.segment.end_index - suport.segment.start_index) # type: ignore
-                                    }
-                                ) # type: ignore
+                                    "end_index": start_index + len(suport.segment.text)# type: ignore
+                                }
+                                )  # type: ignore
                             )
-                        msg.grounding_metadata.first_offset = content.candidates[0].grounding_metadata.grounding_supports[0].segment.end_index - content.candidates[0].grounding_metadata.grounding_supports[0].segment.start_index # type: ignore
-                        msg.grounding_metadata.rendered_content = msg.grounding_metadata.rendered_content
-                    if content.text:
-                        msg.content += content.text
-                        socketio.emit("updated_msg", msg.jsonify())
-
-                tokens: int = client.models.count_tokens(model="gemini-2.0-flash", contents=msg.content).total_tokens or 0
+                    socketio.emit("updated_msg", msg.jsonify())
+                tokens: int = client.models.count_tokens(
+                    model="gemini-2.0-flash", contents=msg.content).total_tokens or 0
                 if tokens >= 8150*x:
-                    continue # Recalling AI cz mostlikely max output tokens are reached
+                    continue  # Recalling AI cz mostlikely max output tokens are reached
                 break
             msg.time_stamp = datetime.datetime.now()
             break
@@ -326,7 +360,8 @@ def completeChat(message: str, files: Optional[list[File]] = None):
             if attempt < config.MAX_RETRIES - 1:
                 time.sleep(config.RETRY_DELAY)
             else:
-                error_message = f"Failed to generate response after multiple retries: {str(e)}"
+                error_message = f"Failed to generate response after multiple retries: {
+                    str(e)}"
                 msg.content = error_message
                 socketio.emit("updated_msg", msg.jsonify())
 
@@ -335,26 +370,34 @@ def favicon():
     return redirect(url_for('static', filename='favicon.ico'), code=302)
 
 # Render the main chat frontend
+
+
 @app.route('/')
 def root():
     return render_template('index.html')
 
-videos: dict[str, tuple[dict[int, str], bool]] = {} # ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
+
+# ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
+videos: dict[str, tuple[dict[int, str], bool]] = {}
+
 
 @socketio.on("start_upload_video")
 def start_upload_video(id: str):
     videos[id] = ({}, False)
 
+
 @socketio.on("upload_video_chunck")
 def upload_video_chunck(data: dict[str, str | int]):
-    id: str = data["id"] # type: ignore
-    chunck: str = data["chunck"] # type: ignore
-    idx: int = data["idx"] # type: ignore
+    id: str = data["id"]  # type: ignore
+    chunck: str = data["chunck"]  # type: ignore
+    idx: int = data["idx"]  # type: ignore
     videos[id][0][idx] = chunck
+
 
 @socketio.on("end_upload_video")
 def end_upload_video(id: str):
     videos[id] = (videos[id][0], True)
+
 
 @socketio.on("send_message")
 def handle_send_message(data):
@@ -372,25 +415,28 @@ def handle_send_message(data):
             file_attachments.append(File(file_content, file_type, filename))
         elif file_type.startswith(("video/")):
             id: str = file_data.get("id")
-            while(not videos.get(id)):
+            while (not videos.get(id)):
                 time.sleep(0.1)
-            while(not videos[id][1]):
+            while (not videos[id][1]):
                 time.sleep(0.2)
             vid = videos[id][0]
             x = 0
             content: str = ""
-            while(vid.get(x) is not None):
+            while (vid.get(x) is not None):
                 content += vid[x]
                 x += 1
             decoded_content = base64.b64decode(content)
-            file_attachments.append(File(decoded_content, file_type, filename, None, File._generate_valid_video_file_id()))
+            file_attachments.append(File(
+                decoded_content, file_type, filename, None, File._generate_valid_video_file_id()))
             del videos[id]
 
     completeChat(message, file_attachments)
 
+
 @socketio.on("get_chat_history")
 def handle_get_chat_history():
     socketio.emit("chat_update", chat_history.jsonify())
+
 
 @socketio.on("delete_message")
 def handle_delete_message(data):
@@ -398,11 +444,13 @@ def handle_delete_message(data):
     chat_history.delete_message(msg_id)
     socketio.emit("chat_update", chat_history.jsonify())
 
+
 if __name__ == "__main__":
     chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
     chat_history.load_from_json(chat_history_file)
     try:
-        socketio.run(app, host='127.0.0.1', port=5000, debug=True, use_reloader=False)
+        socketio.run(app, host='127.0.0.1', port=5000,
+                     debug=True, use_reloader=False)
     finally:
         chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
         chat_history.save_to_json(chat_history_file)

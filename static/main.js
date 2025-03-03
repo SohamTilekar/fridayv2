@@ -20,12 +20,12 @@ const marked = new Marked(
 /**
  * Creates a button element.
  */
-const createButton = (className, innerHTML) => {
+function createButton(className, innerHTML) {
   const button = document.createElement("button");
   button.classList.add(className);
   button.innerHTML = innerHTML;
   return button;
-};
+}
 
 /**
  * Copies text to clipboard and provides feedback.
@@ -49,7 +49,7 @@ const copyToClipboard = async (text, button) => {
 /**
  * Enhances code blocks with copy button and language label.
  */
-const enhanceCodeBlocks = (scope) => {
+function enhanceCodeBlocks(scope) {
   scope.querySelectorAll("pre code").forEach((codeBlock) => {
     const pre = codeBlock.parentElement;
     const copyButton = createButton(
@@ -75,25 +75,143 @@ const enhanceCodeBlocks = (scope) => {
 
     pre.insertBefore(container, pre.firstChild);
   });
-};
+}
 
 /**
  * Enhances inline code with a special class.
  */
-const enhanceCodeInlines = (scope) => {
+function enhanceCodeInlines(scope) {
   scope.querySelectorAll("code").forEach((code) => {
     if (!code.classList.contains("code-block")) {
       code.classList.add("code-inline");
     }
   });
-};
+}
+
+/**
+ * Applies grounding information to the message content.
+ */
+function applyGroundingInfo(contentText, groundingMetadata) {
+  if (
+    !groundingMetadata ||
+    !groundingMetadata.grounding_supports ||
+    groundingMetadata.grounding_supports.length === 0
+  ) {
+    return contentText;
+  }
+
+  let result = contentText;
+
+  // Revesing cz the string is going to get updated & the string idx will be wrong
+  groundingMetadata.grounding_supports.reverse().forEach((g) => {
+    const idx = g["segment"]["end_index"];
+    tooltipContent = "";
+    g["grounding_chunk_indices"].forEach((c) => {
+      const x = groundingMetadata.grounding_chuncks[c];
+      tooltipContent += `- [${x[0]}](${x[1]})\n`;
+    });
+    result =
+      result.substring(0, idx) +
+      `<i class="bi bi-info-circle grounding-marker" data-tooltip="${encodeURIComponent(marked.parse(tooltipContent))}"></i>` +
+      result.substring(idx);
+  });
+
+  // First, insert the rendered_content at first_offset if it exists
+  if (groundingMetadata.rendered_content) {
+    const firstOffset = groundingMetadata.first_offset;
+    let newlineBefore = result.lastIndexOf("\n", firstOffset);
+    let newlineAfter = result.indexOf("\n", firstOffset);
+
+    // Handle cases where no newline is found before or after
+    if (newlineBefore === -1) {
+      newlineBefore = 0; // Start of the string
+    }
+    if (newlineAfter === -1) {
+      newlineAfter = result.length; // End of the string
+    }
+
+    // Determine the closest newline
+    let insertIndex;
+    if (firstOffset - newlineBefore <= newlineAfter - firstOffset) {
+      insertIndex = newlineBefore;
+    } else {
+      insertIndex = newlineAfter;
+    }
+    console.log(insertIndex - firstOffset);
+    result =
+      result.slice(0, insertIndex) +
+      groundingMetadata.rendered_content +
+      result.slice(insertIndex);
+  }
+
+  return result;
+}
+
+/**
+ * Initializes tooltips for grounding markers.
+ */
+function initializeTooltips() {
+  document.querySelectorAll(".grounding-marker").forEach((marker) => {
+    let tooltip = null; // Store the tooltip element
+    let timeoutId = null; // Store the timeout ID
+
+    marker.addEventListener("mouseenter", (e) => {
+      if (tooltip) {
+        clearTimeout(timeoutId); // Clear any pending timeout
+        return; // If tooltip already exists, don't create a new one
+      }
+
+      const tooltipContent = decodeURIComponent(
+        e.target.getAttribute("data-tooltip") || "",
+      );
+
+      if (tooltipContent) {
+        tooltip = document.createElement("div");
+        tooltip.classList.add("grounding-tooltip");
+        tooltip.innerHTML = `<div class="tooltip-title">Sources:</div>${tooltipContent}`;
+        document.body.appendChild(tooltip);
+
+        const rect = e.target.getBoundingClientRect();
+        tooltip.style.left = `${rect.left}px`;
+        tooltip.style.top = `${rect.bottom + 5}px`;
+
+        // Add event listener to the tooltip to prevent it from disappearing when the mouse is over it
+        tooltip.addEventListener("mouseenter", () => {
+          clearTimeout(timeoutId); // Clear any pending timeout
+        });
+
+        tooltip.addEventListener("mouseleave", () => {
+          startRemoveTimeout();
+        });
+      }
+    });
+
+    marker.addEventListener("mouseleave", () => {
+      startRemoveTimeout();
+    });
+
+    function startRemoveTimeout() {
+      timeoutId = setTimeout(() => {
+        removeTooltip();
+      }, 200);
+    }
+
+    function removeTooltip() {
+      if (tooltip) {
+        tooltip.remove();
+        tooltip = null;
+        timeoutId = null;
+      }
+    }
+  });
+}
 
 // --- Attachment Display Function ---
 
 /**
  * Creates an element to display attachments.
  */
-const createAttachmentElement = (file) => {
+function createAttachmentElement(file) {
   if (file.type.startsWith("image/")) {
     const img = document.createElement("img");
     img.src = `data:${file.type};base64,${file.content}`;
@@ -123,12 +241,12 @@ const createAttachmentElement = (file) => {
     fileLink.textContent = file.filename;
     return fileLink;
   }
-};
+}
 
 /**
  * Displays the attached files in the chat.
  */
-const displayAttachments = (msgDiv, attachments) => {
+function displayAttachments(msgDiv, attachments) {
   if (attachments && attachments.length > 0) {
     const attachmentsDiv = document.createElement("div");
     attachmentsDiv.classList.add("attachments");
@@ -142,14 +260,14 @@ const displayAttachments = (msgDiv, attachments) => {
 
     msgDiv.appendChild(attachmentsDiv);
   }
-};
+}
 
 // --- Message Handling Functions ---
 
 /**
  * Adds a message to the chat box.
  */
-const addMessageToChatBox = (chatBox, msg) => {
+function addMessageToChatBox(chatBox, msg) {
   const msgDiv = document.createElement("div");
   msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
   msgDiv.id = msg.id;
@@ -165,7 +283,15 @@ const addMessageToChatBox = (chatBox, msg) => {
       </div>
     `;
   } else if (msg.content !== "") {
-    messageContent = marked.parse(msg.content);
+    // Apply grounding information before parsing with marked
+    let contentWithGrounding = msg.content;
+    if (msg.grounding_metadata) {
+      contentWithGrounding = applyGroundingInfo(
+        msg.content,
+        msg.grounding_metadata,
+      );
+    }
+    messageContent = marked.parse(contentWithGrounding);
   } else {
     messageContent = `
       <div class="thinking-loader">
@@ -207,21 +333,33 @@ const addMessageToChatBox = (chatBox, msg) => {
 
   chatBox.appendChild(msgDiv);
   chatBox.scrollTop = chatBox.scrollHeight;
-};
+
+  // Initialize tooltips after adding to DOM
+  initializeTooltips();
+}
 
 /**
  * Deletes a message from the server and updates the chat.
  */
-const deleteMessage = (messageId) => {
+function deleteMessage(messageId) {
   socket.emit("delete_message", { message_id: messageId });
-};
+}
 
 /**
  * Updates a message in the chat box.
  */
-const updateMessageInChatBox = (msg) => {
+function updateMessageInChatBox(msg) {
   const msgDiv = document.getElementById(msg.id);
-  msgDiv.innerHTML = marked.parse(msg.content);
+
+  // Apply grounding information before parsing with marked
+  let contentWithGrounding = msg.content;
+  if (msg.grounding_metadata) {
+    contentWithGrounding = applyGroundingInfo(
+      msg.content,
+      msg.grounding_metadata,
+    );
+  }
+  msgDiv.innerHTML = marked.parse(contentWithGrounding);
 
   const copyButton = createButton(
     "copy-msg-btn",
@@ -253,12 +391,15 @@ const updateMessageInChatBox = (msg) => {
 
   enhanceCodeBlocks(msgDiv);
   enhanceCodeInlines(msgDiv);
-};
+
+  // Initialize tooltips after updating
+  initializeTooltips();
+}
 
 /**
  * Updates the entire chat display with the given history.
  */
-const updateChatDisplay = (history) => {
+function updateChatDisplay(history) {
   const chatBox = document.getElementById("chat-box");
   chatBox.innerHTML = "";
   history.forEach((msg) => addMessageToChatBox(chatBox, msg));
@@ -266,7 +407,10 @@ const updateChatDisplay = (history) => {
   chatBox.scrollTop = chatBox.scrollHeight;
   enhanceCodeBlocks(chatBox);
   enhanceCodeInlines(chatBox);
-};
+
+  // Initialize tooltips after updating entire chat
+  initializeTooltips();
+}
 
 // --- File Handling Functions ---
 
@@ -276,7 +420,7 @@ let fileContents = [];
 /**
  * Displays file names in boxes with delete buttons.
  */
-const displayFileNames = () => {
+function displayFileNames() {
   const displayArea = document.getElementById("file-display-area");
   displayArea.innerHTML = "";
   displayArea.style.display = "flex";
@@ -309,7 +453,7 @@ const displayFileNames = () => {
 
     displayArea.appendChild(fileBox);
   });
-};
+}
 
 // --- Socket Event Handling ---
 const socket = io();
@@ -319,7 +463,7 @@ const socket = io();
  */
 function initializeChat() {
   socket.emit("get_chat_history");
-};
+}
 
 socket.on("connect", () => {
   socket.emit("get_chat_history");
@@ -335,13 +479,13 @@ let videoId = null; // Unique ID for the video being uploaded
 /**
  * Generates a unique ID (UUID v4).
  */
-const generateUUID = () => {
+function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
     var r = (Math.random() * 16) | 0,
       v = c == "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
-};
+}
 
 /**
  * Uploads video in chunks.
@@ -370,7 +514,7 @@ const uploadVideoInChunks = async (base64Video, filename, videoId) => {
 /**
  * Reads a file as Base64.
  */
-const readFileAsBase64 = (file) => {
+function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -384,7 +528,7 @@ const readFileAsBase64 = (file) => {
 
     reader.readAsDataURL(file);
   });
-};
+}
 
 /**
  * Sends a message with or without file attachments.
@@ -437,22 +581,22 @@ const sendMessage = async () => {
 /**
  * Inserts a newline character at the cursor position in the textarea.
  */
-const insertNewlineAtCursor = (textarea) => {
+function insertNewlineAtCursor(textarea) {
   const start = textarea.selectionStart;
   const end = textarea.selectionEnd;
   const value = textarea.value;
   textarea.value = value.substring(0, start) + "\n" + value.substring(end);
   textarea.selectionStart = textarea.selectionEnd = start + 1;
-};
+}
 
 /**
  * Updates the number of rows in the textarea based on the number of lines.
  */
-const updateTextareaRows = () => {
+function updateTextareaRows() {
   const textarea = document.getElementById("message-input");
   const lines = textarea.value.split("\n").length;
   textarea.rows = Math.min(lines, 7);
-};
+}
 
 // --- Event Listener Functions ---
 /**
@@ -519,7 +663,7 @@ const handleFileInputChange = async () => {
 /**
  * Handles the message input keydown event.
  */
-const handleMessageInputKeydown = (e) => {
+function handleMessageInputKeydown(e) {
   const messageInput = document.getElementById("message-input");
   if (e.key === "Enter" && e.shiftKey) {
     insertNewlineAtCursor(messageInput);
@@ -529,7 +673,7 @@ const handleMessageInputKeydown = (e) => {
     e.preventDefault();
     sendMessage();
   }
-};
+}
 
 // --- Event Listeners ---
 document.getElementById("chat-form").addEventListener("submit", (e) => {

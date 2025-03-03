@@ -17,6 +17,14 @@
     --user-message-bg: var(--primary);
     --ai-message-bg: var(--secondary);
 
+    /* Grounding Marker Colors */
+    --grounding-marker-bg: #343a40;
+    --grounding-marker-border: #6c757d;
+    --grounding-tooltip-bg: #343a40;
+    --grounding-tooltip-border: #6c757d;
+    --rendered-content-bg: rgba(37, 150, 190, 0.1);
+    --rendered-content-border: #6c757d;
+
     /* Spacing */
     --padding-sm: 0.5rem;
     --padding-md: 1rem;
@@ -40,8 +48,8 @@ body {
 }
 
 .file-upload {
-    display: flex;          /* Enable flexbox */
-    align-items: center;    /* Vertically center the content */
+    display: flex; /* Enable flexbox */
+    align-items: center; /* Vertically center the content */
 }
 
 .chat-container {
@@ -84,6 +92,43 @@ body {
     color: var(--foreground);
     max-width: 70%;
 }
+
+/* Grounding Marker Styles */
+.grounding-marker {
+    background-color: var(--grounding-marker-bg);
+    border-radius: 6px;
+    padding: 1px 4px;
+    cursor: pointer;
+    position: relative;
+}
+
+.grounding-tooltip {
+    position: absolute;
+    background-color: var(--grounding-tooltip-bg);
+    border: 1px solid var(--grounding-tooltip-border);
+    border-radius: var(--border-radius);
+    padding: var(--padding-md);
+    z-index: 1000;
+    max-width: 300px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.tooltip-title {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    color: var(--grounding-marker-border);
+}
+
+/* .source-link {
+    color: var(--primary);
+    text-decoration: none;
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.source-link:hover {
+    text-decoration: underline;
+} */
 
 #message-input {
     resize: vertical;
