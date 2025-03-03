@@ -246,6 +246,9 @@ class ChatHistory:
     def __len__(self):
         return len(self.chat)
 
+    def __getitem__(self, idx: int):
+        return self.chat[idx]
+
     def for_ai(self, msg: Message) -> types.ContentListUnion:
         result: types.ContentListUnion = []
         for msg in self.chat:
@@ -279,91 +282,145 @@ class ChatHistory:
 chat_history: ChatHistory = ChatHistory()
 
 
-def completeChat(message: str, files: Optional[list[File]] = None):
+def complete_chat(message: str, files: Optional[list[File]] = None):
+    """
+    Appends user message to chat history, gets AI response, and handles grounding metadata.
+    """
     if files is None:
         files = []
-    if message or files:  # Only append if there's content or files
-        chat_history.append(Message(message, "user", None, files))
 
+    # Append user message if there's content
+    if message or files:
+        append_user_message(message, files)
+
+    # Get AI response and update chat history
+    ai_response = get_ai_response()
+
+    if ai_response:
+        update_chat_with_response(ai_response)
+
+def append_user_message(message: str, files: list[File]):
+    """Appends the user's message and files to the chat history."""
+    chat_history.append(Message(message, "user", None, files))
+
+
+def get_ai_response() -> Message:
+    """
+    Gets the AI's response from the Gemini model, handling retries and token limits.
+    """
     # Append a placeholder for the AI reply
     chat_history.append(Message("", "model"))
-    idx = len(chat_history) - 1
-    msg = chat_history.chat[idx]
+    msg_index = len(chat_history) - 1
+    msg = chat_history[msg_index]
+
     for attempt in range(config.MAX_RETRIES):
         try:
-            x = 0
-            while (True):
-                x += 1
-                response = client.models.generate_content_stream(
-                    model="gemini-2.0-flash",
-                    contents=chat_history.for_ai(msg),
-                    config=types.GenerateContentConfig(
-                        system_instruction=prompt.SYSTEM_INSTUNCTION,
-                        temperature=0.25,
-                        max_output_tokens=8192,
-                        top_p=0.2,
-                        tools=[google_search_tool],
-                    )
-                )
-                last_content: types.GenerateContentResponse | None = None
-                for content in response:
-                    last_content = content
-                    if content.text:
-                        msg.content += content.text
-                        socketio.emit("updated_msg", msg.jsonify())
-                if last_content:
-                    if last_content.candidates and last_content.candidates[0].grounding_metadata and last_content.candidates[0].grounding_metadata.search_entry_point:
-                        msg.grounding_metadata.rendered_content = last_content.candidates[0].grounding_metadata.search_entry_point.rendered_content or ""
-                    if last_content.candidates and last_content.candidates[0].grounding_metadata and last_content.candidates[0].grounding_metadata.grounding_chunks:
-                        for chunck in last_content.candidates[0].grounding_metadata.grounding_chunks:
-                            if chunck.web:
-                                msg.grounding_metadata.grounding_chuncks.append(
-                                    (
-                                        chunck.web.title,
-                                        chunck.web.uri
-                                    )  # type: ignore
-                                )
-                    if last_content.candidates\
-                            and last_content.candidates[0].grounding_metadata\
-                            and last_content.candidates[0].grounding_metadata.grounding_chunks\
-                            and last_content.candidates[0].grounding_metadata.grounding_supports\
-                            and last_content.candidates[0].grounding_metadata.web_search_queries:
-                        first = True
-                        for suport in last_content.candidates[0].grounding_metadata.grounding_supports:
-                            start_index = msg.content.find(suport.segment.text)  # type: ignore
-                            # if the Content is chunck at that time then sometimes the suport.segment.text can have a exta space
-                            if start_index == -1:
-                                continue
-                            if first:
-                                l: int = 0
-                                for s in last_content.candidates[0].grounding_metadata.web_search_queries:
-                                    l += len(s)
-                                msg.grounding_metadata.first_offset = start_index - suport.segment.start_index; # type: ignore
-                                first = False
-                            msg.grounding_metadata.grounding_supports.append(
-                                GroundingSupport(suport.grounding_chunk_indices, {  # type: ignore
-                                    "text": suport.segment.text,  # type: ignore
-                                    "start_index": start_index,
-                                    "end_index": start_index + len(suport.segment.text)# type: ignore
-                                }
-                                )  # type: ignore
-                            )
-                    socketio.emit("updated_msg", msg.jsonify())
-                tokens: int = client.models.count_tokens(
-                    model="gemini-2.0-flash", contents=msg.content).total_tokens or 0
-                if tokens >= 8150*x:
-                    continue  # Recalling AI cz mostlikely max output tokens are reached
-                break
-            msg.time_stamp = datetime.datetime.now()
-            break
+            return generate_content_with_retry(msg)
         except Exception as e:
             if attempt < config.MAX_RETRIES - 1:
-                time.sleep(config.RETRY_DELAY)
+                time.sleep(config.RETRY_DELAY*attempt)
             else:
-                error_message = f"Failed to generate response after multiple retries: {
-                    str(e)}"
-                msg.content = error_message
-                socketio.emit("updated_msg", msg.jsonify())
+                handle_generation_failure(msg, e)
+                return msg
+    return msg
+
+
+def generate_content_with_retry(msg: Message) -> Message:
+    """
+    Generates content from the Gemini model with retry logic for token limits.
+    """
+    x = 0
+    while True:
+        x += 1
+        response = client.models.generate_content_stream(
+            model="gemini-2.0-flash",
+            contents=chat_history.for_ai(msg),
+            config=types.GenerateContentConfig(
+                system_instruction=prompt.SYSTEM_INSTUNCTION,
+                temperature=0.25,
+                max_output_tokens=8192,
+                top_p=0.2,
+                tools=[google_search_tool],
+            )
+        )
+
+        last_content: types.GenerateContentResponse | None = None
+        for content in response:
+            last_content = content
+            if content.text:
+                msg.content += content.text
+                update_chat_with_response(msg)
+
+        if last_content:
+            process_grounding_metadata(msg, last_content)
+
+        tokens: int = client.models.count_tokens(
+            model="gemini-2.0-flash", contents=msg.content).total_tokens or 0
+        if tokens >= 8150 * x:
+            continue  # Recalling AI cz mostlikely max output tokens are reached
+        break
+
+    msg.time_stamp = datetime.datetime.now()
+    return msg
+
+
+def process_grounding_metadata(msg: Message, last_content: types.GenerateContentResponse):
+    """
+    Processes grounding metadata from the AI response.
+    """
+    if last_content.candidates and last_content.candidates[0].grounding_metadata:
+        metadata = last_content.candidates[0].grounding_metadata
+
+        if metadata.search_entry_point:
+            msg.grounding_metadata.rendered_content = metadata.search_entry_point.rendered_content or ""
+
+        if metadata.grounding_chunks:
+            for chunk in metadata.grounding_chunks:
+                if chunk.web:
+                    msg.grounding_metadata.grounding_chuncks.append((chunk.web.title, chunk.web.uri))  # type: ignore
+
+        if metadata.grounding_chunks and metadata.grounding_supports and metadata.web_search_queries:
+            process_grounding_supports(msg, metadata, last_content)
+
+
+def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata, last_content: types.GenerateContentResponse):
+    """
+    Processes grounding support information and updates the message.
+    """
+    first = True
+    for support in metadata.grounding_supports:  # type: ignore
+        start_index = msg.content.find(support.segment.text)  # type: ignore
+        if start_index == -1:
+            continue
+
+        if first:
+            msg.grounding_metadata.first_offset = start_index - support.segment.start_index  # type: ignore
+            first = False
+
+        msg.grounding_metadata.grounding_supports.append(
+            GroundingSupport(support.grounding_chunk_indices, {  # type: ignore
+                "text": support.segment.text,  # type: ignore
+                "start_index": start_index,
+                "end_index": start_index + len(support.segment.text)  # type: ignore
+            })  # type: ignore
+        )
+    update_chat_with_response(msg)
+
+
+def handle_generation_failure(msg: Message, error: Exception):
+    """
+    Handles the failure to generate a response from the AI model.
+    """
+    error_message = f"Failed to generate response after multiple retries: {str(error)}"
+    msg.content = error_message
+    update_chat_with_response(msg)
+
+
+def update_chat_with_response(msg: Message):
+    """
+    Updates the chat history and emits the updated message.
+    """
+    socketio.emit("updated_msg", msg.jsonify())
 
 @app.route('/favicon.ico')
 def favicon():
@@ -430,8 +487,7 @@ def handle_send_message(data):
                 decoded_content, file_type, filename, None, File._generate_valid_video_file_id()))
             del videos[id]
 
-    completeChat(message, file_attachments)
-
+    complete_chat(message, file_attachments)
 
 @socketio.on("get_chat_history")
 def handle_get_chat_history():
