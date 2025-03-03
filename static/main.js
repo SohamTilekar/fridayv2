@@ -9,9 +9,8 @@ const marked = new Marked(
     emptyLangClass: "hljs",
     langPrefix: "hljs language-",
     highlight(code, lang, info) {
-      const language = lang && hljs.getLanguage(lang) ? lang : "plaintext";
-      if (language !== "plaintext")
-        return hljs.highlight(code, { language }).value;
+      const language = lang && hljs.getLanguage(lang) ? lang : null;
+      if (language !== null) return hljs.highlight(code, { language }).value;
       else return hljs.highlightAuto(code).value;
     },
   }),
@@ -96,11 +95,7 @@ function enhanceCodeInlines(scope) {
  * Applies grounding information to the message content.
  */
 function applyGroundingInfo(contentText, groundingMetadata) {
-  if (
-    !groundingMetadata ||
-    !groundingMetadata.grounding_supports ||
-    groundingMetadata.grounding_supports.length === 0
-  ) {
+  if (!groundingMetadata) {
     return contentText;
   }
 
@@ -142,7 +137,7 @@ function applyGroundingInfo(contentText, groundingMetadata) {
       insertIndex = newlineAfter;
     }
     result =
-      result.slice(0, insertIndex) +
+      result.slice(0, insertIndex - 1) +
       groundingMetadata.rendered_content +
       result.slice(insertIndex);
   }
