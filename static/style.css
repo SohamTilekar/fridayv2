@@ -97,7 +97,10 @@ body {
 .grounding-marker {
     background-color: var(--grounding-marker-bg);
     border-radius: 6px;
-    padding: 1px 4px;
+    padding-top: 4px;
+    padding-left: 4.5px;
+    padding-right: 4px;
+    padding-bottom: 1px;
     cursor: pointer;
     position: relative;
 }
@@ -253,6 +256,14 @@ pre {
     margin-left: 0.3125rem;
     margin-right: 0.3125rem;
     border-radius: 0.3125rem;
+}
+
+table,
+th,
+td {
+    border: 1px solid var(--muted);
+    border-collapse: collapse;
+    text-align: center;
 }
 
 /* Scrollbar Styles */
