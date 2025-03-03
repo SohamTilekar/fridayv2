@@ -10,7 +10,9 @@ const marked = new Marked(
     langPrefix: "hljs language-",
     highlight(code, lang, info) {
       const language = lang && hljs.getLanguage(lang) ? lang : "plaintext";
-      return hljs.highlight(code, { language }).value;
+      if (language !== "plaintext")
+        return hljs.highlight(code, { language }).value;
+      else return hljs.highlightAuto(code).value;
     },
   }),
 );
@@ -83,7 +85,9 @@ function enhanceCodeBlocks(scope) {
 function enhanceCodeInlines(scope) {
   scope.querySelectorAll("code").forEach((code) => {
     if (!code.classList.contains("code-block")) {
-      code.classList.add("code-inline");
+      const highlightedCode = hljs.highlightAuto(code.innerText);
+      code.classList.add("code-inline", `language-${highlightedCode.language}`);
+      code.innerHTML = highlightedCode.value;
     }
   });
 }
@@ -137,7 +141,6 @@ function applyGroundingInfo(contentText, groundingMetadata) {
     } else {
       insertIndex = newlineAfter;
     }
-    console.log(insertIndex - firstOffset);
     result =
       result.slice(0, insertIndex) +
       groundingMetadata.rendered_content +
