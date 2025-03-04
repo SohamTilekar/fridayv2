@@ -21,17 +21,13 @@ socketio = SocketIO(app)
 
 client = genai.Client(api_key=config.GOOGLE_API)
 
-google_search_tool = types.Tool(
-    google_search=types.GoogleSearch()
-)
-
 class File:
-    type: str  # mime types
-    content: bytes | str
-    filename: str
+    type: str  # mime types = ""
+    content: bytes | str = b""
+    filename: str = ""
     # whether the current attachment is the summary of the previous attachment
     is_summary: bool = False
-    id: str
+    id: str = ""
     cloud_uri: Optional[types.File] = None  # URI of the file in the cloud
 
     def __init__(self, content: bytes | str, type: str, filename: str, cloud_uri: Optional[types.File] = None, id: Optional[str] = None, is_summary: bool = False):
@@ -151,9 +147,9 @@ class File:
         )
 
 class GroundingSupport:
-    grounding_chunk_indices: list[int]
+    grounding_chunk_indices: list[int] = []
     # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
-    segment: dict[str, int | str]
+    segment: dict[str, int | str] = {}
 
     def __init__(self,
                  grounding_chunk_indices: list[int],
@@ -174,11 +170,11 @@ class GroundingSupport:
         return GroundingSupport(data["grounding_chunk_indices"], data["segment"])
 
 class GroundingMetaData:
-    first_offset: int
-    rendered_content: str
+    first_offset: int = 0
+    rendered_content: str = ""
     # list[tuple[str: title, str: uri]]
-    grounding_chuncks: list[tuple[str, str]]
-    grounding_supports: list[GroundingSupport]
+    grounding_chuncks: list[tuple[str, str]] = []
+    grounding_supports: list[GroundingSupport] = []
 
     def __init__(self,
                  grounding_chuncks: list[tuple[str, str]],
@@ -209,14 +205,32 @@ class GroundingMetaData:
 
 class Message:
     role: Literal["model", "user"]
-    content: str
+    content: str = ""
+    thought: str = ""
+    code_execution_result: list[
+        tuple[
+            # STDOUT
+            str,
+            # Outcome
+            Literal[
+                "OUTCOME_UNSPECIFIED",
+                "OUTCOME_OK",
+                "OUTCOME_FAILED",
+                "OUTCOME_DEADLINE_EXCEEDED"
+            ]
+        ]
+    ] = []
     time_stamp: datetime.datetime
-    attachments: list[File]
-    grounding_metadata: Optional[GroundingMetaData]
-    id: str
+    attachments: list[File] = []
+    grounding_metadata: Optional[GroundingMetaData] = None
+    id: str = ""
     is_summary: bool = False
 
-    def __init__(self, content: str, role: Literal["model", "user"], grounding_metadata: Optional[GroundingMetaData] = None, attachments: Optional[list[File]] = None, time_stamp: Optional[datetime.datetime] = None, is_summary: bool = False, id:Optional[str] = None):
+    def __init__(self, content: str, role: Literal["model", "user"], grounding_metadata: Optional[GroundingMetaData] = None, attachments: Optional[list[File]] = None, time_stamp: Optional[datetime.datetime] = None, is_summary: bool = False, id:Optional[str] = None, thought: str = "", code_execution_result: Optional[list[tuple[
+            # STDOUT
+            str,
+            # Outcome
+            Literal["OUTCOME_UNSPECIFIED", "OUTCOME_OK", "OUTCOME_FAILED", "OUTCOME_DEADLINE_EXCEEDED"]]]] = None):
         self.time_stamp = time_stamp if time_stamp else datetime.datetime.now()
         self.content = content
         self.role = role
@@ -224,6 +238,8 @@ class Message:
         self.attachments = attachments if attachments is not None else []
         self.grounding_metadata = grounding_metadata
         self.is_summary = is_summary
+        self.thought = thought
+        self.code_execution_result = code_execution_result if code_execution_result else []
     def delete(self):
         for file in self.attachments:
             file.delete()
@@ -283,12 +299,13 @@ class Message:
             "time_stamp": self.time_stamp.isoformat(),
             "attachments": [file.jsonify() for file in self.attachments],
             "is_summary": self.is_summary,
+            "thought": self.thought,
+            "code_execution_result": self.code_execution_result
         }
 
     @staticmethod
     def from_jsonify(data: dict):
-        attachments = [File.from_jsonify(file_data)
-                       for file_data in data.get('attachments', [])]
+        attachments = [File.from_jsonify(file_data) for file_data in data.get('attachments', [])]
         return Message(
             data.get('content', ''),
             data.get('role', 'user'),
@@ -296,7 +313,9 @@ class Message:
             attachments,
             datetime.datetime.fromisoformat(data.get("time_stamp", datetime.datetime.now().isoformat())),
             data.get('is_summary', False),
-            data.get('id', "")
+            data.get('id', ""),
+            data.get("thought", ""),
+            data.get("code_execution_result", [])
         )
 
 class ChatHistory:
@@ -449,14 +468,12 @@ def get_ai_response() -> Message:
     """
     # Append a placeholder for the AI reply
     chat_history.append(Message("", "model"))
-    msg_index = len(chat_history) - 1
-    msg = chat_history[msg_index]
+    msg = chat_history[len(chat_history) - 1]
     try:
         return generate_content_with_retry(msg)
     except Exception as e:
         handle_generation_failure(msg, e)
         return msg
-    return msg
 
 def update_chat_with_response(msg: Message):
     """
@@ -475,30 +492,36 @@ def generate_content_with_retry(msg: Message) -> Message:
     while True:
         x += 1
         response = client.models.generate_content_stream(
-            model="gemini-2.0-flash",
+            model=config.CHAT_AI,
             contents=chat_history.for_ai(msg), # type: ignore
             config=types.GenerateContentConfig(
                 system_instruction=prompt.SYSTEM_INSTUNCTION,
-                temperature=0.25,
-                max_output_tokens=8192,
-                top_p=0.2,
-                tools=[google_search_tool],
+                temperature=config.CHAT_AI_TEMP,
+                max_output_tokens=config.MAX_OUTPUT_TOKEN_LIMIT,
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True, maximum_remote_calls=None),
             )
         )
-
         last_content: types.GenerateContentResponse | None = None
         for content in response:
+            # print(content)
             last_content = content
-            if content.text:
-                msg.content += content.text
-                update_chat_with_response(msg)
+            if (content.candidates and content.candidates[0].content and content.candidates[0].content.parts):
+                for part in content.candidates[0].content.parts:
+                    if part.thought and part.text:
+                        msg.thought += part.text
+                    elif part.text:
+                        msg.content += part.text
+                    else:
+                        # print("Focus")
+                        continue
+            update_chat_with_response(msg)
 
         if last_content:
             process_grounding_metadata(msg, last_content)
 
-        tokens: int = client.models.count_tokens(
-            model="gemini-2.0-flash", contents=msg.content).total_tokens or 0
-        if tokens >= 8150 * x:
+        tokens: int = client.models.count_tokens(model=config.CHAT_AI, contents=msg.content).total_tokens or 0
+        if tokens >= config.MAX_OUTPUT_TOKEN_LIMIT * x:
             continue  # Recalling AI cz mostlikely max output tokens are reached
         break
 
@@ -599,7 +622,7 @@ def SummarizeAttachment(AttachmentID: str, MessageID: str):
         )
     ]
     responce = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
+        model=config.SUMMARIZER_AI,
         contents=chat, # type: ignore
         config=types.GenerateContentConfig(
             system_instruction=prompt.ATTACHMENT_SUMMARIZER_SYSTEM_INSTUNCTION,
@@ -637,7 +660,7 @@ def SummarizeMessage(MessageID: str):
         )
     ]
     responce = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
+        model=config.SUMMARIZER_AI,
         contents=chat, # type: ignore
         config=types.GenerateContentConfig(
             system_instruction=prompt.MESSAGE_SUMMARIZER_SYSTEM_INSTUNCTION,
@@ -676,7 +699,7 @@ def SummarizeHistory(StartMessageID: str, EndMessageID: str):
         )
     ]
     responce = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
+        model=config.SUMMARIZER_AI,
         contents=chat, # type: ignore
         config=types.GenerateContentConfig(
             system_instruction=prompt.MESSAGE_HISTORY_SUMMARIZER_SYSTEM_INSTUNCTION,
@@ -739,22 +762,23 @@ def reduceTokensUsage():
         try:
             while True:
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model=config.TOKEN_REDUCER_PLANER,
                     contents=chat, # type: ignore
                     config=types.GenerateContentConfig(
                         system_instruction=prompt.TOKEN_REDUCER_SYSTEM_INSTUNCTION,
                         temperature=0,
                         tools=list(function_map.values()),
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True, maximum_remote_calls=None),
                     ),
                 )
-
-                content = types.Content(role="user")
-                call = False
+                print(response)
+                content = types.Content(role="user", parts=[])
+                didentStop = False
 
                 for part in response.candidates[0].content.parts: # type: ignore
                     if part.function_call:
-                        call = True
+                        print(part.function_call)
+                        didentStop = True
                         function_name = part.function_call.name
                         function = function_map.get(function_name or "")
                         if function:
@@ -769,7 +793,9 @@ def reduceTokensUsage():
                                         )
                                     )
                                 )
+                                print(output)
                             except Exception as e:
+                                print(e)
                                 content.parts.append( # type: ignore
                                     types.Part(
                                         function_response=types.FunctionResponse(
@@ -789,12 +815,13 @@ def reduceTokensUsage():
                                     )
                                 )
                             )
-
+                            print(function_name)
+                    if part.text:
+                        didentStop = True
                 chat = chat_history.for_sumarizer()
                 chat.append(response.candidates[0].content) # type: ignore
                 chat.append(content) # type: ignore
-                print(response)
-                if not call:
+                if not didentStop:
                     break
             return True
         except Exception as e:
