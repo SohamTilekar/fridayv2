@@ -14,6 +14,7 @@ import os
 import base64
 import time
 import datetime
+import utils
 
 app = Flask("Friday")
 socketio = SocketIO(app)
@@ -23,7 +24,6 @@ client = genai.Client(api_key=config.GOOGLE_API)
 google_search_tool = types.Tool(
     google_search=types.GoogleSearch()
 )
-
 
 class File:
     type: str  # mime types
@@ -38,7 +38,6 @@ class File:
         self.content = content
         self.type = type
         self.filename = filename
-        # Use the new method to generate a valid ID
         self.id = str(uuid.uuid4()) if id is None else id
         self.cloud_uri = cloud_uri
         self.is_summary = is_summary
@@ -50,21 +49,15 @@ class File:
     @staticmethod
     def _generate_valid_video_file_id():
         """Generates a valid ID that conforms to the naming requirements."""
-        # Generate a UUID, convert to string, make lowercase, and replace invalid characters with dashes.
         base_id = str(uuid.uuid4()).lower()[:35]
-        # Ensure the ID doesn't start or end with a dash.  Add a prefix if needed.
-        # Remove leading/trailing non-alphanumeric characters
         valid_id = re.sub(r'^[^a-z0-9]+|[^a-z0-9]+$', '', base_id)
-        if not valid_id:
-            # Default ID if the UUID generates an empty string after cleaning.
-            valid_id = "file-id"
         return valid_id
 
     @staticmethod
     def is_expiration_valid(expiration_time: datetime.datetime | None) -> bool:
         if expiration_time is None:
             return True
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(datetime.timezone.utc)
         ten_minutes_from_now = now + datetime.timedelta(minutes=10)
 
         return expiration_time >= ten_minutes_from_now
@@ -75,35 +68,29 @@ class File:
         elif msg is None:
             raise TypeError("msg Paramiter of is not provided")
         if self.type.startswith("text/"):
-            # Decode text files
-            # type: ignore
-            return types.Part.from_text(text=f"\nFile Name: {self.filename}\nFile Content: {self.content.decode('utf-8')}")
+            return types.Part.from_text(text=f"\nFile Name: {self.filename}\nFile Content: {self.content.decode('utf-8')}") # type: ignore
         elif self.type.startswith(("image/", "video/", "application/pdf")):
             # Use cloud URI if available, otherwise upload
             if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
                 return self.cloud_uri  # type: ignore
-
             if self.type.startswith("image/"):
                 prefix = "Processing Image:"
             elif self.type.startswith("video/"):
                 prefix = "Processing Video:"
             else:
                 prefix = "Processing PDF:"
-
             for attempt in range(config.MAX_RETRIES):
                 try:
                     msg.content = f"{prefix} {self.filename}"
                     update_chat_with_response(msg)
-                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={  # type: ignore
-                                                         "display_name": self.filename, "mime_type": self.type})
+                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type})  # type: ignore
                     # Check whether the file is ready to be used.
                     while self.cloud_uri.state.name == "PROCESSING":  # type: ignore
                         time.sleep(1)
                         self.cloud_uri = client.files.get(
                             name=self.cloud_uri.name)  # type: ignore
                     if self.cloud_uri.state.name == "FAILED":  # type: ignore
-                        # type: ignore
-                        raise ValueError(self.cloud_uri.state.name)
+                        raise ValueError(self.cloud_uri.state.name)  # type: ignore
                     msg.content = ""
                     update_chat_with_response(msg)
                     return self.cloud_uri  # type: ignore
@@ -112,21 +99,16 @@ class File:
                         time.sleep(config.RETRY_DELAY)
                     else:
                         raise  # Re-raise the exception to be caught in completeChat
-        raise ValueError(f"Unsported File Type: {
-                         self.type} of file {self.filename}")
+        raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
 
     def for_sumarizer(self) -> list[types.Part]:
         if self.is_summary:
             return [self.for_ai()]
         if self.type.startswith("text/"):
-            # Decode text files
-            # type: ignore
-            return [types.Part.from_text(text=f"\nname: {self.filename}\nid: {self.id}\nFile_Content: {self.content.decode('utf-8')}")]
+            return [types.Part.from_text(text=f"\nname: {self.filename}\nid: {self.id}\nFile_Content: {self.content.decode('utf-8')}")]  # type: ignore
         elif self.type.startswith(("image/", "video/", "application/pdf")):
-            # Use cloud URI if available, otherwise upload
             if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
-                # type: ignore
-                return [types.Part.from_text(text=f"\nFileID: {self.id}"), self.cloud_uri]
+                return [types.Part.from_text(text=f"\nFileID: {self.id}"), self.cloud_uri]  # type: ignore
             for attempt in range(config.MAX_RETRIES):
                 try:
                     self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={  # type: ignore
@@ -137,24 +119,20 @@ class File:
                         self.cloud_uri = client.files.get(
                             name=self.cloud_uri.name)  # type: ignore
                     if self.cloud_uri.state.name == "FAILED":  # type: ignore
-                        # type: ignore
-                        raise ValueError(self.cloud_uri.state.name)
-                    # type: ignore
-                    return [types.Part.from_text(text=f"\nFileID: {self.id}"), self.cloud_uri]
+                        raise ValueError(self.cloud_uri.state.name)  # type: ignore
+                    return [types.Part.from_text(text=f"\nFileID: {self.id}"), self.cloud_uri]  # type: ignore
                 except Exception:
                     if attempt < config.MAX_RETRIES - 1:
                         time.sleep(config.RETRY_DELAY)
                     else:
                         raise  # Re-raise the exception to be caught in completeChat
-        raise ValueError(f"Unsported File Type: {
-                         self.type} of file {self.filename}")
+        raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
 
     def jsonify(self) -> dict:
         return {
             "type": self.type,
             "filename": self.filename,
-            # type: ignore
-            "content": base64.b64encode(self.content).decode('utf-8', errors='ignore'),
+            "content": base64.b64encode(self.content).decode('utf-8', errors='ignore'),  # type: ignore
             "id": self.id,
             "is_summary": self.is_summary,
             "cloud_uri": self.cloud_uri.to_json_dict() if self.cloud_uri else None
@@ -167,12 +145,10 @@ class File:
             content,
             data.get('type', ''),
             data.get('filename', ''),
-            types.File.model_validate(data.get('cloud_uri')) if data.get(
-                'cloud_uri') else None,
+            types.File.model_validate(data.get('cloud_uri')) if data.get('cloud_uri') else None,
             data.get('id', ''),
             data.get('is_summary', False)
         )
-
 
 class GroundingSupport:
     grounding_chunk_indices: list[int]
@@ -196,7 +172,6 @@ class GroundingSupport:
     @staticmethod
     def from_jsonify(data: dict):
         return GroundingSupport(data["grounding_chunk_indices"], data["segment"])
-
 
 class GroundingMetaData:
     first_offset: int
@@ -232,13 +207,12 @@ class GroundingMetaData:
                                  data["first_offset"],
                                  data.get("rendered_content", ""))
 
-
 class Message:
     role: Literal["model", "user"]
     content: str
     time_stamp: datetime.datetime
     attachments: list[File]
-    grounding_metadata: GroundingMetaData
+    grounding_metadata: Optional[GroundingMetaData]
     id: str
     is_summary: bool = False
 
@@ -248,8 +222,7 @@ class Message:
         self.role = role
         self.id = str(uuid.uuid4()) if id is None else id
         self.attachments = attachments if attachments is not None else []
-        self.grounding_metadata = grounding_metadata if grounding_metadata else GroundingMetaData([
-        ], [])
+        self.grounding_metadata = grounding_metadata
         self.is_summary = is_summary
     def delete(self):
         for file in self.attachments:
@@ -305,7 +278,7 @@ class Message:
         return {
             "role": self.role,
             "content": self.content,
-            "grounding_metadata": self.grounding_metadata.jsonify(),
+            "grounding_metadata": self.grounding_metadata.jsonify() if self.grounding_metadata else None,
             "id": self.id,
             "time_stamp": self.time_stamp.isoformat(),
             "attachments": [file.jsonify() for file in self.attachments],
@@ -319,14 +292,12 @@ class Message:
         return Message(
             data.get('content', ''),
             data.get('role', 'user'),
-            GroundingMetaData.from_jsonify(data.get("grounding_metadata", {})),
+            GroundingMetaData.from_jsonify(data.get("grounding_metadata", None)) if data.get("grounding_metadata", None) else None,
             attachments,
-            datetime.datetime.fromisoformat(
-                data.get("time_stamp", datetime.datetime.now().isoformat())),
+            datetime.datetime.fromisoformat(data.get("time_stamp", datetime.datetime.now().isoformat())),
             data.get('is_summary', False),
             data.get('id', "")
         )
-
 
 class ChatHistory:
     chat: list[Message] = []
@@ -411,14 +382,14 @@ class ChatHistory:
                 idx += 1
             raise ValueError(f"Message of ID: `{Start_ID}` not found")
 
-    def for_ai(self, ai_msg: Message) -> types.ContentListUnion:
-        result: types.ContentListUnion = []
+    def for_ai(self, ai_msg: Message) -> list[types.Content]:
+        result: list[types.Content] = []
         for msg in self.chat:
             result.append(msg.for_ai(ai_msg))
         return result
 
-    def for_sumarizer(self) -> types.ContentListUnion:
-        result: types.ContentListUnion = []
+    def for_sumarizer(self) -> list[types.Content]:
+        result: list[types.Content] = []
         for msg in self.chat:
             result.append(msg.for_sumarizer())
         return result
@@ -447,8 +418,9 @@ class ChatHistory:
             print("Error decoding chat history. Starting with an empty chat.")
 
 
-chat_history: ChatHistory = ChatHistory()
+# Chat History Management
 
+chat_history: ChatHistory = ChatHistory()
 
 def complete_chat(message: str, files: Optional[list[File]] = None):
     """
@@ -467,11 +439,9 @@ def complete_chat(message: str, files: Optional[list[File]] = None):
     if ai_response:
         update_chat_with_response(ai_response)
 
-
 def append_user_message(message: str, files: list[File]):
     """Appends the user's message and files to the chat history."""
     chat_history.append(Message(message, "user", None, files))
-
 
 def get_ai_response() -> Message:
     """
@@ -481,19 +451,22 @@ def get_ai_response() -> Message:
     chat_history.append(Message("", "model"))
     msg_index = len(chat_history) - 1
     msg = chat_history[msg_index]
-
-    for attempt in range(config.MAX_RETRIES):
-        try:
-            return generate_content_with_retry(msg)
-        except Exception as e:
-            if attempt < config.MAX_RETRIES - 1:
-                time.sleep(config.RETRY_DELAY*attempt)
-            else:
-                handle_generation_failure(msg, e)
-                return msg
+    try:
+        return generate_content_with_retry(msg)
+    except Exception as e:
+        handle_generation_failure(msg, e)
+        return msg
     return msg
 
+def update_chat_with_response(msg: Message):
+    """
+    Updates the chat history and emits the updated message.
+    """
+    socketio.emit("updated_msg", msg.jsonify())
 
+
+# Gemini Model Interaction
+@utils.retry()
 def generate_content_with_retry(msg: Message) -> Message:
     """
     Generates content from the Gemini model with retry logic for token limits.
@@ -503,7 +476,7 @@ def generate_content_with_retry(msg: Message) -> Message:
         x += 1
         response = client.models.generate_content_stream(
             model="gemini-2.0-flash",
-            contents=chat_history.for_ai(msg),
+            contents=chat_history.for_ai(msg), # type: ignore
             config=types.GenerateContentConfig(
                 system_instruction=prompt.SYSTEM_INSTUNCTION,
                 temperature=0.25,
@@ -532,14 +505,14 @@ def generate_content_with_retry(msg: Message) -> Message:
     msg.time_stamp = datetime.datetime.now()
     return msg
 
-
 def process_grounding_metadata(msg: Message, last_content: types.GenerateContentResponse):
     """
     Processes grounding metadata from the AI response.
     """
     if last_content.candidates and last_content.candidates[0].grounding_metadata:
         metadata = last_content.candidates[0].grounding_metadata
-
+        if msg.grounding_metadata is None:
+            msg.grounding_metadata = GroundingMetaData([], [])
         if metadata.search_entry_point:
             msg.grounding_metadata.rendered_content = metadata.search_entry_point.rendered_content or ""
 
@@ -552,11 +525,12 @@ def process_grounding_metadata(msg: Message, last_content: types.GenerateContent
         if metadata.grounding_chunks and metadata.grounding_supports and metadata.web_search_queries:
             process_grounding_supports(msg, metadata, last_content)
 
-
 def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata, last_content: types.GenerateContentResponse):
     """
     Processes grounding support information and updates the message.
     """
+    if msg.grounding_metadata is None:
+        msg.grounding_metadata = GroundingMetaData([], [])
     first = True
     for support in metadata.grounding_supports:  # type: ignore
         start_index = msg.content.find(support.segment.text)  # type: ignore
@@ -564,6 +538,7 @@ def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata, 
             escaped_target = re.escape(msg.content)
             # Create a regex pattern that allows for extra spaces and minor variations
             # Allow any amount of whitespace between chars
+            # cz Gemini Grounding Suks
             pattern = r'\s*'.join(list(escaped_target))
             match = re.search(
                 pattern, support.segment.text or "")  # type: ignore
@@ -582,12 +557,10 @@ def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata, 
             GroundingSupport(support.grounding_chunk_indices, {  # type: ignore
                 "text": support.segment.text,  # type: ignore
                 "start_index": start_index,
-                # type: ignore
-                "end_index": start_index + len(support.segment.text)
+                "end_index": start_index + len(support.segment.text) # type: ignore
             })  # type: ignore
         )
     update_chat_with_response(msg)
-
 
 def handle_generation_failure(msg: Message, error: Exception):
     """
@@ -599,163 +572,127 @@ def handle_generation_failure(msg: Message, error: Exception):
     update_chat_with_response(msg)
 
 
-def update_chat_with_response(msg: Message):
-    """
-    Updates the chat history and emits the updated message.
-    """
-    socketio.emit("updated_msg", msg.jsonify())
+# Token Reduction (Summarization/Removal)
 
-
+@utils.retry()
 def SummarizeAttachment(AttachmentID: str, MessageID: str):
     """\
     Summarizes the content of a specific attachment, linking the summary to the original attachment and message.
     Use this for attachments that are no longer actively referenced but might contain valuable background information.
     """
     print(f"SummarizeAttachment: {AttachmentID=}, {MessageID=}")
-    for tri in range(config.MAX_RETRIES):
-        try:
-            chat: types.ContentListUnion = [
-                types.Content(
-                    role="user",
-                    parts=[
-                        *chat_history.getMsg(MessageID).getAttachment(AttachmentID).for_sumarizer(),
-                        types.Part.from_text(
-                            text="Sumarize the Above File Attachment While Preserving the Details, Facts")
-                    ]
-                ),
-                types.Content(
-                    role="model",
-                    parts=[
-                        types.Part.from_text(
-                            text="Attachment summary:\n")
-                    ]
-                )
+    chat: list[types.Content] = [
+        types.Content(
+            role="user",
+            parts=[
+                *chat_history.getMsg(MessageID).getAttachment(AttachmentID).for_sumarizer(),
+                types.Part.from_text(
+                    text="Sumarize the Above File Attachment While Preserving the Details, Facts")
             ]
-            responce = client.models.generate_content(
-                model="gemini-2.0-flash-lite",
-                contents=chat,
-                config=types.GenerateContentConfig(
-                    system_instruction=prompt.ATTACHMENT_SUMMARIZER_SYSTEM_INSTUNCTION,
-                    temperature=0,
-                )
-            )
-            file = chat_history.getMsg(MessageID).getAttachment(AttachmentID)
-            file.is_summary = True
-            if responce.text:
-                file.content = responce.text
-                print(f"Summarized Attachment: {AttachmentID=}, {MessageID=}")
-                return f"Summarized Attachment: {AttachmentID=}, {MessageID=}"
-            print(f" dident Summarized Attachment: {AttachmentID=}, {MessageID=}")
-            return f" dident Summarized Attachment: {AttachmentID=}, {MessageID=}"
-        except Exception as e:
-            if config.MAX_RETRIES - 1 > tri:
-                print("Attempt: ", tri, "Fail: ", e)
-                continue
-            else:
-                return str(e)
-    return ""
+        ),
+        types.Content(
+            role="model",
+            parts=[
+                types.Part.from_text(
+                    text="Attachment summary:\n")
+            ]
+        )
+    ]
+    responce = client.models.generate_content(
+        model="gemini-2.0-flash-lite",
+        contents=chat, # type: ignore
+        config=types.GenerateContentConfig(
+            system_instruction=prompt.ATTACHMENT_SUMMARIZER_SYSTEM_INSTUNCTION,
+            temperature=0,
+        )
+    )
+    file = chat_history.getMsg(MessageID).getAttachment(AttachmentID)
+    file.is_summary = True
+    if responce.text:
+        file.content = responce.text
+        return f"Summarized Attachment: {AttachmentID=}, {MessageID=}"
+    return f" dident Summarized Attachment: {AttachmentID=}, {MessageID=}"
 
+@utils.retry()
 def SummarizeMessage(MessageID: str):
     """\
     Summarizes the content of a specific message with its attachments.
     Use this for verbose or lengthy messages that contain information that can be condensed without losing critical meaning.
     """
-    for tri in range(config.MAX_RETRIES):
-        try:
-            chat: types.ContentListUnion = [
-                chat_history.getMsg(MessageID).for_sumarizer(),
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(
-                            text="Sumarize the Above Message with its Attachment While Preserving the Details, Facts")
-                    ]
-                ),
-                types.Content(
-                    role="model",
-                    parts=[
-                        types.Part.from_text(
-                            text="Message with its attachment summary:\n")
-                    ]
-                )
+    chat: list[types.Content] = [
+        chat_history.getMsg(MessageID).for_sumarizer(),
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(
+                    text="Sumarize the Above Message with its Attachment While Preserving the Details, Facts")
             ]
-            responce = client.models.generate_content(
-                model="gemini-2.0-flash-lite",
-                contents=chat,
-                config=types.GenerateContentConfig(
-                    system_instruction=prompt.MESSAGE_SUMMARIZER_SYSTEM_INSTUNCTION,
-                    temperature=0,
-                )
-            )
-            msg = chat_history.getMsg(MessageID)
-            msg.is_summary = True
-            if responce.text:
-                msg.content = responce.text
-                print("Sumarized message " + MessageID)
-                return "Sumarized message " + MessageID
-            print("dident Summarized message " + MessageID)
-            return "dident Summarized message " + MessageID
-        except Exception as e:
-            if config.MAX_RETRIES - 1 > tri:
-                print("Attempt: ", tri, "Fail: ", e)
-                continue
-            else:
-                return str(e)
-    return ""
+        ),
+        types.Content(
+            role="model",
+            parts=[
+                types.Part.from_text(
+                    text="Message with its attachment summary:\n")
+            ]
+        )
+    ]
+    responce = client.models.generate_content(
+        model="gemini-2.0-flash-lite",
+        contents=chat, # type: ignore
+        config=types.GenerateContentConfig(
+            system_instruction=prompt.MESSAGE_SUMMARIZER_SYSTEM_INSTUNCTION,
+            temperature=0,
+        )
+    )
+    msg = chat_history.getMsg(MessageID)
+    msg.is_summary = True
+    if responce.text:
+        msg.content = responce.text
+        return "Sumarized message " + MessageID
+    return "dident Summarized message " + MessageID
 
+@utils.retry()
 def SummarizeHistory(StartMessageID: str, EndMessageID: str):
     """\
     Summarizes a range of messages within StartMessageID & EndMessageID ( Including StartMessageID & EndMessageID).
     Use this for older conversations that are no longer directly relevant but provide useful context.
     """
-    for tri in range(config.MAX_RETRIES):
-        try:
-            chat: types.ContentListUnion = [
-                *(msg.for_sumarizer()
-                  for msg in chat_history.getMsgRange(StartMessageID, EndMessageID)),
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(
-                            text="Sumarize the Above Messages with its Attachment While Preserving the Details, Facts")
-                    ]
-                ),
-                types.Content(
-                    role="model",
-                    parts=[
-                        types.Part.from_text(
-                            text="Message & its attachment History summary:\n")
-                    ]
-                )
+    chat: list[types.Content] = [
+        *(msg.for_sumarizer()
+            for msg in chat_history.getMsgRange(StartMessageID, EndMessageID)),
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(
+                    text="Sumarize the Above Messages with its Attachment While Preserving the Details, Facts")
             ]
-            responce = client.models.generate_content(
-                model="gemini-2.0-flash-lite",
-                contents=chat,
-                config=types.GenerateContentConfig(
-                    system_instruction=prompt.MESSAGE_HISTORY_SUMMARIZER_SYSTEM_INSTUNCTION,
-                    temperature=0,
-                )
-            )
-            if responce.text:
-                chat_history.replaceMsgRange(StartMessageID, EndMessageID, Message(responce.text, "user"))
-                print(f"Success Fully Sumarize messages from {StartMessageID} to {EndMessageID}")
-                return f"Success Fully Sumarize messages from {StartMessageID} to {EndMessageID}"
-            print(f"dident Sumarize messages from {StartMessageID} to {EndMessageID}")
-            return f"dident Sumarize messages from {StartMessageID} to {EndMessageID}"
-        except Exception as e:
-            if config.MAX_RETRIES - 1 > tri:
-                print("Attempt: ", tri, "Fail: ", e)
-                continue
-            else:
-                return str(e)
-    return ""
+        ),
+        types.Content(
+            role="model",
+            parts=[
+                types.Part.from_text(
+                    text="Message & its attachment History summary:\n")
+            ]
+        )
+    ]
+    responce = client.models.generate_content(
+        model="gemini-2.0-flash-lite",
+        contents=chat, # type: ignore
+        config=types.GenerateContentConfig(
+            system_instruction=prompt.MESSAGE_HISTORY_SUMMARIZER_SYSTEM_INSTUNCTION,
+            temperature=0,
+        )
+    )
+    if responce.text:
+        chat_history.replaceMsgRange(StartMessageID, EndMessageID, Message(responce.text, "user"))
+        return f"Success Fully Sumarize messages from {StartMessageID} to {EndMessageID}"
+    return f"dident Sumarize messages from {StartMessageID} to {EndMessageID}"
 
 def RemoveAttachment(AttachmentID: str, MessageID: str):
     """\
     Removes a specific attachment from a message.
     Use this for attachments that are clearly irrelevant to the current conversation or have become obsolete.
     """
-    print(f"RemoveAttachment: {AttachmentID=}, {MessageID=}")
     chat_history.getMsg(MessageID).deleteAttachment(AttachmentID)
     return f"RemoveAttachment: {AttachmentID=}, {MessageID=}"
 
@@ -765,7 +702,6 @@ def RemoveMessage(MessageID: str):
     Use this sparingly and only for messages that are demonstrably irrelevant and contribute little to the overall context.
     If user ask AI about some thing & the curent chat is irrelivant to it then use it, like user ask what is xyz & no longer relivant
     """
-    print(f"RemoveAttachment: {MessageID=}")
     chat_history.delete_message(MessageID)
     return f"RemoveAttachment: {MessageID=}"
 
@@ -774,31 +710,107 @@ def RemoveMessageHistory(StartMessageID: str, EndMessageID: str):
     Removes a range of messages whith & after StartMessageID & whith & before EndMessageID.
     Use this for older conversations that are demonstrably irrelevant and contribute little to the overall context.
     """
-    print(f"RemoveAttachment: {StartMessageID=}, {EndMessageID=}")
     chat_history.delMsgRange(StartMessageID, EndMessageID)
     return f"RemoveAttachment: {StartMessageID=}, {EndMessageID=}"
 
 
-@app.route('/favicon.ico')
-def favicon():
-    return redirect(url_for('static', filename='favicon.ico'), code=302)
+# SocketIO Event Handlers
 
-# Render the main chat frontend
+@socketio.on("srink_chat")
+def reduceTokensUsage():
+    """Reduces token usage of the chat history, with retry logic.
 
+    Returns:
+        bool: True on success, False on failure.
+    """
+    chat = chat_history.for_sumarizer()
+    chat.append(types.Content(parts=[types.Part(text=prompt.TOKEN_REDUCER_USER_INSTUNCTION)], role="user"))
 
-@app.route('/')
-def root():
-    return render_template('index.html')
+    function_map = {
+        "SummarizeAttachment": SummarizeAttachment,
+        "SummarizeMessage": SummarizeMessage,
+        "SummarizeHistory": SummarizeHistory,
+        "RemoveAttachment": RemoveAttachment,
+        "RemoveMessage": RemoveMessage,
+        "RemoveMessageHistory": RemoveMessageHistory,
+    }
 
+    for attempt in range(config.MAX_RETRIES):
+        try:
+            while True:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=chat, # type: ignore
+                    config=types.GenerateContentConfig(
+                        system_instruction=prompt.TOKEN_REDUCER_SYSTEM_INSTUNCTION,
+                        temperature=0,
+                        tools=list(function_map.values()),
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                    ),
+                )
+
+                content = types.Content(role="user")
+                call = False
+
+                for part in response.candidates[0].content.parts: # type: ignore
+                    if part.function_call:
+                        call = True
+                        function_name = part.function_call.name
+                        function = function_map.get(function_name or "")
+                        if function:
+                            try:
+                                output = function(*part.function_call.args)
+                                content.parts.append( # type: ignore
+                                    types.Part(
+                                        function_response=types.FunctionResponse(
+                                            id=part.function_call.id,
+                                            name=function_name,
+                                            response={"output": output},
+                                        )
+                                    )
+                                )
+                            except Exception as e:
+                                content.parts.append( # type: ignore
+                                    types.Part(
+                                        function_response=types.FunctionResponse(
+                                            id=part.function_call.id,
+                                            name=function_name,
+                                            response={"error": e},
+                                        )
+                                    )
+                                )
+                        else:
+                            content.parts.append( # type: ignore
+                                types.Part(
+                                    function_response=types.FunctionResponse(
+                                        id=part.function_call.id,
+                                        name=function_name,
+                                        response={"error": f"Unknown Function: {function_name}"},
+                                    )
+                                )
+                            )
+
+                chat = chat_history.for_sumarizer()
+                chat.append(response.candidates[0].content) # type: ignore
+                chat.append(content) # type: ignore
+                print(response)
+                if not call:
+                    break
+            return True
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt < config.MAX_RETRIES - 1:
+                time.sleep(attempt * config.RETRY_DELAY)
+            else:
+                print("Max retries reached. Failed to reduce token usage.")
+                return False
 
 # ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
 videos: dict[str, tuple[dict[int, str], bool]] = {}
 
-
 @socketio.on("start_upload_video")
 def start_upload_video(id: str):
     videos[id] = ({}, False)
-
 
 @socketio.on("upload_video_chunck")
 def upload_video_chunck(data: dict[str, str | int]):
@@ -807,11 +819,9 @@ def upload_video_chunck(data: dict[str, str | int]):
     idx: int = data["idx"]  # type: ignore
     videos[id][0][idx] = chunck
 
-
 @socketio.on("end_upload_video")
 def end_upload_video(id: str):
     videos[id] = (videos[id][0], True)
-
 
 @socketio.on("send_message")
 def handle_send_message(data):
@@ -846,11 +856,9 @@ def handle_send_message(data):
 
     complete_chat(message, file_attachments)
 
-
 @socketio.on("get_chat_history")
 def handle_get_chat_history():
     socketio.emit("chat_update", chat_history.jsonify())
-
 
 @socketio.on("delete_message")
 def handle_delete_message(data):
@@ -859,196 +867,15 @@ def handle_delete_message(data):
     socketio.emit("chat_update", chat_history.jsonify())
 
 
-@socketio.on("srink_chat")
-def reduceTokensUsage():
-    """Reduces token usage of the chat history, with retry logic.
+# Flask Routes
 
-    Returns:
-        bool: True on success, False on failure.
-    """
-    chat = chat_history.for_sumarizer()
-    chat.append(types.Content(parts=[types.Part(text=prompt.TOKEN_REDUCER_USER_INSTUNCTION)], role="user"))  # type: ignore
-    print(chat)
-    for attempt in range(config.MAX_RETRIES):
-        try:
-            while True:
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=chat,
-                    config=types.GenerateContentConfig(
-                        system_instruction=prompt.TOKEN_REDUCER_SYSTEM_INSTUNCTION,
-                        temperature=0,
-                        tools=[
-                            SummarizeAttachment,
-                            SummarizeMessage,
-                            SummarizeHistory,
-                            RemoveAttachment,
-                            RemoveMessage,
-                            RemoveMessageHistory
-                        ],
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                            disable=True
-                        ),
-                    )
-                )
-                content = types.Content(role="user")  # type: ignore
-                call: bool = False
-                for part in content.parts:  # type: ignore
-                    call = True
-                    if part.function_call:
-                        if part.function_call.name == "SummarizeAttachment":
-                            try:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="SummarizeAttachment",
-                                            response={"output": SummarizeAttachment(*part.function_call.args)} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                            except Exception as e:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="SummarizeAttachment",
-                                            response={"output": e} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                        elif part.function_call.name == "SummarizeMessage":
-                            try:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="SummarizeMessage",
-                                            response={"output": SummarizeMessage(*part.function_call.args)} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                            except Exception as e:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="SummarizeMessage",
-                                            response={"output": e} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                        elif part.function_call.name == "SummarizeHistory":
-                            try:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="SummarizeHistory",
-                                            response={"output": SummarizeHistory(*part.function_call.args)} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                            except Exception as e:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="SummarizeHistory",
-                                            response={"output": e} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                        elif part.function_call.name == "RemoveAttachment":
-                            try:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="RemoveAttachment",
-                                            response={"output": RemoveAttachment(*part.function_call.args)} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                            except Exception as e:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="RemoveAttachment",
-                                            response={"output": e} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                        elif part.function_call.name == "RemoveMessage":
-                            try:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="RemoveMessage",
-                                            response={"output": RemoveMessage(*part.function_call.args)} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                            except Exception as e:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="RemoveMessage",
-                                            response={"output": e} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                        elif part.function_call.name == "RemoveMessageHistory":
-                            try:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="RemoveMessageHistory",
-                                            response={"output": RemoveMessageHistory(*part.function_call.args)} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                            except Exception as e:
-                                content.parts.append( # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name="RemoveMessageHistory",
-                                            response={"output": e} # type: ignore
-                                        )
-                                    )
-                                )  # type: ignore
-                        else:
-                            content.parts.append( # type: ignore
-                                types.Part(
-                                    function_response=types.FunctionResponse(
-                                        id=part.function_call.id,
-                                        name=part.function_call.name,
-                                        response={"output": f"Unknown Function of name {part.function_call.name}"} # type: ignore
-                                    )
-                                )
-                            )  # type: ignore
-                chat = chat_history.for_sumarizer()
-                chat.append(response.candidates[0].content)  # type: ignore
-                chat.append(content)  # type: ignore
-                print(response)
-                if call:
-                    continue
-                else:
-                    break
-            return True  # Return True on success
-        except Exception as e:
-            print(f"Attempt {attempt + 1} failed: ", e)
-            if attempt < config.MAX_RETRIES - 1:
-                time.sleep(attempt*config.RETRY_DELAY)  # Wait before retrying
-            else:
-                print("Max retries reached. Failed to reduce token usage.")
-                return False  # Return False on failure
+@app.route('/favicon.ico')
+def favicon():
+    return redirect(url_for('static', filename='favicon.ico'), code=302)
 
+@app.route('/')
+def root():
+    return render_template('index.html')
 
 if __name__ == "__main__":
     chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
