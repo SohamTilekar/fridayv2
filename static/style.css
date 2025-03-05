@@ -1,4 +1,20 @@
-/* static/style.css */
+/* style.css */
+
+/* -------------------------------------------------------------------------- */
+/* CSS Reset and Base Styles */
+/* -------------------------------------------------------------------------- */
+
+body {
+    height: 100%;
+    margin: 0;
+    scroll-behavior: smooth;
+    background-color: var(--background);
+    color: var(--foreground);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Theme Colors */
+/* -------------------------------------------------------------------------- */
 
 :root {
     /* Primary Theme Colors */
@@ -39,24 +55,42 @@
     --scrollbar-thumb-end: #ff758c;
 }
 
-body {
-    height: 100%;
-    margin: 0;
-    scroll-behavior: smooth;
-    background-color: var(--background); /* Apply background color */
-    color: var(--foreground); /* Apply default text color */
-}
-
-.file-upload {
-    display: flex; /* Enable flexbox */
-    align-items: center; /* Vertically center the content */
-}
+/* -------------------------------------------------------------------------- */
+/* Layout Components */
+/* -------------------------------------------------------------------------- */
 
 .chat-container {
     display: flex;
     flex-direction: column;
     height: 100vh;
 }
+
+/* Custom CSS for the panel */
+.right-panel {
+    position: fixed;
+    top: 0;
+    right: -300px;
+    /* Initially hidden */
+    width: 300px;
+    height: 100%;
+    background-color: #343a40;
+    /* Adjust as needed */
+    color: white;
+    padding: 20px;
+    transition: right 0.3s ease-in-out;
+    z-index: 1050;
+    /* Ensure it's above other elements */
+    overflow-y: auto;
+    /* Enable scrolling if content overflows */
+}
+
+.right-panel.show {
+    right: 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Chat Components */
+/* -------------------------------------------------------------------------- */
 
 #chat-box {
     flex: 1;
@@ -71,6 +105,24 @@ body {
     border-radius: 0.375rem;
     align-items: center;
 }
+
+#message-input {
+    resize: vertical;
+    overflow: auto;
+    white-space: pre-wrap;
+    background-color: #343a40;
+    color: var(--foreground);
+    border: none; /* Remove default border */
+}
+
+#message-input:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Message Styles */
+/* -------------------------------------------------------------------------- */
 
 .message {
     margin-bottom: var(--margin-bottom);
@@ -93,101 +145,9 @@ body {
     max-width: 70%;
 }
 
-/* Grounding Marker Styles */
-.grounding-marker {
-    background-color: var(--grounding-marker-bg);
-    border-radius: 6px;
-    padding-top: 4px;
-    padding-left: 4.5px;
-    padding-right: 4px;
-    padding-bottom: 1px;
-    cursor: pointer;
-    position: relative;
-}
-
-.grounding-tooltip {
-    position: absolute;
-    background-color: var(--grounding-tooltip-bg);
-    border: 1px solid var(--grounding-tooltip-border);
-    border-radius: var(--border-radius);
-    padding: var(--padding-md);
-    z-index: 1000;
-    max-width: 300px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.tooltip-title {
-    font-weight: bold;
-    margin-bottom: 0.5rem;
-    color: var(--grounding-marker-border);
-}
-
-/* .source-link {
-    color: var(--primary);
-    text-decoration: none;
-    display: block;
-    margin-bottom: 0.25rem;
-}
-
-.source-link:hover {
-    text-decoration: underline;
-} */
-
-#message-input {
-    resize: vertical;
-    overflow: auto;
-    white-space: pre-wrap;
-    background-color: #343a40;
-    color: var(--foreground);
-    border: none; /* Remove default border */
-}
-
-#message-input:focus {
-    outline: none;
-    box-shadow: none;
-}
-
-#send-button {
-    border: none;
-    border-radius: var(--border-radius);
-    transition: background-color 0.2s ease;
-    background-color: var(--primary);
-    color: var(--foreground);
-    padding: var(--padding-sm) var(--padding-md); /* Add padding for better look */
-}
-
-#file-display-area {
-    display: flex;
-    flex-wrap: wrap;
-}
-
-.file-box {
-    display: flex;
-    align-items: center;
-    background-color: #495057; /* Darker background */
-    color: #fff;
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.375rem;
-    margin-right: 0.5rem;
-    margin-bottom: 0.5rem;
-}
-
-.file-box span {
-    margin-right: 0.5rem;
-}
-
-.delete-file-button {
-    background-color: transparent;
-    border: none;
-    color: #fff;
-    cursor: pointer;
-    font-size: 1rem;
-    padding: 0;
-}
-
-.delete-file-button:hover {
-    color: #f00; /* Red on hover */
-}
+/* -------------------------------------------------------------------------- */
+/* Code Styles */
+/* -------------------------------------------------------------------------- */
 
 pre {
     background: var(--code-background) !important;
@@ -221,9 +181,91 @@ pre {
     color: var(--muted);
 }
 
+/* -------------------------------------------------------------------------- */
+/* File Upload Styles */
+/* -------------------------------------------------------------------------- */
+
+.file-upload {
+    display: flex; /* Enable flexbox */
+    align-items: center; /* Vertically center the content */
+}
+
+#file-display-area {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.file-box {
+    display: flex;
+    align-items: center;
+    background-color: #495057; /* Darker background */
+    color: #fff;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.file-box span {
+    margin-right: 0.5rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Grounding Marker Styles */
+/* -------------------------------------------------------------------------- */
+
+.grounding-marker {
+    background-color: var(--grounding-marker-bg);
+    border-radius: 6px;
+    padding-top: 4px;
+    padding-left: 4.5px;
+    padding-right: 4px;
+    padding-bottom: 1px;
+    cursor: pointer;
+    position: relative;
+}
+
+.grounding-tooltip {
+    position: absolute;
+    background-color: var(--grounding-tooltip-bg);
+    border: 1px solid var(--grounding-tooltip-border);
+    border-radius: var(--border-radius);
+    padding: var(--padding-md);
+    z-index: 1000;
+    max-width: 300px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.tooltip-title {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    color: var(--grounding-marker-border);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Utility Styles */
+/* -------------------------------------------------------------------------- */
+
+.timestamp {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-left: 0.625rem;
+}
+
+#vertical-separator {
+    background-color: #242424;
+    width: 4px;
+    height: 100%;
+    margin-left: 0.3125rem;
+    margin-right: 0.3125rem;
+    border-radius: 0.3125rem;
+}
+
 .copy-code-btn,
 .copy-msg-btn,
-.delete-msg-btn {
+.delete-msg-btn,
+.delete-file-button,
+.close-panel-button {
     border: none;
     border-radius: 0.25rem;
     background-color: var(--code-background);
@@ -237,26 +279,29 @@ pre {
     margin-left: 0.625rem;
 }
 
-.timestamp {
-    font-size: 0.75rem;
-    color: var(--muted);
-    margin-left: 0.625rem;
+.delete-file-button {
+    background-color: transparent;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0;
 }
 
-.lang-label {
-    font-size: 0.75rem;
-    font-weight: bold;
-    color: var(--muted);
+.delete-file-button:hover {
+    color: #f00; /* Red on hover */
 }
 
-#vertical-separator {
-    background-color: #242424;
-    width: 4px;
-    height: 100%;
-    margin-left: 0.3125rem;
-    margin-right: 0.3125rem;
-    border-radius: 0.3125rem;
+.panel-button {
+    margin-bottom: 10px;
+    /* Add some spacing between buttons */
+    width: 100%;
+    /* Make buttons fill the panel width */
 }
+
+/* -------------------------------------------------------------------------- */
+/* Table Styles */
+/* -------------------------------------------------------------------------- */
 
 table,
 th,
@@ -266,7 +311,10 @@ td {
     text-align: center;
 }
 
+/* -------------------------------------------------------------------------- */
 /* Scrollbar Styles */
+/* -------------------------------------------------------------------------- */
+
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -286,7 +334,10 @@ td {
     border-radius: 0.625rem;
 }
 
+/* -------------------------------------------------------------------------- */
 /* Thinking Loader Styles */
+/* -------------------------------------------------------------------------- */
+
 .thinking-loader {
     display: flex;
     align-items: center;

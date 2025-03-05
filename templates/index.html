@@ -22,52 +22,9 @@
         crossorigin="anonymous" defer></script>
     <!-- Socket.IO client library -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <style>
-        /* Custom CSS for the panel */
-        .right-panel {
-            position: fixed;
-            top: 0;
-            right: -300px;
-            /* Initially hidden */
-            width: 300px;
-            height: 100%;
-            background-color: #343a40;
-            /* Adjust as needed */
-            color: white;
-            padding: 20px;
-            transition: right 0.3s ease-in-out;
-            z-index: 1050;
-            /* Ensure it's above other elements */
-            overflow-y: auto;
-            /* Enable scrolling if content overflows */
-        }
-
-        .right-panel.show {
-            right: 0;
-        }
-
-        /* Style for the close button */
-        .close-panel-button {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            cursor: pointer;
-            color: white;
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-        }
-
-        .panel-button {
-            margin-bottom: 10px;
-            /* Add some spacing between buttons */
-            width: 100%;
-            /* Make buttons fill the panel width */
-        }
-    </style>
 </head>
 
-<body onload="initializeChat()">
+<body>
     <div class="container-fluid h-100">
         <div class="row h-100">
             <div class="chat-container">
@@ -109,16 +66,6 @@
         aria-label="Open panel">
         <i class="bi bi-gear-fill"></i>
     </button>
-    <script>
-        function toggleRightPanel() {
-            const panel = document.getElementById('rightPanel');
-            panel.classList.toggle('show');
-        }
-
-        function shrinkChat() {
-            socket.emit("srink_chat");
-        }
-    </script>
     <script src="static/main.js"></script>
 </body>
 
