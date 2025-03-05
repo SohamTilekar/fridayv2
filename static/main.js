@@ -98,6 +98,9 @@ function addMessageToChatBox(chatBox, msg) {
   // Clear existing content of msgDiv
   msgDiv.innerHTML = '';
 
+  const attachmentDiv = document.createElement("div");
+  attachmentDiv.classList.add("attachments");
+  attachmentDiv.innerHTML = "<strong>Attachments:</strong><br>"; 
   // Render each Content block separately
   msg.content.forEach((contentItem) => {
     const contentDiv = document.createElement("div");
@@ -105,46 +108,47 @@ function addMessageToChatBox(chatBox, msg) {
 
     // Determine content text to render
     let contentHtml = "";
-    if (contentItem.processing) {
-      // Show a loader if processing
-      contentHtml = `
-        ${contentItem.text ? contentItem.text : ''} 
-        <div class="thinking-loader">
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-        </div>
-      `;
-    } else if (contentItem.text && contentItem.text.trim() !== "") {
+    if (contentItem.text && contentItem.text.trim() !== "") {
       // Apply grounding information if available
       let textContent = contentItem.text;
       if (contentItem.grounding_metadata) {
         textContent = applyGroundingInfo(textContent, contentItem.grounding_metadata);
       }
       contentHtml = marked.parse(textContent);
-    } else {
-      // Default loader in case of no text
+      if (contentItem.processing) {
+        // Show a loader if processing
+        contentHtml = `
+          ${contentHtml} 
+          <div class="thinking-loader">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+          </div>
+        `;
+      }
+    } else if (contentItem.text) {
       contentHtml = `
-        <div class="thinking-loader">
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-        </div>
+      <div class="thinking-loader">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      </div>
       `;
     }
     contentDiv.innerHTML = contentHtml;
     msgDiv.appendChild(contentDiv);
     
-    // Render attachments if available (attachments is now a single object)
-    if (contentItem.attachments) {
-      // Pass as an array to keep displayAttachments API unchanged
-      displayAttachments(msgDiv, [contentItem.attachments]);
+    // Render attachment if available
+    if (contentItem.attachment) {
+      displayAttachments(attachmentDiv, contentItem.attachment);
     }
     // Enhance code blocks/inlines
     enhanceCodeBlocks(contentDiv);
     enhanceCodeInlines(contentDiv);
     initializeTooltips(contentDiv);
   });
+  if (attachmentDiv.innerHTML != "<strong>Attachments:</strong><br>")
+    msgDiv.appendChild(attachmentDiv);
 
   // Append copy and delete buttons along with the timestamp
   const copyButton = createButton("copy-msg-btn", `<i class="bi bi-clipboard"></i> Copy`);
@@ -189,29 +193,32 @@ function updateMessageInChatBox(msg) {
 
   // Clear previous content
   msgDiv.innerHTML = '';
-
+  const attachmentDiv = document.createElement("div");
+  attachmentDiv.classList.add("attachments");
+  attachmentDiv.innerHTML = "<strong>Attachments:</strong><br>";
   // Render each Content item separately
   msg.content.forEach((contentItem) => {
     const contentDiv = document.createElement("div");
     contentDiv.classList.add("message-content");
 
     let contentHtml = "";
-    if (contentItem.processing) {
-      contentHtml = `
-        ${contentItem.text ? contentItem.text : ''} 
-        <div class="thinking-loader">
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-        </div>
-      `;
-    } else if (contentItem.text && contentItem.text.trim() !== "") {
+    if (contentItem.text && contentItem.text.trim() !== "") {
       let textContent = contentItem.text;
       if (contentItem.grounding_metadata) {
         textContent = applyGroundingInfo(textContent, contentItem.grounding_metadata);
       }
       contentHtml = marked.parse(textContent);
-    } else {
+      if (contentItem.processing) {
+        contentHtml = `
+          ${contentHtml} 
+          <div class="thinking-loader">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+          </div>
+        `;
+      }
+    } else if (contentItem.text) {
       contentHtml = `
       <div class="thinking-loader">
       <div class="dot"></div>
@@ -223,16 +230,18 @@ function updateMessageInChatBox(msg) {
     contentDiv.innerHTML = contentHtml;
     msgDiv.appendChild(contentDiv);
     
-    if (contentItem.attachments) {
-      displayAttachments(msgDiv, [contentItem.attachments]);
+    if (contentItem.attachment) {
+      displayAttachments(attachmentDiv, contentItem.attachment);
     }
-  
+    
     // Enhance code blocks/inlines
     enhanceCodeBlocks(contentDiv);
     enhanceCodeInlines(contentDiv);
     initializeTooltips(contentDiv);
   });
-
+  if (attachmentDiv.innerHTML != "<strong>Attachments:</strong><br>")
+    msgDiv.appendChild(attachmentDiv);
+  
   // Re-add copy, delete buttons and timestamp
   const copyButton = createButton("copy-msg-btn", `<i class="bi bi-clipboard"></i> Copy`);
   copyButton.addEventListener("click", () =>
@@ -471,20 +480,10 @@ function createAttachmentElement(file) {
 /**
  * Displays the attached files in the chat.
  */
-function displayAttachments(msgDiv, attachments) {
-  if (attachments && attachments.length > 0) {
-    const attachmentsDiv = document.createElement("div");
-    attachmentsDiv.classList.add("attachments");
-    attachmentsDiv.innerHTML = "<strong>Attachments:</strong><br>";
-
-    attachments.forEach((file) => {
-      const attachmentElement = createAttachmentElement(file);
-      attachmentsDiv.appendChild(attachmentElement);
-      attachmentsDiv.appendChild(document.createElement("br"));
-    });
-
-    msgDiv.appendChild(attachmentsDiv);
-  }
+function displayAttachments(attachmentDiv, file) {
+    const attachmentElement = createAttachmentElement(file);
+    attachmentDiv.appendChild(attachmentElement);
+    attachmentDiv.appendChild(document.createElement("br"));
 }
 
 // --------------------------------------------------------------------------
@@ -774,5 +773,3 @@ const marked = new Marked(
     },
   }),
 );
-
-initializeChat();
