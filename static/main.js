@@ -87,57 +87,76 @@ const uploadVideoInChunks = async (base64Video, filename, videoId) => {
 
 /**
  * Adds a message to the chat box.
+ * Now iterates through msg.content (an array of Content objects)
+ * and renders each one separately.
  */
 function addMessageToChatBox(chatBox, msg) {
   const msgDiv = document.createElement("div");
   msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
   msgDiv.id = msg.id;
 
-  let messageContent = "";
-  if (msg.content && msg.content.startsWith("Processing ")) {
-    messageContent = `
-      ${msg.content}
-      <div class="thinking-loader">
-        <div class="dot"></div>
-        <div class="dot"></div>
-        <div class="dot"></div>
-      </div>
-    `;
-  } else if (msg.content !== "") {
-    // Apply grounding information before parsing with marked
-    let contentWithGrounding = msg.content;
-    if (msg.grounding_metadata) {
-      contentWithGrounding = applyGroundingInfo(
-        msg.content,
-        msg.grounding_metadata,
-      );
-    }
-    messageContent = marked.parse(contentWithGrounding);
-  } else {
-    messageContent = `
-      <div class="thinking-loader">
-        <div class="dot"></div>
-        <div class="dot"></div>
-        <div class="dot"></div>
-      </div>
-    `;
-  }
-  msgDiv.innerHTML = messageContent;
+  // Clear existing content of msgDiv
+  msgDiv.innerHTML = '';
 
-  const copyButton = createButton(
-    "copy-msg-btn",
-    `<i class="bi bi-clipboard"></i> Copy`,
-  );
+  // Render each Content block separately
+  msg.content.forEach((contentItem) => {
+    const contentDiv = document.createElement("div");
+    contentDiv.classList.add("message-content");
+
+    // Determine content text to render
+    let contentHtml = "";
+    if (contentItem.processing) {
+      // Show a loader if processing
+      contentHtml = `
+        ${contentItem.text ? contentItem.text : ''} 
+        <div class="thinking-loader">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      `;
+    } else if (contentItem.text && contentItem.text.trim() !== "") {
+      // Apply grounding information if available
+      let textContent = contentItem.text;
+      if (contentItem.grounding_metadata) {
+        textContent = applyGroundingInfo(textContent, contentItem.grounding_metadata);
+      }
+      contentHtml = marked.parse(textContent);
+    } else {
+      // Default loader in case of no text
+      contentHtml = `
+        <div class="thinking-loader">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      `;
+    }
+    contentDiv.innerHTML = contentHtml;
+    msgDiv.appendChild(contentDiv);
+    
+    // Render attachments if available (attachments is now a single object)
+    if (contentItem.attachments) {
+      // Pass as an array to keep displayAttachments API unchanged
+      displayAttachments(msgDiv, [contentItem.attachments]);
+    }
+    // Enhance code blocks/inlines
+    enhanceCodeBlocks(contentDiv);
+    enhanceCodeInlines(contentDiv);
+    initializeTooltips(contentDiv);
+  });
+
+  // Append copy and delete buttons along with the timestamp
+  const copyButton = createButton("copy-msg-btn", `<i class="bi bi-clipboard"></i> Copy`);
   copyButton.addEventListener("click", () =>
-    copyToClipboard(msg.content, copyButton),
+    // Merge all content texts (or you can choose to copy only the visible text)
+    copyToClipboard(msg.content.map(c => c.text).join("\n"), copyButton)
   );
   msgDiv.appendChild(copyButton);
 
-  const deleteButton = createButton(
-    "delete-msg-btn",
-    `<i class="bi bi-trash-fill"></i> Delete`,
-  );
+  const deleteButton = createButton("delete-msg-btn", `<i class="bi bi-trash-fill"></i> Delete`);
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
+  msgDiv.appendChild(deleteButton);
 
   const timestampSpan = document.createElement("span");
   timestampSpan.classList.add("timestamp");
@@ -146,17 +165,11 @@ function addMessageToChatBox(chatBox, msg) {
     minute: "2-digit",
   });
   timestampSpan.textContent = timestamp;
-
-  msgDiv.appendChild(deleteButton);
   msgDiv.appendChild(timestampSpan);
-
-  displayAttachments(msgDiv, msg.attachments);
 
   chatBox.appendChild(msgDiv);
   chatBox.scrollTop = chatBox.scrollHeight;
 
-  // Initialize tooltips after adding to DOM
-  initializeTooltips();
 }
 
 /**
@@ -168,34 +181,68 @@ function deleteMessage(messageId) {
 
 /**
  * Updates a message in the chat box.
+ * Processes each Content in the updated msg.content array.
  */
 function updateMessageInChatBox(msg) {
   const msgDiv = document.getElementById(msg.id);
+  if (!msgDiv) return;
 
-  // Apply grounding information before parsing with marked
-  let contentWithGrounding = msg.content;
-  if (msg.grounding_metadata) {
-    contentWithGrounding = applyGroundingInfo(
-      msg.content,
-      msg.grounding_metadata,
-    );
-  }
-  msgDiv.innerHTML = marked.parse(contentWithGrounding);
+  // Clear previous content
+  msgDiv.innerHTML = '';
 
-  const copyButton = createButton(
-    "copy-msg-btn",
-    `<i class="bi bi-clipboard"></i> Copy`,
-  );
+  // Render each Content item separately
+  msg.content.forEach((contentItem) => {
+    const contentDiv = document.createElement("div");
+    contentDiv.classList.add("message-content");
+
+    let contentHtml = "";
+    if (contentItem.processing) {
+      contentHtml = `
+        ${contentItem.text ? contentItem.text : ''} 
+        <div class="thinking-loader">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      `;
+    } else if (contentItem.text && contentItem.text.trim() !== "") {
+      let textContent = contentItem.text;
+      if (contentItem.grounding_metadata) {
+        textContent = applyGroundingInfo(textContent, contentItem.grounding_metadata);
+      }
+      contentHtml = marked.parse(textContent);
+    } else {
+      contentHtml = `
+      <div class="thinking-loader">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      </div>
+      `;
+    }
+    contentDiv.innerHTML = contentHtml;
+    msgDiv.appendChild(contentDiv);
+    
+    if (contentItem.attachments) {
+      displayAttachments(msgDiv, [contentItem.attachments]);
+    }
+  
+    // Enhance code blocks/inlines
+    enhanceCodeBlocks(contentDiv);
+    enhanceCodeInlines(contentDiv);
+    initializeTooltips(contentDiv);
+  });
+
+  // Re-add copy, delete buttons and timestamp
+  const copyButton = createButton("copy-msg-btn", `<i class="bi bi-clipboard"></i> Copy`);
   copyButton.addEventListener("click", () =>
-    copyToClipboard(msg.content, copyButton),
+    copyToClipboard(msg.content.map(c => c.text).join("\n"), copyButton)
   );
   msgDiv.appendChild(copyButton);
 
-  const deleteButton = createButton(
-    "delete-msg-btn",
-    `<i class="bi bi-trash-fill"></i> Delete`,
-  );
+  const deleteButton = createButton("delete-msg-btn", `<i class="bi bi-trash-fill"></i> Delete`);
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
+  msgDiv.appendChild(deleteButton);
 
   const timestampSpan = document.createElement("span");
   timestampSpan.classList.add("timestamp");
@@ -204,17 +251,7 @@ function updateMessageInChatBox(msg) {
     minute: "2-digit",
   });
   timestampSpan.textContent = timestamp;
-
-  msgDiv.appendChild(deleteButton);
   msgDiv.appendChild(timestampSpan);
-
-  displayAttachments(msgDiv, msg.attachments);
-
-  enhanceCodeBlocks(msgDiv);
-  enhanceCodeInlines(msgDiv);
-
-  // Initialize tooltips after updating
-  initializeTooltips();
 }
 
 /**
@@ -224,13 +261,7 @@ function updateChatDisplay(history) {
   const chatBox = document.getElementById("chat-box");
   chatBox.innerHTML = "";
   history.forEach((msg) => addMessageToChatBox(chatBox, msg));
-
   chatBox.scrollTop = chatBox.scrollHeight;
-  enhanceCodeBlocks(chatBox);
-  enhanceCodeInlines(chatBox);
-
-  // Initialize tooltips after updating entire chat
-  initializeTooltips();
 }
 
 // --------------------------------------------------------------------------
@@ -331,7 +362,7 @@ function applyGroundingInfo(contentText, groundingMetadata) {
       insertIndex = newlineAfter;
     }
     result =
-      result.slice(0, insertIndex - 1) +
+      result.slice(0, /*exclusive-end*/insertIndex) +
       groundingMetadata.rendered_content +
       result.slice(insertIndex);
   }
@@ -342,8 +373,8 @@ function applyGroundingInfo(contentText, groundingMetadata) {
 /**
  * Initializes tooltips for grounding markers.
  */
-function initializeTooltips() {
-  document.querySelectorAll(".grounding-marker").forEach((marker) => {
+function initializeTooltips(element) {
+  element.querySelectorAll(".grounding-marker").forEach((marker) => {
     let tooltip = null; // Store the tooltip element
     let timeoutId = null; // Store the timeout ID
 
