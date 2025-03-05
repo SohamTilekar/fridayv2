@@ -4,6 +4,57 @@
 let fileContents = []; // Global variable to store file information (name and content)
 let videoId = null; // Unique ID for the video being uploaded
 const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
+// ==========================================================================
+// --- Helper Functions ---
+// ==========================================================================
+
+/**
+ * Creates a button element.
+ */
+function createButton(className, innerHTML) {
+  const button = document.createElement("button");
+  button.classList.add(className);
+  button.innerHTML = innerHTML;
+  return button;
+}
+
+/**
+ * Copies text to clipboard and provides feedback.
+ */
+const copyToClipboard = async (text, button) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    button.innerHTML = `<i class="bi bi-clipboard-check"></i> Copied!`;
+  } catch (err) {
+    console.error("Failed to copy text: ", err);
+    button.innerHTML = `<i class="bi bi-clipboard-x-fill"></i> Failed to copy!`;
+  } finally {
+    setTimeout(() => {
+      button.innerHTML = `<i class="bi bi-clipboard"></i> Copy`;
+    }, 1500);
+  }
+};
+
+function handleChatBoxUpdate(updateFunction) {
+  const chatBox = document.getElementById("chat-box");
+  const isAtBottom =
+    chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 1; // Add a small tolerance
+
+  let previousScrollTop = 0;
+  if (!isAtBottom) {
+    previousScrollTop = chatBox.scrollTop;
+  }
+
+  // Perform the update (add/update message)
+  updateFunction();
+
+  // Restore scroll position
+  if (isAtBottom) {
+    chatBox.scrollTop = chatBox.scrollHeight;
+  } else {
+    chatBox.scrollTop = previousScrollTop;
+  }
+}
 
 // ==========================================================================
 // --- Core Functionality ---
@@ -86,192 +137,144 @@ const uploadVideoInChunks = async (base64Video, filename, videoId) => {
 // --------------------------------------------------------------------------
 
 /**
- * Adds a message to the chat box.
- * Now iterates through msg.content (an array of Content objects)
- * and renders each one separately.
+ * Renders a message in the chat box.  Handles both adding and updating messages.
  */
-function addMessageToChatBox(chatBox, msg) {
-  const msgDiv = document.createElement("div");
-  msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
-  msgDiv.id = msg.id;
-
-  // Clear existing content of msgDiv
-  msgDiv.innerHTML = '';
+function renderMessageContent(msgDiv, msg) {
+  // Clear previous content (important for updates)
+  msgDiv.innerHTML = msg.content.length ? '' 
+  : `<div class="thinking-loader">
+         <div class="dot"></div>
+         <div class="dot"></div>
+         <div class="dot"></div>
+     </div>`;
 
   const attachmentDiv = document.createElement("div");
   attachmentDiv.classList.add("attachments");
-  attachmentDiv.innerHTML = "<strong>Attachments:</strong><br>"; 
-  // Render each Content block separately
+  attachmentDiv.innerHTML = "<strong>Attachments:</strong><br>";
+
+  // Render each Content item separately
   msg.content.forEach((contentItem) => {
-    const contentDiv = document.createElement("div");
-    contentDiv.classList.add("message-content");
+      const contentDiv = document.createElement("div");
+      contentDiv.classList.add("message-content");
 
-    // Determine content text to render
-    let contentHtml = "";
-    if (contentItem.text && contentItem.text.trim() !== "") {
-      // Apply grounding information if available
-      let textContent = contentItem.text;
-      if (contentItem.grounding_metadata) {
-        textContent = applyGroundingInfo(textContent, contentItem.grounding_metadata);
+      let contentHtml = "";
+      if (contentItem.text && contentItem.text.trim() !== "") {
+          let textContent = contentItem.text;
+          if (contentItem.grounding_metadata) {
+              textContent = applyGroundingInfo(textContent, contentItem.grounding_metadata);
+          }
+          contentHtml = marked.parse(textContent);
+          if (contentItem.processing) {
+              contentHtml = `
+                  ${contentHtml} 
+                  <div class="thinking-loader">
+                      <div class="dot"></div>
+                      <div class="dot"></div>
+                      <div class="dot"></div>
+                  </div>
+              `;
+          }
+      } else if (contentItem.text) {
+          contentHtml = `
+              <div class="thinking-loader">
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+              </div>
+          `;
       }
-      contentHtml = marked.parse(textContent);
-      if (contentItem.processing) {
-        // Show a loader if processing
-        contentHtml = `
-          ${contentHtml} 
-          <div class="thinking-loader">
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-          </div>
-        `;
+      contentDiv.innerHTML = contentHtml;
+      msgDiv.appendChild(contentDiv);
+
+      if (contentItem.attachment) {
+          displayAttachments(attachmentDiv, contentItem.attachment);
       }
-    } else if (contentItem.text) {
-      contentHtml = `
-      <div class="thinking-loader">
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
-      </div>
-      `;
-    }
-    contentDiv.innerHTML = contentHtml;
-    msgDiv.appendChild(contentDiv);
-    
-    // Render attachment if available
-    if (contentItem.attachment) {
-      displayAttachments(attachmentDiv, contentItem.attachment);
-    }
-    // Enhance code blocks/inlines
-    enhanceCodeBlocks(contentDiv);
-    enhanceCodeInlines(contentDiv);
-    initializeTooltips(contentDiv);
+
+      // Enhance code blocks/inlines
+      enhanceCodeBlocks(contentDiv);
+      enhanceCodeInlines(contentDiv);
+      initializeTooltips(contentDiv);
   });
-  if (attachmentDiv.innerHTML != "<strong>Attachments:</strong><br>")
-    msgDiv.appendChild(attachmentDiv);
 
-  // Append copy and delete buttons along with the timestamp
+  if (attachmentDiv.innerHTML != "<strong>Attachments:</strong><br>")
+      msgDiv.appendChild(attachmentDiv);
+}
+
+/**
+* Creates the standard message controls (copy, delete, timestamp).
+*/
+function createMessageControls(msg) {
+  const controlsDiv = document.createElement("div"); // Create a container for the controls
+
   const copyButton = createButton("copy-msg-btn", `<i class="bi bi-clipboard"></i> Copy`);
   copyButton.addEventListener("click", () =>
-    // Merge all content texts (or you can choose to copy only the visible text)
-    copyToClipboard(msg.content.map(c => c.text).join("\n"), copyButton)
+      copyToClipboard(msg.content.map(c => c.text).join("\n"), copyButton)
   );
-  msgDiv.appendChild(copyButton);
+  controlsDiv.appendChild(copyButton);
 
   const deleteButton = createButton("delete-msg-btn", `<i class="bi bi-trash-fill"></i> Delete`);
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
-  msgDiv.appendChild(deleteButton);
+  controlsDiv.appendChild(deleteButton);
 
   const timestampSpan = document.createElement("span");
   timestampSpan.classList.add("timestamp");
   const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
   });
   timestampSpan.textContent = timestamp;
-  msgDiv.appendChild(timestampSpan);
+  controlsDiv.appendChild(timestampSpan);
 
-  chatBox.appendChild(msgDiv);
-  chatBox.scrollTop = chatBox.scrollHeight;
-
+  return controlsDiv;
 }
+
+const addMessageToChatBox = handleChatBoxUpdate(msg => {
+    const chatBox = document.getElementById("chat-box")
+    const msgDiv = document.createElement("div");
+    msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
+    msgDiv.id = msg.id;
+
+    renderMessageContent(msgDiv, msg); // Render the message content
+
+    const controlsDiv = createMessageControls(msg); // Create the controls
+    msgDiv.appendChild(controlsDiv);
+
+    chatBox.appendChild(msgDiv);
+});
+
+const  updateMessageInChatBox = handleChatBoxUpdate(msg => {
+    const msgDiv = document.getElementById(msg.id);
+    if (!msgDiv) return;
+
+    renderMessageContent(msgDiv, msg); // Re-render the message content
+
+    // Replace existing controls with updated ones
+    const existingControls = msgDiv.querySelector(".copy-msg-btn, .delete-msg-btn, .timestamp");
+    if (existingControls) {
+        msgDiv.removeChild(existingControls.parentNode); // Remove the parent div
+    }
+    const controlsDiv = createMessageControls(msg); // Create the controls
+    msgDiv.appendChild(controlsDiv);
+});
 
 /**
  * Deletes a message from the server and updates the chat.
  */
-function deleteMessage(messageId) {
+const deleteMessage = handleChatBoxUpdate(messageId => {
+  document.getElementById(messageId).remove();
   socket.emit("delete_message", { message_id: messageId });
-}
-
-/**
- * Updates a message in the chat box.
- * Processes each Content in the updated msg.content array.
- */
-function updateMessageInChatBox(msg) {
-  const msgDiv = document.getElementById(msg.id);
-  if (!msgDiv) return;
-
-  // Clear previous content
-  msgDiv.innerHTML = '';
-  const attachmentDiv = document.createElement("div");
-  attachmentDiv.classList.add("attachments");
-  attachmentDiv.innerHTML = "<strong>Attachments:</strong><br>";
-  // Render each Content item separately
-  msg.content.forEach((contentItem) => {
-    const contentDiv = document.createElement("div");
-    contentDiv.classList.add("message-content");
-
-    let contentHtml = "";
-    if (contentItem.text && contentItem.text.trim() !== "") {
-      let textContent = contentItem.text;
-      if (contentItem.grounding_metadata) {
-        textContent = applyGroundingInfo(textContent, contentItem.grounding_metadata);
-      }
-      contentHtml = marked.parse(textContent);
-      if (contentItem.processing) {
-        contentHtml = `
-          ${contentHtml} 
-          <div class="thinking-loader">
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-          </div>
-        `;
-      }
-    } else if (contentItem.text) {
-      contentHtml = `
-      <div class="thinking-loader">
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
-      </div>
-      `;
-    }
-    contentDiv.innerHTML = contentHtml;
-    msgDiv.appendChild(contentDiv);
-    
-    if (contentItem.attachment) {
-      displayAttachments(attachmentDiv, contentItem.attachment);
-    }
-    
-    // Enhance code blocks/inlines
-    enhanceCodeBlocks(contentDiv);
-    enhanceCodeInlines(contentDiv);
-    initializeTooltips(contentDiv);
-  });
-  if (attachmentDiv.innerHTML != "<strong>Attachments:</strong><br>")
-    msgDiv.appendChild(attachmentDiv);
-  
-  // Re-add copy, delete buttons and timestamp
-  const copyButton = createButton("copy-msg-btn", `<i class="bi bi-clipboard"></i> Copy`);
-  copyButton.addEventListener("click", () =>
-    copyToClipboard(msg.content.map(c => c.text).join("\n"), copyButton)
-  );
-  msgDiv.appendChild(copyButton);
-
-  const deleteButton = createButton("delete-msg-btn", `<i class="bi bi-trash-fill"></i> Delete`);
-  deleteButton.addEventListener("click", () => deleteMessage(msg.id));
-  msgDiv.appendChild(deleteButton);
-
-  const timestampSpan = document.createElement("span");
-  timestampSpan.classList.add("timestamp");
-  const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  timestampSpan.textContent = timestamp;
-  msgDiv.appendChild(timestampSpan);
-}
+  return
+});
 
 /**
  * Updates the entire chat display with the given history.
- */
-function updateChatDisplay(history) {
+*/
+const updateChatDisplay = handleChatBoxUpdate(history => {
   const chatBox = document.getElementById("chat-box");
   chatBox.innerHTML = "";
-  history.forEach((msg) => addMessageToChatBox(chatBox, msg));
+  history.forEach((msg) => addMessageToChatBox(msg));
   chatBox.scrollTop = chatBox.scrollHeight;
-}
+});
 
 // --------------------------------------------------------------------------
 // --- Code Block Enhancement ---
@@ -587,7 +590,8 @@ const sendMessage = async () => {
         console.error("Error processing file:", error);
         addMessageToChatBox(document.getElementById("chat-box"), {
           role: "ai",
-          content: `Error processing file ${fileData.name}: ${error.message}`,
+          content: [{text: `Error processing file ${fileData.name}: ${error.message}`}],
+          id: Date.now().toString(36)
         });
         return;
       }
@@ -612,6 +616,8 @@ socket.on("connect", () => {
 
 socket.on("chat_update", updateChatDisplay);
 socket.on("updated_msg", updateMessageInChatBox);
+socket.on("add_message", addMessageToChatBox)
+socket.on("delete_message", deleteMessage)
 
 // --------------------------------------------------------------------------
 // --- Right Panel Functions ---
@@ -625,37 +631,6 @@ function toggleRightPanel() {
 function shrinkChat() {
   socket.emit("srink_chat");
 }
-
-// ==========================================================================
-// --- Helper Functions ---
-// ==========================================================================
-
-/**
- * Creates a button element.
- */
-function createButton(className, innerHTML) {
-  const button = document.createElement("button");
-  button.classList.add(className);
-  button.innerHTML = innerHTML;
-  return button;
-}
-
-/**
- * Copies text to clipboard and provides feedback.
- */
-const copyToClipboard = async (text, button) => {
-  try {
-    await navigator.clipboard.writeText(text);
-    button.innerHTML = `<i class="bi bi-clipboard-check"></i> Copied!`;
-  } catch (err) {
-    console.error("Failed to copy text: ", err);
-    button.innerHTML = `<i class="bi bi-clipboard-x-fill"></i> Failed to copy!`;
-  } finally {
-    setTimeout(() => {
-      button.innerHTML = `<i class="bi bi-clipboard"></i> Copy`;
-    }, 1500);
-  }
-};
 
 // ==========================================================================
 // --- Event Listeners ---
@@ -713,7 +688,8 @@ const handleFileInputChange = async () => {
       } else {
         addMessageToChatBox(document.getElementById("chat-box"), {
           role: "ai",
-          content: `File ${file.name} is not a supported text or image file.`,
+          content: [{text: `File ${file.name} is not a supported text or image file.`}],
+          id: Date.now().toString(36)
         });
       }
     }

@@ -80,7 +80,7 @@ class File:
             for attempt in range(config.MAX_RETRIES):
                 try:
                     msg.content.append(Content(text=f"{prefix} {self.filename}", processing=True))
-                    update_chat_with_response(msg)
+                    update_chat_message(msg)
                     self.cloud_uri = client.files.upload(file=BytesIO(self.content), config={"display_name": self.filename, "mime_type": self.type})  # type: ignore
                     # Check whether the file is ready to be used.
                     while self.cloud_uri.state.name == "PROCESSING":  # type: ignore
@@ -90,7 +90,7 @@ class File:
                     if self.cloud_uri.state.name == "FAILED":  # type: ignore
                         raise ValueError(self.cloud_uri.state.name)  # type: ignore
                     msg.content.pop()
-                    update_chat_with_response(msg)
+                    update_chat_message(msg)
                     return self.cloud_uri  # type: ignore
                 except Exception:
                     if attempt < config.MAX_RETRIES - 1:
@@ -328,50 +328,45 @@ class Message:
         )
 
 class ChatHistory:
-    chat: list[Message] = []
+    __chat: list[Message] = []
 
     def append(self, msg: Message):
-        self.chat.append(msg)
-        socketio.emit("chat_update", self.jsonify())
+        self.__chat.append(msg)
+        socketio.emit("add_message", msg.jsonify())
 
     def delete_message(self, msg_id):
-        new_chat = []
-        for msg in self.chat:
-            if msg.id == msg_id:
-                msg.delete()
-            else:
-                new_chat.append(msg)
-        self.chat = new_chat
-        socketio.emit("chat_update", self.jsonify())
+        self.__chat = [msg for msg in self.__chat if msg.id != msg_id]
+        delete_chat_message(msg_id)
 
     def __len__(self):
-        return len(self.chat)
+        return len(self.__chat)
 
     def __getitem__(self, idx: int):
-        return self.chat[idx]
+        return self.__chat[idx]
 
     def getMsg(self, ID: str) -> Message:
-        for msg in self.chat:
+        for msg in self.__chat:
             if msg.id == ID:
                 return msg
         raise ValueError(f"Message of ID: `{ID}` not found")
 
     def setMsg(self, ID: str, new_msg: Message):
-        for msg in self.chat:
+        for msg in self.__chat:
             if msg.id == ID:
                 msg = new_msg
+                update_chat_message(msg)
                 return
         raise ValueError(f"Message of ID: `{ID}` not found")
 
     def getMsgRange(self, Start_ID: str, End_ID: str) -> Iterator[Message]:
         idx = 0
-        while idx < len(self.chat):
-            if self.chat[idx].id == Start_ID:
-                while idx < len(self.chat):
-                    if self.chat[idx].id == End_ID:
-                        return self.chat[idx]
+        while idx < len(self.__chat):
+            if self.__chat[idx].id == Start_ID:
+                while idx < len(self.__chat):
+                    if self.__chat[idx].id == End_ID:
+                        return self.__chat[idx]
                     else:
-                        yield self.chat[idx]
+                        yield self.__chat[idx]
                         idx += 1
                 raise ValueError(f"Message of ID: `{End_ID}` not found")
             idx += 1
@@ -380,14 +375,14 @@ class ChatHistory:
     def delMsgRange(self, Start_ID: str, End_ID: str) -> None:
         """Ignore Start_ID msg, delete from Start_ID+1..End_ID"""
         idx = 0
-        while idx < len(self.chat):
-            if self.chat[idx].id == Start_ID:
-                while idx < len(self.chat):
-                    if self.chat[idx].id == End_ID:
-                        del self.chat[idx]
+        while idx < len(self.__chat):
+            if self.__chat[idx].id == Start_ID:
+                while idx < len(self.__chat):
+                    del self.__chat[idx]
+                    delete_chat_message(End_ID)
+                    if self.__chat[idx].id == End_ID:
                         return
                     else:
-                        del self.chat[idx]
                         idx += 1
                 raise ValueError(f"Message of ID: `{End_ID}` not found")
             idx += 1
@@ -395,16 +390,17 @@ class ChatHistory:
 
     def replaceMsgRange(self, Start_ID: str, End_ID: str, msg: Message) -> None:
             idx = 0
-            while idx < len(self.chat):
-                if self.chat[idx].id == Start_ID:
-                    self.chat[idx] = msg
+            while idx < len(self.__chat):
+                if self.__chat[idx].id == Start_ID:
+                    self.__chat[idx] = msg
+                    update_chat_message(msg)
                     idx += 1
-                    while idx < len(self.chat):
-                        if self.chat[idx].id == End_ID:
-                            del self.chat[idx]
+                    while idx < len(self.__chat):
+                        del self.__chat[idx]
+                        delete_chat_message(self.__chat[idx].id)
+                        if self.__chat[idx].id == End_ID:
                             return
                         else:
-                            del self.chat[idx]
                             idx += 1
                     raise ValueError(f"Message of ID: `{End_ID}` not found")
                 idx += 1
@@ -412,22 +408,22 @@ class ChatHistory:
 
     def for_ai(self, ai_msg: Message) -> list[types.Content]:
         result: list[types.Content] = []
-        for msg in self.chat:
+        for msg in self.__chat:
             result.append(msg.for_ai(ai_msg))
         return result
 
     def for_summarizer(self) -> list[types.Content]:
         result: list[types.Content] = []
-        for msg in self.chat:
+        for msg in self.__chat:
             result.append(msg.for_summarizer())
         return result
 
     def jsonify(self) -> list[dict[str, str | Literal["model", "user"] | list]]:
-        return [msg.jsonify() for msg in self.chat]
+        return [msg.jsonify() for msg in self.__chat]
 
     def save_to_json(self, filepath: str):
         """Saves the chat history to a JSON file."""
-        data = [msg.jsonify() for msg in self.chat]
+        data = [msg.jsonify() for msg in self.__chat]
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=4)
 
@@ -436,10 +432,10 @@ class ChatHistory:
         try:
             with open(filepath, 'r') as f:
                 data = json.load(f)
-                self.chat = []
+                self.__chat = []
                 for msg_data in data:
                     msg = Message.from_jsonify(msg_data)
-                    self.chat.append(msg)
+                    self.__chat.append(msg)
         except FileNotFoundError:
             print("Chat history file not found. Starting with an empty chat.")
         except json.JSONDecodeError:
@@ -465,7 +461,7 @@ def complete_chat(message: str, files: Optional[list[File]] = None):
     ai_response = get_ai_response()
 
     if ai_response:
-        update_chat_with_response(ai_response)
+        update_chat_message(ai_response)
 
 def append_user_message(message: str, files: list[File]):
     """Appends the user's message and files to the chat history."""
@@ -484,11 +480,17 @@ def get_ai_response() -> Message:
         handle_generation_failure(msg, e)
         return msg
 
-def update_chat_with_response(msg: Message):
+def update_chat_message(msg: Message):
     """
-    Updates the chat history and emits the updated message.
+    emits the updated message.
     """
     socketio.emit("updated_msg", msg.jsonify())
+
+def delete_chat_message(msg_id: str):
+    """
+    emits the delete message.
+    """
+    socketio.emit("delete_message", msg_id)
 
 
 # Gemini Model Interaction
@@ -518,14 +520,20 @@ def generate_content_with_retry(msg: Message) -> Message:
                     if part.thought and part.text:
                         msg.thought += part.text
                     elif part.text:
-                        if not msg.content or msg.content[-1].text is None:
+                        if not msg.content:
+                            msg.content.append(Content(text=part.text, processing=True))
+                        if msg.content[-1].text is None:
+                            msg.content[-1].processing = False
                             msg.content.append(Content(text=part.text))
                         else:
                             msg.content[-1].text += part.text
                     else:
                         continue
                 process_grounding_metadata(msg, content)
-            update_chat_with_response(msg)
+            update_chat_message(msg)
+        if msg.content:
+            msg.content[-1].processing = False
+            update_chat_message(msg)
         if finish_reason == types.FinishReason.MAX_TOKENS:
             continue  # Recalling AI max output tokens are reached but AI want to Reply
         break
@@ -551,6 +559,7 @@ def process_grounding_metadata(msg: Message, content: types.GenerateContentRespo
 
         if metadata.grounding_chunks and metadata.grounding_supports and metadata.web_search_queries:
             process_grounding_supports(msg, metadata)
+    update_chat_message(msg)
 
 def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata):
     """
@@ -586,7 +595,7 @@ def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata):
                 "end_index": start_index + len(support.segment.text) # type: ignore
             })  # type: ignore
         )
-    update_chat_with_response(msg)
+    update_chat_message(msg)
 
 def handle_generation_failure(msg: Message, error: Exception):
     """
@@ -598,7 +607,7 @@ def handle_generation_failure(msg: Message, error: Exception):
         msg.content.append(Content(text=error_message))
     else:
         msg.content[-1].text = error_message
-    update_chat_with_response(msg)
+    update_chat_message(msg)
 
 # Token Reduction (Summarization/Removal)
 
@@ -633,10 +642,12 @@ def SummarizeAttachment(AttachmentID: str, MessageID: str):
             temperature=0,
         )
     )
-    file = chat_history.getMsg(MessageID).get_attachment(AttachmentID)
+    msg = chat_history.getMsg(MessageID)
+    file = msg.get_attachment(AttachmentID)
     file.is_summary = True
     if responce.text:
         file.content = responce.text
+        update_chat_message(msg)
         return f"Summarized Attachment: {AttachmentID=}, {MessageID=}"
     return f" dident Summarized Attachment: {AttachmentID=}, {MessageID=}"
 
@@ -678,6 +689,7 @@ def SummarizeMessage(MessageID: str):
             msg.content.append(Content(text=responce.text))
         else:
             msg.content[-1].text += responce.text
+            update_chat_message(msg)
         return "Sumarized message " + MessageID
     return "dident Summarized message " + MessageID
 
@@ -723,7 +735,9 @@ def RemoveAttachment(AttachmentID: str, MessageID: str):
     Removes a specific attachment from a message.
     Use this for attachments that are clearly irrelevant to the current conversation or have become obsolete.
     """
-    chat_history.getMsg(MessageID).delete_attachment(AttachmentID)
+    msg = chat_history.getMsg(MessageID)
+    msg.delete_attachment(AttachmentID)
+    update_chat_message(msg)
     return f"RemoveAttachment: {AttachmentID=}, {MessageID=}"
 
 def RemoveMessage(MessageID: str):
@@ -893,7 +907,6 @@ def handle_get_chat_history():
 def handle_delete_message(data):
     msg_id = data.get("message_id")
     chat_history.delete_message(msg_id)
-    socketio.emit("chat_update", chat_history.jsonify())
 
 
 # Flask Routes
