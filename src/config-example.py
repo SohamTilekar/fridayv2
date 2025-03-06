@@ -1,6 +1,8 @@
+import pathlib
+
 # Remove the -example part
 GOOGLE_API: str = "Your-Google-API-Gose-Here"
-DATA_DIR: str = "~/friday/"
+AI_DIR: pathlib.Path = pathlib.Path("~/friday/")
 
 YOUR_NAME: str = "LastName FirstName" #e.g Musk Elon
 ABOUT_YOU: str = """\

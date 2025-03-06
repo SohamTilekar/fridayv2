@@ -290,10 +290,9 @@ class Message:
         if msg is None:
             raise ValueError("msg parameter is required.")
 
-        ai_contents: list[types.Part] = []
+        ai_contents: list[types.Part] = [types.Part(text=self.time_stamp.strftime("%H:%M"))]
         for item in self.content:
             ai_contents.append(item.for_ai(msg))
-        ai_contents.append(types.Part(text=self.time_stamp.strftime("%H:%M")))
 
         return types.Content(parts=ai_contents, role=self.role)
 
@@ -521,7 +520,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                         msg.thought += part.text
                     elif part.text:
                         if not msg.content:
-                            msg.content.append(Content(text=part.text, processing=True))
+                            msg.content.append(Content(text="", processing=True))
                         if msg.content[-1].text is None:
                             msg.content[-1].processing = False
                             msg.content.append(Content(text=part.text))
@@ -920,12 +919,12 @@ def root():
     return render_template('index.html')
 
 if __name__ == "__main__":
-    chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
+    chat_history_file = os.path.join(config.AI_DIR, "chat_history.json")
     chat_history.load_from_json(chat_history_file)
     try:
         socketio.run(app, host='127.0.0.1', port=5000,
                      debug=True, use_reloader=False)
     finally:
-        chat_history_file = os.path.join(config.DATA_DIR, "chat_history.json")
+        chat_history_file = os.path.join(config.AI_DIR, "chat_history.json")
         chat_history.save_to_json(chat_history_file)
         print("Chat history saved.")
