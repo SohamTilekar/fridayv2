@@ -145,8 +145,9 @@ const uploadVideoInChunks = async (base64Video, filename, videoId) => {
  */
 function renderMessageContent(msgDiv, msg) {
   // Clear previous content (important for updates)
-  msgDiv.innerHTML = msg.content.length ? '' 
-  : `<div class="thinking-loader">
+  msgDiv.innerHTML = msg.content.length
+    ? ""
+    : `<div class="thinking-loader">
          <div class="dot"></div>
          <div class="dot"></div>
          <div class="dot"></div>
@@ -158,73 +159,80 @@ function renderMessageContent(msgDiv, msg) {
 
   // Render each Content item separately
   msg.content.forEach((contentItem) => {
-      const contentDiv = document.createElement("div");
-      contentDiv.classList.add("message-content");
+    const contentDiv = document.createElement("div");
+    contentDiv.classList.add("message-content");
 
-      let contentHtml = "";
-      if (contentItem.text && contentItem.text.trim() !== "") {
-          let textContent = contentItem.text;
-          if (contentItem.grounding_metadata) {
-              textContent = applyGroundingInfo(textContent, contentItem.grounding_metadata);
-          }
-          contentHtml = marked.parse(textContent);
-          if (contentItem.processing) {
-              contentHtml = `
-                  ${contentHtml} 
+    let contentHtml = "";
+    if (contentItem.text && contentItem.text.trim() !== "") {
+      let textContent = contentItem.text;
+      if (contentItem.grounding_metadata) {
+        textContent = applyGroundingInfo(
+          textContent,
+          contentItem.grounding_metadata,
+        );
+      }
+      contentHtml = marked.parse(textContent);
+      if (contentItem.processing) {
+        contentHtml = `
+                  ${contentHtml}
                   <div class="thinking-loader">
                       <div class="dot"></div>
                       <div class="dot"></div>
                       <div class="dot"></div>
                   </div>
               `;
-          }
-      } else if (contentItem.text) {
-          contentHtml = `
+      }
+    } else if (contentItem.text) {
+      contentHtml = `
               <div class="thinking-loader">
                   <div class="dot"></div>
                   <div class="dot"></div>
                   <div class="dot"></div>
               </div>
           `;
-      }
-      contentDiv.innerHTML = contentHtml;
-      msgDiv.appendChild(contentDiv);
+    } else if (contentItem.attachment && msg.role == "user") {
+      displayAttachments(attachmentDiv, contentItem.attachment);
+    }
+    contentDiv.innerHTML = contentHtml;
+    msgDiv.appendChild(contentDiv);
 
-      if (contentItem.attachment) {
-          displayAttachments(attachmentDiv, contentItem.attachment);
-      }
-
-      // Enhance code blocks/inlines
-      enhanceCodeBlocks(contentDiv);
-      enhanceCodeInlines(contentDiv);
-      initializeTooltips(contentDiv);
+    // Enhance code blocks/inlines
+    enhanceCodeBlocks(contentDiv);
+    enhanceCodeInlines(contentDiv);
+    initializeTooltips(contentDiv);
   });
 
   if (attachmentDiv.innerHTML != "<strong>Attachments:</strong><br>")
-      msgDiv.appendChild(attachmentDiv);
+    msgDiv.appendChild(attachmentDiv);
 }
 
 /**
-* Creates the standard message controls (copy, delete, timestamp).
-*/
+ * Creates the standard message controls (copy, delete, timestamp).
+ */
 function createMessageControls(msg) {
   const controlsDiv = document.createElement("div"); // Create a container for the controls
 
-  const copyButton = createButton("copy-msg-btn", `<i class="bi bi-clipboard"></i> Copy`);
+  const copyButton = createButton(
+    "copy-msg-btn",
+    `<i class="bi bi-clipboard"></i> Copy`,
+  );
   copyButton.addEventListener("click", () =>
-      copyToClipboard(msg.content.map(c => c.text).join("\n"), copyButton)
+    copyToClipboard(msg.content.map((c) => c.text).join("\n"), copyButton),
   );
   controlsDiv.appendChild(copyButton);
 
-  const deleteButton = createButton("delete-msg-btn", `<i class="bi bi-trash-fill"></i> Delete`);
+  const deleteButton = createButton(
+    "delete-msg-btn",
+    `<i class="bi bi-trash-fill"></i> Delete`,
+  );
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
   controlsDiv.appendChild(deleteButton);
 
   const timestampSpan = document.createElement("span");
   timestampSpan.classList.add("timestamp");
   const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
   timestampSpan.textContent = timestamp;
   controlsDiv.appendChild(timestampSpan);
@@ -232,48 +240,49 @@ function createMessageControls(msg) {
   return controlsDiv;
 }
 
-const addMessageToChatBox = handleChatBoxUpdate(msg => {
-    const chatBox = document.getElementById("chat-box")
-    const msgDiv = document.createElement("div");
-    msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
-    msgDiv.id = msg.id;
+const addMessageToChatBox = handleChatBoxUpdate((msg) => {
+  const chatBox = document.getElementById("chat-box");
+  const msgDiv = document.createElement("div");
+  msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
+  msgDiv.id = msg.id;
 
-    renderMessageContent(msgDiv, msg); // Render the message content
+  renderMessageContent(msgDiv, msg); // Render the message content
 
-    const controlsDiv = createMessageControls(msg); // Create the controls
-    msgDiv.appendChild(controlsDiv);
-
-    chatBox.appendChild(msgDiv);
+  const controlsDiv = createMessageControls(msg); // Create the controls
+  msgDiv.appendChild(controlsDiv);
+  chatBox.appendChild(msgDiv);
 });
 
-const  updateMessageInChatBox = handleChatBoxUpdate(msg => {
-    const msgDiv = document.getElementById(msg.id);
-    if (!msgDiv) return;
+const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
+  const msgDiv = document.getElementById(msg.id);
+  if (!msgDiv) return;
 
-    renderMessageContent(msgDiv, msg); // Re-render the message content
+  renderMessageContent(msgDiv, msg); // Re-render the message content
 
-    // Replace existing controls with updated ones
-    const existingControls = msgDiv.querySelector(".copy-msg-btn, .delete-msg-btn, .timestamp");
-    if (existingControls) {
-        msgDiv.removeChild(existingControls.parentNode); // Remove the parent div
-    }
-    const controlsDiv = createMessageControls(msg); // Create the controls
-    msgDiv.appendChild(controlsDiv);
+  // Replace existing controls with updated ones
+  const existingControls = msgDiv.querySelector(
+    ".copy-msg-btn, .delete-msg-btn, .timestamp",
+  );
+  if (existingControls) {
+    msgDiv.removeChild(existingControls.parentNode); // Remove the parent div
+  }
+  const controlsDiv = createMessageControls(msg); // Create the controls
+  msgDiv.appendChild(controlsDiv);
 });
 
 /**
  * Deletes a message from the server and updates the chat.
  */
-const deleteMessage = handleChatBoxUpdate(messageId => {
+const deleteMessage = handleChatBoxUpdate((messageId) => {
   document.getElementById(messageId).remove();
   socket.emit("delete_message", { message_id: messageId });
-  return
+  return;
 });
 
 /**
  * Updates the entire chat display with the given history.
-*/
-const updateChatDisplay = handleChatBoxUpdate(history => {
+ */
+const updateChatDisplay = handleChatBoxUpdate((history) => {
   const chatBox = document.getElementById("chat-box");
   chatBox.innerHTML = "";
   history.forEach((msg) => addMessageToChatBox(msg));
@@ -378,8 +387,9 @@ function applyGroundingInfo(contentText, groundingMetadata) {
       insertIndex = newlineAfter;
     }
     result =
-      result.slice(0, /*exclusive-end*/insertIndex) +
+      result.slice(0, /*exclusive-end*/ insertIndex) +
       groundingMetadata.rendered_content +
+      `<div style="height: var(--padding-md)"></div>\n` +
       result.slice(insertIndex);
   }
 
@@ -488,9 +498,9 @@ function createAttachmentElement(file) {
  * Displays the attached files in the chat.
  */
 function displayAttachments(attachmentDiv, file) {
-    const attachmentElement = createAttachmentElement(file);
-    attachmentDiv.appendChild(attachmentElement);
-    attachmentDiv.appendChild(document.createElement("br"));
+  const attachmentElement = createAttachmentElement(file);
+  attachmentDiv.appendChild(attachmentElement);
+  attachmentDiv.appendChild(document.createElement("br"));
 }
 
 // --------------------------------------------------------------------------
@@ -594,8 +604,12 @@ const sendMessage = async () => {
         console.error("Error processing file:", error);
         addMessageToChatBox(document.getElementById("chat-box"), {
           role: "model",
-          content: [{text: `Error processing file ${fileData.name}: ${error.message}`}],
-          id: Date.now().toString(36)
+          content: [
+            {
+              text: `Error processing file ${fileData.name}: ${error.message}`,
+            },
+          ],
+          id: Date.now().toString(36),
         });
         return;
       }
@@ -620,16 +634,16 @@ socket.on("connect", () => {
 
 socket.on("chat_update", updateChatDisplay);
 socket.on("updated_msg", updateMessageInChatBox);
-socket.on("add_message", addMessageToChatBox)
-socket.on("delete_message", deleteMessage)
+socket.on("add_message", addMessageToChatBox);
+socket.on("delete_message", deleteMessage);
 
 // --------------------------------------------------------------------------
 // --- Right Panel Functions ---
 // --------------------------------------------------------------------------
 
 function toggleRightPanel() {
-  const panel = document.getElementById('rightPanel');
-  panel.classList.toggle('show');
+  const panel = document.getElementById("rightPanel");
+  panel.classList.toggle("show");
 }
 
 function shrinkChat() {
@@ -692,8 +706,12 @@ const handleFileInputChange = async () => {
       } else {
         addMessageToChatBox(document.getElementById("chat-box"), {
           role: "model",
-          content: [{text: `File ${file.name} is not a supported text or image file.`}],
-          id: Date.now().toString(36)
+          content: [
+            {
+              text: `File ${file.name} is not a supported text or image file.`,
+            },
+          ],
+          id: Date.now().toString(36),
         });
       }
     }
