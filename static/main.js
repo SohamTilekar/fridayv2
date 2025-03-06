@@ -36,24 +36,28 @@ const copyToClipboard = async (text, button) => {
 };
 
 function handleChatBoxUpdate(updateFunction) {
-  const chatBox = document.getElementById("chat-box");
-  const isAtBottom =
-    chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 1; // Add a small tolerance
+  return function (...args) {
+    const chatBox = document.getElementById("chat-box");
+    const isAtBottom =
+      chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 1;
 
-  let previousScrollTop = 0;
-  if (!isAtBottom) {
-    previousScrollTop = chatBox.scrollTop;
-  }
+    let previousScrollTop = 0;
+    if (!isAtBottom) {
+      previousScrollTop = chatBox.scrollTop;
+    }
 
-  // Perform the update (add/update message)
-  updateFunction();
+    // Call the original function
+    const result = updateFunction.apply(this, args);
 
-  // Restore scroll position
-  if (isAtBottom) {
-    chatBox.scrollTop = chatBox.scrollHeight;
-  } else {
-    chatBox.scrollTop = previousScrollTop;
-  }
+    // Restore scroll position
+    if (isAtBottom) {
+      chatBox.scrollTop = chatBox.scrollHeight;
+    } else {
+      chatBox.scrollTop = previousScrollTop;
+    }
+
+    return result;
+  };
 }
 
 // ==========================================================================
@@ -589,7 +593,7 @@ const sendMessage = async () => {
       } catch (error) {
         console.error("Error processing file:", error);
         addMessageToChatBox(document.getElementById("chat-box"), {
-          role: "ai",
+          role: "model",
           content: [{text: `Error processing file ${fileData.name}: ${error.message}`}],
           id: Date.now().toString(36)
         });
@@ -687,7 +691,7 @@ const handleFileInputChange = async () => {
         }
       } else {
         addMessageToChatBox(document.getElementById("chat-box"), {
-          role: "ai",
+          role: "model",
           content: [{text: `File ${file.name} is not a supported text or image file.`}],
           id: Date.now().toString(36)
         });
