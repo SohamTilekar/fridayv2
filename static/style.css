@@ -59,10 +59,11 @@ body {
 /* -------------------------------------------------------------------------- */
 
 .chat-container {
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100vh;
-    padding: 0;
+    padding: 1px;
 }
 
 /* Custom CSS for the panel */
@@ -156,6 +157,7 @@ pre {
     overflow-x: auto;
     position: relative;
     color: var(--code-text);
+    font-family: "Fira Code", monospace; /* Updated font */
 }
 
 .code-block {
@@ -275,6 +277,15 @@ pre {
     color: var(--foreground);
     font-size: 0.75rem;
     padding: 0.25rem 0.5rem;
+    transition: background-color 0.2s ease-in-out; /* Added transition */
+}
+
+.copy-code-btn:hover,
+.copy-msg-btn:hover,
+.delete-msg-btn:hover,
+.delete-file-button:hover,
+.close-panel-button:hover {
+    background-color: #555; /* Darker hover color */
 }
 
 .delete-msg-btn {

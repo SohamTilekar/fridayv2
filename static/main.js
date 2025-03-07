@@ -240,7 +240,7 @@ function createMessageControls(msg) {
   return controlsDiv;
 }
 
-const addMessageToChatBox = handleChatBoxUpdate((msg) => {
+const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
   const chatBox = document.getElementById("chat-box");
   const msgDiv = document.createElement("div");
   msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
@@ -250,7 +250,12 @@ const addMessageToChatBox = handleChatBoxUpdate((msg) => {
 
   const controlsDiv = createMessageControls(msg); // Create the controls
   msgDiv.appendChild(controlsDiv);
-  chatBox.appendChild(msgDiv);
+
+  if (appendAtTop) {
+    chatBox.prepend(msgDiv);
+  } else {
+    chatBox.appendChild(msgDiv);
+  }
 });
 
 const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
@@ -285,7 +290,10 @@ const deleteMessage = handleChatBoxUpdate((messageId) => {
 const updateChatDisplay = handleChatBoxUpdate((history) => {
   const chatBox = document.getElementById("chat-box");
   chatBox.innerHTML = "";
-  history.forEach((msg) => addMessageToChatBox(msg));
+  // Render messages from bottom to top
+  for (let i = history.length - 1; i >= 0; i--) {
+    addMessageToChatBox(history[i], true); // Append at the top
+  }
   chatBox.scrollTop = chatBox.scrollHeight;
 });
 
