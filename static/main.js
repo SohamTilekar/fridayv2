@@ -228,6 +228,15 @@ function createMessageControls(msg) {
   deleteButton.addEventListener("click", () => deleteMessage(msg.id));
   controlsDiv.appendChild(deleteButton);
 
+  if (msg.role === "user") {
+    const retryButton = createButton(
+      "retry-msg-btn",
+      `<i class="bi bi-arrow-clockwise"></i> Retry`,
+    );
+    retryButton.addEventListener("click", () => retryMessage(msg));
+    controlsDiv.appendChild(retryButton);
+  }
+
   const timestampSpan = document.createElement("span");
   timestampSpan.classList.add("timestamp");
   const timestamp = new Date(msg.time_stamp).toLocaleTimeString([], {
@@ -240,6 +249,22 @@ function createMessageControls(msg) {
   return controlsDiv;
 }
 
+/**
+ * Retries sending a user message.
+ */
+const retryMessage = (msg) => {
+  // Re-send the message content to the server
+  socket.emit("retry_msg", msg.id);
+
+  // Optionally, provide visual feedback to the user
+  const msgDiv = document.getElementById(msg.id);
+  if (msgDiv) {
+    msgDiv.classList.add("message-retrying");
+    setTimeout(() => {
+      msgDiv.classList.remove("message-retrying");
+    }, 2000); // Remove class after 2 seconds
+  }
+};
 const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
   const chatBox = document.getElementById("chat-box");
   const msgDiv = document.createElement("div");

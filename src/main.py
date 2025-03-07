@@ -64,7 +64,7 @@ class File:
             return types.Part.from_text(text=f"\nFile Name: {self.filename}\nFile Type: {self.type.split('/')[0]}\nFile Summary: {self.content}")
         elif msg is None:
             raise TypeError("msg Paramiter of is not provided")
-        
+
         if self.type.startswith("text/"):
             return types.Part.from_text(text=f"\nFile Name: {self.filename}\nFile Content: {self.content.decode('utf-8')}") # type: ignore
         elif self.type.startswith(("image/", "video/") or self.type == "application/pdf"):
@@ -377,8 +377,8 @@ class ChatHistory:
         while idx < len(self.__chat):
             if self.__chat[idx].id == Start_ID:
                 while idx < len(self.__chat):
+                    delete_chat_message(self.__chat[idx].id)
                     del self.__chat[idx]
-                    delete_chat_message(End_ID)
                     if self.__chat[idx].id == End_ID:
                         return
                     else:
@@ -404,6 +404,16 @@ class ChatHistory:
                     raise ValueError(f"Message of ID: `{End_ID}` not found")
                 idx += 1
             raise ValueError(f"Message of ID: `{Start_ID}` not found")
+
+    def tripAfter(self, msg_ID: str) -> None:
+        idx: int = 0
+        for i, msg in enumerate(self.__chat):
+            if msg.id == msg_ID:
+                idx = i
+                break
+        for i in range(idx + 1, len(self.__chat)):
+            delete_chat_message(self.__chat[i].id)
+        self.__chat = self.__chat[:idx + 1]
 
     def for_ai(self, ai_msg: Message) -> list[types.Content]:
         result: list[types.Content] = []
@@ -897,6 +907,21 @@ def handle_send_message(data):
             del videos[id]
 
     complete_chat(message, file_attachments)
+
+@socketio.on("retry_msg")
+def handle_retry_message(msg_id: str):
+    """
+    Handles the retry message event.
+    Removes any message after the user message and generates the content.
+    """
+    try:
+        chat_history.tripAfter(msg_id)
+        ai_response = get_ai_response()
+        if ai_response:
+            update_chat_message(ai_response)
+    except ValueError as e:
+        print(f"Error retrying message: {e}")
+
 
 @socketio.on("get_chat_history")
 def handle_get_chat_history():

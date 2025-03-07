@@ -269,6 +269,7 @@ pre {
 .copy-msg-btn,
 .delete-msg-btn,
 .delete-file-button,
+.retry-msg-btn,
 .close-panel-button {
     border: none;
     border-radius: 0.25rem;
@@ -277,13 +278,15 @@ pre {
     color: var(--foreground);
     font-size: 0.75rem;
     padding: 0.25rem 0.5rem;
-    transition: background-color 0.2s ease-in-out; /* Added transition */
+    transition: background-color 0.2s ease-in-out;
+    margin-left: 0.625rem;
 }
 
 .copy-code-btn:hover,
 .copy-msg-btn:hover,
 .delete-msg-btn:hover,
 .delete-file-button:hover,
+.retry-msg-btn:hover,
 .close-panel-button:hover {
     background-color: #555; /* Darker hover color */
 }
@@ -303,6 +306,11 @@ pre {
 
 .delete-file-button:hover {
     color: #f00; /* Red on hover */
+}
+
+.message-retrying {
+    opacity: 0.6;
+    font-style: italic;
 }
 
 .panel-button {
