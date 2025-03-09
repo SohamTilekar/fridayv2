@@ -70,7 +70,8 @@ Choose the fewest number of tools necessary to fulfill the user's request. Addin
 
 *   **FetchWebsite:** Retrieves text content from a given URL.
 *   **Reminder:** Sets, cancels, etc reminders.
-*   **SearchGrounding:** Provides access to online Google search.  **Important:** If you use this tool, do NOT use any other tools.
+*   **SearchGrounding:** Provides access to online Google search.  **Important:** If you use this tool, do NOT use any other tools,\
+only "Large2.0", "Medium2.0", "Large1.5", "Medium1.5" suports SearchGrounding.
 
 **Instructions:**
 
