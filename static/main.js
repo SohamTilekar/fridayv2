@@ -780,88 +780,116 @@ document.addEventListener('DOMContentLoaded', function() {
     transition: background-color 0.2s;
     z-index: 100;
   `;
-  
+
   // Add hover effect
   resizer.addEventListener('mouseover', () => {
     resizer.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
   });
-  
+
   resizer.addEventListener('mouseout', () => {
     resizer.style.backgroundColor = 'transparent';
   });
-  
+
   // Get panel elements
   const rightPanel = document.querySelector('.right-panel');
   const chatContainer = document.querySelector('.chat-container');
-  
+
   // Add the resizer to the right panel
   rightPanel.style.position = 'relative';
   rightPanel.prepend(resizer);
-  
+
   // Variables for tracking the resize
   let isResizing = false;
   let lastDownX = 0;
-  
+  let originalRightPanelWidth = rightPanel.offsetWidth; // Store original width
+  let panelWasHidden = false; // Track if the panel was hidden
+
+  // Function to start resizing from the right edge
+  function startResizeFromEdge(e) {
+    if (rightPanel.classList.contains('d-none')) {
+      isResizing = true;
+      lastDownX = e.clientX;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      panelWasHidden = true; // Indicate that the panel was hidden
+      e.preventDefault(); // Prevent text selection during drag
+    }
+  }
+
   // Add event listeners for resizing
   resizer.addEventListener('mousedown', (e) => {
     isResizing = true;
-    lastDownX = e.clientX;
+    lastDownX = e.clientX; // Store the initial mouse position
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     e.preventDefault();
+    panelWasHidden = rightPanel.classList.contains('d-none'); // Check if panel was hidden
   });
-  
+
+  // Add mousedown listener to chatContainer for dragging from the right edge
+  chatContainer.addEventListener('mousedown', (e) => {
+    // Check if the mouse is near the right edge
+    if (e.clientX > chatContainer.offsetWidth - 10 && !isResizing) { // Adjust the 10 value for sensitivity
+      startResizeFromEdge(e);
+    }
+  });
+
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
-    
+
     const containerWidth = document.querySelector('.container-fluid').offsetWidth;
-    const delta = e.clientX - lastDownX;
-    lastDownX = e.clientX;
-    
-    // Calculate new widths as percentages
-    const rightPanelWidth = rightPanel.offsetWidth - delta;
-    const chatContainerWidth = chatContainer.offsetWidth + delta;
-    
+    let rightPanelWidth;
+    let chatContainerWidth;
+
+    if (panelWasHidden) {
+      // Dragging to show the panel
+      rightPanel.classList.remove('d-none');
+      rightPanel.classList.add('col-md-4');
+      chatContainer.classList.remove('col-md-12');
+      chatContainer.classList.add('col-md-8');
+
+      rightPanelWidth = e.clientX;
+      chatContainerWidth = containerWidth - e.clientX;
+    } else {
+      // Regular resizing
+      rightPanelWidth = containerWidth - e.clientX;
+      chatContainerWidth = e.clientX;
+    }
+
     // Calculate percentage of total width
-    const rightPanelPercent = (rightPanelWidth / containerWidth) * 100;
-    const chatContainerPercent = (chatContainerWidth / containerWidth) * 100;
-    
-    // Set minimum and maximum widths
-    if (rightPanelPercent < 10 || chatContainerPercent < 50) return;
-    
+    let rightPanelPercent = (rightPanelWidth / containerWidth) * 100;
+    let chatContainerPercent = (chatContainerWidth / containerWidth) * 100;
+
     // Apply the new widths
     rightPanel.style.width = `${rightPanelPercent}%`;
     chatContainer.style.width = `${chatContainerPercent}%`;
   });
-  
+
   document.addEventListener('mouseup', () => {
     if (isResizing) {
       isResizing = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      
-      // Update Bootstrap classes based on new sizes
-      // This helps maintain responsiveness while allowing custom sizing
-      updateBootstrapClasses(chatContainer, rightPanel);
+      panelWasHidden = false; // Reset the flag
     }
   });
-  
+
   // Function to update Bootstrap classes based on current widths
   function updateBootstrapClasses(chatEl, panelEl) {
     // Remove all column classes
-    chatEl.className = chatEl.className.replace(/col-md-\d+/g, '');
-    panelEl.className = panelEl.className.replace(/col-md-\d+/g, '');
-    
+    chatEl.className = chatEl.className.replace(/col-md-\\d+/g, '');
+    panelEl.className = panelEl.className.replace(/col-md-\\d+/g, '');
+
     // Add chat-container class back if it was removed
     if (!chatEl.classList.contains('chat-container')) {
       chatEl.classList.add('chat-container');
     }
-    
+
     // Add right-panel class back if it was removed
     if (!panelEl.classList.contains('right-panel')) {
       panelEl.classList.add('right-panel');
     }
-    
+
     // We don't re-add Bootstrap classes since we're using direct width percentages now
   }
 });

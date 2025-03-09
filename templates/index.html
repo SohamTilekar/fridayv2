@@ -40,22 +40,11 @@
                 </form>
             </div>
             <div class="col-md-4 right-panel">
-                <button id="shrink-chat-button" class="btn btn-secondary panel-button">Shrink Chat</button>
+                <p> Right Panle</p>
             </div>
         </div>
     </div>
     <script src="static/main.js"></script>
-    <script>
-        document.getElementById('shrink-chat-button').addEventListener('click', function() {
-            const chatContainer = document.querySelector('.chat-container');
-            const rightPanel = document.querySelector('.right-panel');
-
-            chatContainer.classList.toggle('col-md-8');
-            chatContainer.classList.toggle('col-md-12');
-            rightPanel.classList.toggle('col-md-4');
-            rightPanel.classList.toggle('d-none');
-        });
-    </script>
 </body>
 
 </html>

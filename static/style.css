@@ -94,6 +94,11 @@ body {
     flex-wrap: nowrap;
 }
 
+#show-panel-button {
+    margin-bottom: 10px; /* Add some spacing between buttons */
+    width: 100%; /* Make buttons fill the panel width */
+}  
+
 /* -------------------------------------------------------------------------- */
 /* Chat Components */
 /* -------------------------------------------------------------------------- */
@@ -398,7 +403,6 @@ pre {
 .timestamp {
     font-size: 0.9rem;
     color: var(--muted);
-    padding-top: 6px;
     margin-left: auto;
 }
 
@@ -426,6 +430,10 @@ pre {
     padding: 0.25rem 0.5rem;
     transition: background-color 0.2s ease-in-out;
     margin-left: 0.625rem;
+}
+
+.retry-msg-btn {
+    margin-right: 0.625rem;
 }
 
 .copy-code-btn:hover,

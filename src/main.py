@@ -733,6 +733,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True, maximum_remote_calls=None),
                 )
             )
+        print(selector_responce)
         if selector_responce.function_calls and selector_responce.function_calls[0].name == "ModelAndToolSelector" and selector_responce.function_calls[0].args:
             model, tols = tools.ModelAndToolSelector(**selector_responce.function_calls[0].args)
         else:
