@@ -1,115 +1,61 @@
 <!doctype html>
 <html lang="en" data-bs-theme="dark">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Friday</title>
-        <link
-            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-            rel="stylesheet"
-        />
-        <link
-            rel="stylesheet"
-            href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
-        />
-        <link
-            rel="stylesheet"
-            href="https://unpkg.com/highlightjs@9.16.2/styles/atom-one-dark.css"
-        />
-        <link
-            href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Roboto:wght@400;500;700&display=swap"
-            rel="stylesheet"
-        />
-        <link rel="stylesheet" href="static/style.css" />
-        <!-- Highlight.js -->
-        <script
-            src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"
-            crossorigin="anonymous"
-        ></script>
-        <script
-            src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"
-            crossorigin="anonymous"
-        ></script>
-        <script
-            src="https://cdn.jsdelivr.net/npm/marked-highlight/lib/index.umd.js"
-            crossorigin="anonymous"
-        ></script>
-        <!-- Socket.IO client library -->
-        <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    </head>
 
-    <body>
-        <div class="container-fluid h-100">
-            <div class="row h-100">
-                <div class="chat-container">
-                    <div id="chat-box"></div>
-                    <form id="chat-form">
-                        <div id="file-display-area"></div>
-                        <div class="d-flex align-items-center">
-                            <label
-                                for="file-input"
-                                class="file-upload"
-                                style="cursor: pointer"
-                            >
-                                <i class="bi bi-upload"></i>
-                            </label>
-                            <input
-                                type="file"
-                                id="file-input"
-                                name="files"
-                                multiple
-                                style="visibility: hidden; width: 0; height: 0"
-                            />
-                            <textarea
-                                id="message-input"
-                                class="form-control flex-grow-1"
-                                placeholder="Type your message..."
-                                rows="1"
-                                required
-                                aria-label="Chat message"
-                            ></textarea>
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Friday</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/highlightjs@9.16.2/styles/atom-one-dark.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="static/style.css" />
+    <!-- Highlight.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked-highlight/lib/index.umd.js" crossorigin="anonymous"></script>
+    <!-- Socket.IO client library -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
 
-                            <span id="vertical-separator"></span>
-                            <button
-                                type="submit"
-                                id="send-button"
-                                class="btn btn-primary"
-                                aria-label="Send message"
-                            >
-                                <i class="bi bi-send-fill"></i>
-                            </button>
-                        </div>
-                    </form>
-                </div>
-                <!-- Right Panel -->
-                <div class="right-panel" id="rightPanel">
-                    <button
-                        class="close-panel-button"
-                        onclick="toggleRightPanel()"
-                        aria-label="Close panel"
-                    >
-                        <i class="bi bi-x-lg"></i>
-                    </button>
-                    <h3>Options</h3>
-                    <button
-                        class="btn btn-primary panel-button"
-                        onclick="shrinkChat()"
-                    >
-                        Shrink Chat
-                    </button>
-                    <!-- Add more buttons or content here as needed -->
-                </div>
+<body>
+    <div class="container-fluid h-100">
+        <div class="row h-100">
+            <div class="col-md-8 chat-container">
+                <div id="chat-box"></div>
+                <form id="chat-form">
+                    <div id="file-display-area"></div>
+                    <div class="d-flex align-items-center">
+                        <label for="file-input" class="file-upload" style="cursor: pointer">
+                            <i class="bi bi-upload"></i>
+                        </label>
+                        <input type="file" id="file-input" name="files" multiple style="visibility: hidden; width: 0; height: 0" />
+                        <textarea id="message-input" class="form-control flex-grow-1" placeholder="Type your message..." rows="1" required aria-label="Chat message"></textarea>
+
+                        <span id="vertical-separator"></span>
+                        <button type="submit" id="send-button" class="btn btn-primary" aria-label="Send message">
+                            <i class="bi bi-send-fill"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="col-md-4 right-panel">
+                <button id="shrink-chat-button" class="btn btn-secondary panel-button">Shrink Chat</button>
             </div>
         </div>
-        <!-- Button to Open the Panel -->
-        <button
-            class="btn btn-secondary"
-            onclick="toggleRightPanel()"
-            style="position: fixed; top: 20px; right: 20px"
-            aria-label="Open panel"
-        >
-            <i class="bi bi-gear-fill"></i>
-        </button>
-        <script src="static/main.js"></script>
-    </body>
+    </div>
+    <script src="static/main.js"></script>
+    <script>
+        document.getElementById('shrink-chat-button').addEventListener('click', function() {
+            const chatContainer = document.querySelector('.chat-container');
+            const rightPanel = document.querySelector('.right-panel');
+
+            chatContainer.classList.toggle('col-md-8');
+            chatContainer.classList.toggle('col-md-12');
+            rightPanel.classList.toggle('col-md-4');
+            rightPanel.classList.toggle('d-none');
+        });
+    </script>
+</body>
+
 </html>
