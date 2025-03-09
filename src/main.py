@@ -25,12 +25,21 @@ socketio = SocketIO(app)
 client = genai.Client(api_key=config.GOOGLE_API)
 
 ReminderTool = types.Tool(
-    google_search=types.GoogleSearch(),
     function_declarations=[
         types.FunctionDeclaration.from_callable(callable=tools.CreateReminder, client=client),
         types.FunctionDeclaration.from_callable(callable=tools.CancelReminder, client=client)
     ]
 )
+
+GoogleTool = types.Tool(google_search=types.GoogleSearch())
+
+FetchTool = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration.from_callable(callable=tools.FetchWebsite, client=client)
+    ]
+)
+
+#region
 
 class File:
     type: str  # mime types = ""
@@ -406,6 +415,34 @@ class Message:
                     del self.content[idx]
                     return
 
+    def get_func_call(self, ID: str) -> FunctionCall:
+        for item in self.content:
+            if item.function_call:
+                if item.function_call.id == ID:
+                    return item.function_call
+        raise ValueError(f"Function Call with ID `{ID}` not found in message `{self.id}`.")
+
+    def delete_func_call(self, ID: str):
+        for idx, item in enumerate(self.content):
+            if item.function_call:
+                if item.function_call.id == ID:
+                    del self.content[idx]
+                    return
+
+    def get_func_responce(self, ID: str) -> FunctionResponce:
+        for item in self.content:
+            if item.function_response:
+                if item.function_response.id == ID:
+                    return item.function_response
+        raise ValueError(f"Function Responce with ID `{ID}` not found in message `{self.id}`.")
+
+    def delete_func_responce(self, ID: str):
+        for idx, item in enumerate(self.content):
+            if item.function_response:
+                if item.function_response.id == ID:
+                    del self.content[idx]
+                    return
+
     def for_ai(self, msg: Optional["Message"] = None) -> list[types.Content]:
         if self.is_summary:
             return [types.Content(parts=[content.for_ai(msg) for content in self.content], role=self.role)]  # type: ignore
@@ -598,9 +635,9 @@ class ChatHistory:
             print("Chat history file not found. Starting with an empty chat.")
         except json.JSONDecodeError:
             print("Error decoding chat history. Starting with an empty chat.")
+#endregion
 
-
-# Chat History Management
+#region Chat History Management
 
 chat_history: ChatHistory = ChatHistory()
 
@@ -649,9 +686,9 @@ def delete_chat_message(msg_id: str):
     emits the delete message.
     """
     socketio.emit("delete_message", msg_id)
+#endregion
 
-
-# Gemini Model Interaction
+#region Gemini Model Interaction
 @utils.retry()
 def generate_content_with_retry(msg: Message) -> Message:
     """Generates content from Gemini, retrying on token limits."""
@@ -681,18 +718,37 @@ def generate_content_with_retry(msg: Message) -> Message:
         except Exception as e:
             msg.content.append(Content(function_response=FunctionResponce(id=func_call.id, name=func_call.name, response={"error": e})))
 
+    @utils.retry()
+    def getModelAndTools():
+        chat = chat_history.for_ai(msg)
+        chat.append(types.Content(parts=[types.Part(text=prompt.ModelAndToolSelectorUSER_INSTUNCTION)], role="user"))
+        selector_responce = client.models.generate_content(
+                model="gemini-2.0-flash-lite-001",
+                contents=chat, # type: ignore
+                config=types.GenerateContentConfig(
+                    system_instruction=prompt.ModelAndToolSelectorSYSTEM_INSTUNCTION,
+                    temperature=config.CHAT_AI_TEMP,
+                    max_output_tokens=config.MAX_OUTPUT_TOKEN_LIMIT,
+                    tools=[types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ModelAndToolSelector)])],
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True, maximum_remote_calls=None),
+                )
+            )
+        if selector_responce.function_calls and selector_responce.function_calls[0].name == "ModelAndToolSelector" and selector_responce.function_calls[0].args:
+            model, tols = tools.ModelAndToolSelector(**selector_responce.function_calls[0].args)
+        else:
+            raise Exception("Cant Select Model or Tool")
+        return model, tols
+    model, tols = getModelAndTools()
+    print(model, tols)
     while True:
         response = client.models.generate_content_stream(
-            model=config.CHAT_AI,
+            model=model,
             contents=chat_history.for_ai(msg), # type: ignore
             config=types.GenerateContentConfig(
                 system_instruction=prompt.SYSTEM_INSTUNCTION + tools.get_reminders(),
                 temperature=config.CHAT_AI_TEMP,
                 max_output_tokens=config.MAX_OUTPUT_TOKEN_LIMIT,
-                tools=[
-                        # types.Tool(google_search=types.GoogleSearch()),
-                        ReminderTool
-                    ],
+                tools=tols, # type: ignore
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True, maximum_remote_calls=None),
             )
         )
@@ -790,7 +846,9 @@ def handle_generation_failure(msg: Message, error: Exception):
         msg.content[-1].text = error_message
     update_chat_message(msg)
 
-# Token Reduction (Summarization/Removal)
+#endregion
+
+#region Token Reduction (Summarization/Removal)
 
 @utils.retry()
 def SummarizeAttachment(AttachmentID: str, MessageID: str):
@@ -920,6 +978,26 @@ def RemoveAttachment(AttachmentID: str, MessageID: str):
     update_chat_message(msg)
     return f"RemoveAttachment: {AttachmentID=}, {MessageID=}"
 
+def RemoveFunctionCall(FunctionCallID: str, MessageID: str):
+    """\
+    Removes a specific function call from a message.
+    Use this for function call that are old.
+    """
+    msg = chat_history.getMsg(MessageID)
+    msg.delete_attachment(FunctionCallID)
+    update_chat_message(msg)
+    return f"Remove FuncionCall: {FunctionCallID=}, {MessageID=}"
+
+def RemoveFunctionResponce(FunctionCallID: str, MessageID: str):
+    """\
+    Removes a specific function responce from a message.
+    Use this for function responces that are old.
+    """
+    msg = chat_history.getMsg(MessageID)
+    msg.delete_attachment(FunctionCallID)
+    update_chat_message(msg)
+    return f"Remove FunctionResponce: {FunctionCallID=}, {MessageID=}"
+
 def RemoveMessage(MessageID: str):
     """\
     Removes an entire message from the chat history & its attachments.
@@ -937,8 +1015,9 @@ def RemoveMessageHistory(StartMessageID: str, EndMessageID: str):
     chat_history.delMsgRange(StartMessageID, EndMessageID)
     return f"RemoveAttachment: {StartMessageID=}, {EndMessageID=}"
 
+#endregion
 
-# SocketIO Event Handlers
+#region SocketIO Event Handlers
 
 @socketio.on("srink_chat")
 def reduceTokensUsage():
@@ -1103,8 +1182,9 @@ def handle_delete_message(data):
     msg_id = data.get("message_id")
     chat_history.delete_message(msg_id)
 
+#endregion
 
-# Flask Routes
+#region Flask Routes
 
 @app.route('/favicon.ico')
 def favicon():
@@ -1113,6 +1193,8 @@ def favicon():
 @app.route('/')
 def root():
     return render_template('index.html')
+
+#endregion
 
 if __name__ == "__main__":
     chat_history_file = os.path.join(config.AI_DIR, "chat_history.json")
