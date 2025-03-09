@@ -18,12 +18,11 @@ body {
 
 :root {
     /* Primary Theme Colors */
-    --primary: #2596be;
+    --primary: #1d6f8d;
     --secondary: #6c757d;
-    --accent: #ffc107;
     --background: #212529;
     --foreground: #f8f9fa;
-    --muted: #adb5bd;
+    --muted: #959ca3;
 
     /* Code Block Colors */
     --code-background: #343a40;
@@ -391,10 +390,16 @@ pre {
 /* Utility Styles */
 /* -------------------------------------------------------------------------- */
 
+.controls {
+    display: flex;
+    align-items: center;
+}
+
 .timestamp {
-    font-size: 0.75rem;
+    font-size: 0.9rem;
     color: var(--muted);
-    margin-left: 0.625rem;
+    padding-top: 6px;
+    margin-left: auto;
 }
 
 #vertical-separator {

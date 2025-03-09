@@ -214,7 +214,7 @@ function renderMessageContent(msgDiv, msg) {
  */
 function createMessageControls(msg) {
   const controlsDiv = document.createElement("div"); // Create a container for the controls
-
+  controlsDiv.classList.add("controls")
   const copyButton = createButton(
     "copy-msg-btn",
     `<i class="bi bi-clipboard"></i> Copy`,
