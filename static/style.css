@@ -113,7 +113,8 @@ body {
     white-space: pre-wrap;
     background-color: #343a40;
     color: var(--foreground);
-    border: none; /* Remove default border */
+    border: none;
+    /* Remove default border */
 }
 
 #message-input:focus {
@@ -130,7 +131,8 @@ body {
     padding: var(--padding-md);
     border-radius: var(--border-radius);
     width: fit-content;
-    word-break: break-word; /* Prevent long words from breaking layout */
+    word-break: break-word;
+    /* Prevent long words from breaking layout */
 }
 
 .user-msg {
@@ -146,6 +148,135 @@ body {
     max-width: 75%;
 }
 
+/* Function Call Renderer CSS */
+.fn-container {
+    border-radius: 8px;
+    background-color: #252a37;
+    overflow: hidden;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.fn-header {
+    background-color: #2d3748;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: #a0aec0;
+    border-bottom: 1px solid #3a4559;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fn-name {
+    color: #6bc6ff;
+    font-weight: 600;
+}
+
+.fn-badge {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background-color: #3182ce;
+    color: white;
+}
+
+.fn-body {
+    padding: 12px;
+    font-family: 'Fira Code', 'Roboto Mono', monospace;
+    font-size: 14px;
+}
+
+.fn-param {
+    margin-bottom: 8px;
+    display: flex;
+}
+
+.param-name {
+    color: #fc8181;
+    min-width: 100px;
+    font-weight: 500;
+}
+
+.param-value {
+    color: #9ae6b4;
+}
+
+.fn-response {
+    border-radius: 8px;
+    margin-top: 16px;
+    overflow: hidden;
+}
+
+.response-header {
+    padding: 8px 12px;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.response-success {
+    background-color: #2c5f40;
+    border-bottom: 1px solid #48bb78;
+}
+
+.response-error {
+    background-color: #742a30;
+    border-bottom: 1px solid #f56565;
+}
+
+.status-badge {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.status-success {
+    background-color: #38a169;
+    color: white;
+}
+
+.status-error {
+    background-color: #e53e3e;
+    color: white;
+}
+
+.response-body {
+    background-color: #1f2936;
+    padding: 12px;
+    font-family: 'Fira Code', 'Roboto Mono', monospace;
+    font-size: 14px;
+    max-height: 200px;
+    overflow: auto;
+}
+
+.response-content {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.json-string {
+    color: #9ae6b4;
+}
+
+.json-number {
+    color: #fbd38d;
+}
+
+.json-boolean {
+    color: #63b3ed;
+}
+
+.json-null {
+    color: #fc8181;
+}
+
+.json-key {
+    color: #fc8181;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Code Styles */
 /* -------------------------------------------------------------------------- */
@@ -157,7 +288,8 @@ pre {
     overflow-x: auto;
     position: relative;
     color: var(--code-text);
-    font-family: "Fira Code", monospace; /* Updated font */
+    font-family: "Fira Code", monospace;
+    /* Updated font */
 }
 
 .code-block {
@@ -188,8 +320,10 @@ pre {
 /* -------------------------------------------------------------------------- */
 
 .file-upload {
-    display: flex; /* Enable flexbox */
-    align-items: center; /* Vertically center the content */
+    display: flex;
+    /* Enable flexbox */
+    align-items: center;
+    /* Vertically center the content */
     padding-left: 6px;
     padding-right: 6px;
 }
@@ -202,7 +336,8 @@ pre {
 .file-box {
     display: flex;
     align-items: center;
-    background-color: #495057; /* Darker background */
+    background-color: #495057;
+    /* Darker background */
     color: #fff;
     padding: 0.5rem 0.75rem;
     border-radius: 0.375rem;
@@ -288,7 +423,8 @@ pre {
 .delete-file-button:hover,
 .retry-msg-btn:hover,
 .close-panel-button:hover {
-    background-color: #555; /* Darker hover color */
+    background-color: #555;
+    /* Darker hover color */
 }
 
 .delete-msg-btn {
@@ -305,7 +441,8 @@ pre {
 }
 
 .delete-file-button:hover {
-    color: #f00; /* Red on hover */
+    color: #f00;
+    /* Red on hover */
 }
 
 .message-retrying {
@@ -347,11 +484,9 @@ td {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-        45deg,
-        var(--scrollbar-thumb-start),
-        var(--scrollbar-thumb-end)
-    );
+    background: linear-gradient(45deg,
+            var(--scrollbar-thumb-start),
+            var(--scrollbar-thumb-end));
     border-radius: 0.625rem;
 }
 

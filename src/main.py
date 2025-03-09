@@ -16,11 +16,21 @@ import base64
 import time
 import datetime
 import utils
+import threading
+import tools
 
 app = Flask("Friday")
 socketio = SocketIO(app)
 
 client = genai.Client(api_key=config.GOOGLE_API)
+
+ReminderTool = types.Tool(
+    google_search=types.GoogleSearch(),
+    function_declarations=[
+        types.FunctionDeclaration.from_callable(callable=tools.CreateReminder, client=client),
+        types.FunctionDeclaration.from_callable(callable=tools.CancelReminder, client=client)
+    ]
+)
 
 class File:
     type: str  # mime types = ""
@@ -189,7 +199,7 @@ class GroundingMetaData:
         self.first_offset = first_offset if first_offset else 0
         self.rendered_content = rendered_content if rendered_content else ""
 
-    def jsonify(self) -> dict:
+    def jsonify(self) -> dict[str, Any]:
         return {
             "first_offset": self.first_offset,
             "rendered_content": self.rendered_content,
@@ -204,20 +214,124 @@ class GroundingMetaData:
                                  data.get("first_offset", 0),
                                  data.get("rendered_content", ""))
 
+class FunctionCall:
+    id: str = ""
+    name: Optional[str]
+    args: dict[str, Any]
+
+    def __init__(self, id: Optional[str] = None, name: Optional[str] = "", args: Optional[dict[str, Any]] = None):
+        self.id = id if id else str(uuid.uuid4())
+        self.name = name
+        self.args = args if args else {}
+    
+    def for_ai(self) -> types.FunctionCall:
+        return types.FunctionCall(
+            id=self.id,
+            name=self.name,
+            args=self.args
+        )
+    
+    def for_summarizer(self) -> list[types.Part]:
+        return [
+                types.Part(text=f"CallID: {self.id}"),
+                types.Part(
+                    function_call=types.FunctionCall(
+                        id=self.id,
+                        name=self.name,
+                        args=self.args
+                    )
+                )
+            ]
+
+    def jsonify(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "args": self.args
+        }
+
+    @staticmethod
+    def from_jsonify(data: dict[str, Any]) -> "FunctionCall":
+        return FunctionCall(
+            data.get("id"),
+            data.get("name"),
+            data.get("args")
+        )
+
+class FunctionResponce:
+    id: str = ""
+    name: Optional[str] = None
+    response: dict[str, Any]
+
+    def __init__(self, id: Optional[str] = None, name: Optional[str] = None, response: Optional[dict[str, Any]] = None):
+        self.id = id if id else str(uuid.uuid4())
+        self.name = name
+        self.response = response if response else {}
+
+    def for_ai(self) -> types.FunctionResponse:
+        return types.FunctionResponse(
+            id=self.id,
+            name=self.name,
+            response=self.response # type: ignore
+        )
+    
+    def for_summarizer(self) -> list[types.Part]:
+        return [
+                types.Part(text=f"ResponceID: {self.id}"),
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id=self.id,
+                        name=self.name,
+                        response=self.response
+                    )
+                )
+            ]
+
+    def jsonify(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "response": self.response
+        }
+
+    @staticmethod
+    def from_jsonify(data: dict[str, Any]) -> "FunctionResponce":
+        return FunctionResponce(
+            data.get("id"),
+            data.get("name", ""),
+            data.get("response")
+        )
+
 class Content:
     text: Optional[str] = None
     processing: bool = False
     attachment: Optional[File] = None
     grounding_metadata: Optional[GroundingMetaData] = None
+    function_call: Optional[FunctionCall] = None
+    function_response: Optional[FunctionResponce] = None
 
-    def __init__(self, text: Optional[str] = None, attachment: Optional[File] = None, grounding_metadata: Optional[GroundingMetaData] = None, processing: bool = False):
+    def __init__(
+            self,
+            text: Optional[str] = None,
+            attachment: Optional[File] = None,
+            grounding_metadata: Optional[GroundingMetaData] = None,
+            processing: bool = False,
+            function_call: Optional[FunctionCall] = None,
+            function_response: Optional[FunctionResponce] = None,
+        ):
         self.text = text
         self.attachment = attachment
         self.grounding_metadata = grounding_metadata
         self.processing = processing
+        self.function_call = function_call
+        self.function_response = function_response
 
     def for_ai(self, msg: Optional["Message"] = None) -> types.Part:
-        if self.text is not None:
+        if self.function_call:
+            return types.Part(function_call=self.function_call.for_ai())
+        elif self.function_response:
+            return types.Part(function_response=self.function_response.for_ai())
+        elif self.text is not None:
             return types.Part(text=self.text)
         elif self.attachment is not None:
             return self.attachment.for_ai(msg)
@@ -225,27 +339,35 @@ class Content:
             raise # Raise Appropriate Error
 
     def for_sumarizer(self) -> list[types.Part]:
-        if self.text is not None:
+        if self.function_call:
+            return self.function_call.for_summarizer()
+        elif self.function_response:
+            return self.function_response.for_summarizer()
+        elif self.text is not None:
             return [types.Part(text=self.text)]
         elif self.attachment is not None:
             return self.attachment.for_summarizer()
         else:
             raise # Raise Appropriate Error
 
-    def jsonify(self):
+    def jsonify(self) -> dict[str, Any]:
         return {
             "text": self.text,
             "attachment": self.attachment.jsonify() if self.attachment else None,
             "grounding_metadata": self.grounding_metadata.jsonify() if self.grounding_metadata else None,
-            "processing": self.processing
+            "processing": self.processing,
+            "function_call": self.function_call.jsonify() if self.function_call else None,
+            "function_response": self.function_response.jsonify() if self.function_response else None,
         }
 
     @staticmethod
-    def from_jsonify(data: dict):
+    def from_jsonify(data: dict[str, Any]) -> "Content":
         return Content(
             text=data.get("text", ""),
             attachment=File.from_jsonify(data["attachment"]) if data.get("attachment") else None,
             grounding_metadata=GroundingMetaData.from_jsonify(data["grounding_metadata"]) if data.get("grounding_metadata") else None,
+            function_call=FunctionCall.from_jsonify(data["function_call"]) if data.get("function_call") else None,
+            function_response=FunctionResponce.from_jsonify(data["function_response"]) if data.get("function_response") else None,
         )
 
 class Message:
@@ -284,26 +406,53 @@ class Message:
                     del self.content[idx]
                     return
 
-    def for_ai(self, msg: Optional["Message"] = None) -> types.Content:
+    def for_ai(self, msg: Optional["Message"] = None) -> list[types.Content]:
         if self.is_summary:
-            return types.Content(parts=[content.for_ai(msg) for content in self.content], role=self.role)  # type: ignore
+            return [types.Content(parts=[content.for_ai(msg) for content in self.content], role=self.role)]  # type: ignore
         if msg is None:
             raise ValueError("msg parameter is required.")
 
-        ai_contents: list[types.Part] = [types.Part(text=self.time_stamp.strftime("%H:%M"))]
+        ai_contents: list[types.Content] = []
+        parts_buffer = [types.Part(text=self.time_stamp.strftime("%H:%M"))]
+
         for item in self.content:
-            ai_contents.append(item.for_ai(msg))
+            if item.function_response:
+                if parts_buffer:
+                    ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
+                    parts_buffer = []
+                if msg and self.id == msg.id:
+                    ai_contents.append(types.Content(parts=[item.for_ai()], role="user"))
+                    ai_contents.append(types.Content(parts=[types.Part(text=self.time_stamp.strftime("%H:%M"))], role="model"))
+                else:
+                    ai_contents.append(types.Content(parts=[item.for_ai()], role="user"))
+            else:
+                parts_buffer.append(item.for_ai(msg))
 
-        return types.Content(parts=ai_contents, role=self.role)
+        if parts_buffer:
+            ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
 
-    def for_summarizer(self) -> types.Content:
-        ai_content: list[types.Part] = [
+        return ai_contents
+
+    def for_summarizer(self) -> list[types.Content]:
+        ai_contents: list[types.Content] = []
+        parts_buffer: list[types.Part] = [
             types.Part.from_text(text=f"MessageID: {self.id}"),
             types.Part.from_text(text=self.time_stamp.strftime("on %d-%m-%Y at %H")),
         ]
+
         for item in self.content:
-            ai_content.extend(item.for_sumarizer())
-        return types.Content(parts=ai_content, role=self.role)
+            if item.function_response:
+                if parts_buffer:
+                    ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
+                    parts_buffer = []
+                ai_contents.append(types.Content(parts=item.for_sumarizer(), role="user"))
+            else:
+                parts_buffer.extend(item.for_sumarizer())
+
+        if parts_buffer:
+            ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
+
+        return ai_contents
 
     def jsonify(self) -> dict[str, Any]:
         return {
@@ -418,13 +567,13 @@ class ChatHistory:
     def for_ai(self, ai_msg: Message) -> list[types.Content]:
         result: list[types.Content] = []
         for msg in self.__chat:
-            result.append(msg.for_ai(ai_msg))
+            result.extend(msg.for_ai(ai_msg))
         return result
 
     def for_summarizer(self) -> list[types.Content]:
         result: list[types.Content] = []
         for msg in self.__chat:
-            result.append(msg.for_summarizer())
+            result.extend(msg.for_summarizer())
         return result
 
     def jsonify(self) -> list[dict[str, str | Literal["model", "user"] | list]]:
@@ -505,46 +654,66 @@ def delete_chat_message(msg_id: str):
 # Gemini Model Interaction
 @utils.retry()
 def generate_content_with_retry(msg: Message) -> Message:
-    """
-    Generates content from the Gemini model with retry logic for token limits.
-    """
-    x = 0
+    """Generates content from Gemini, retrying on token limits."""
+
+    def handle_part(part: types.Part):
+        if part.thought and part.text:
+            msg.thought += part.text
+        elif part.text:
+            if not msg.content:
+                msg.content.append(Content(text="", processing=True))
+            if msg.content[-1].text is None:
+                msg.content[-1].processing = False
+                msg.content.append(Content(text=part.text))
+            else:
+                msg.content[-1].text += part.text
+        elif part.function_call:
+            handle_function_call(part.function_call)
+
+    def handle_function_call(func_call: types.FunctionCall):
+        msg.content.append(Content(function_call=FunctionCall(id=func_call.id, name=func_call.name, args=func_call.args)))
+        try:
+            if func_call.name:
+                func_response = getattr(tools, func_call.name)(**func_call.args) if func_call.args else getattr(tools, func_call.name)()
+                msg.content.append(Content(function_response=FunctionResponce(id=func_call.id, name=func_call.name, response={"output": func_response})))
+            else:
+                raise Exception("Function with no Name")
+        except Exception as e:
+            msg.content.append(Content(function_response=FunctionResponce(id=func_call.id, name=func_call.name, response={"error": e})))
+
     while True:
-        x += 1
         response = client.models.generate_content_stream(
             model=config.CHAT_AI,
             contents=chat_history.for_ai(msg), # type: ignore
             config=types.GenerateContentConfig(
-                system_instruction=prompt.SYSTEM_INSTUNCTION,
+                system_instruction=prompt.SYSTEM_INSTUNCTION + tools.get_reminders(),
                 temperature=config.CHAT_AI_TEMP,
                 max_output_tokens=config.MAX_OUTPUT_TOKEN_LIMIT,
-                tools=[types.Tool(google_search=types.GoogleSearch())],
+                tools=[
+                        # types.Tool(google_search=types.GoogleSearch()),
+                        ReminderTool
+                    ],
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True, maximum_remote_calls=None),
             )
         )
-        finish_reason: Optional[types.FinishReason] = None
+
+        func_call = False
         for content in response:
-            if (content.candidates and content.candidates[0].content and content.candidates[0].content.parts):
+            if content.candidates and content.candidates[0].content and content.candidates[0].content.parts:
                 for part in content.candidates[0].content.parts:
-                    if part.thought and part.text:
-                        msg.thought += part.text
-                    elif part.text:
-                        if not msg.content:
-                            msg.content.append(Content(text="", processing=True))
-                        if msg.content[-1].text is None:
-                            msg.content[-1].processing = False
-                            msg.content.append(Content(text=part.text))
-                        else:
-                            msg.content[-1].text += part.text
-                    else:
-                        continue
-                process_grounding_metadata(msg, content)
+                    handle_part(part)
+                    if part.function_call:
+                        func_call = True
+                        print(part.function_call)
+            process_grounding_metadata(msg, content)
             update_chat_message(msg)
+
         if msg.content:
             msg.content[-1].processing = False
             update_chat_message(msg)
-        if finish_reason == types.FinishReason.MAX_TOKENS:
-            continue  # Recalling AI max output tokens are reached but AI want to Reply
+
+        if func_call:
+            continue
         break
 
     msg.time_stamp = datetime.datetime.now()
@@ -574,44 +743,47 @@ def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata):
     """
     Processes grounding support information and updates the message.
     """
+    if msg.content[-1].text is None:
+        return
     if msg.content[-1].grounding_metadata is None:
         msg.content[-1].grounding_metadata = GroundingMetaData([], [])
     first = True
     for support in metadata.grounding_supports:  # type: ignore
-        start_index = msg.content.find(support.segment.text)  # type: ignore
-        if start_index == -1:
-            escaped_target = re.escape(msg.content[-1].text or "")
-            # Create a regex pattern that allows for extra spaces and minor variations
-            # Allow any amount of whitespace between chars
-            # cz Gemini Grounding Suks
-            pattern = r'\s*'.join(list(escaped_target))
-            match = re.search(
-                pattern, support.segment.text or "")  # type: ignore
-            if match:
-                return match.start()
-            else:
-                continue
+        if support.segment and support.segment.text:
+            start_index = msg.content[-1].text.find(support.segment.text)
+            if start_index == -1:
+                escaped_target = re.escape(msg.content[-1].text or "")
+                # Create a regex pattern that allows for extra spaces and minor variations
+                # Allow any amount of whitespace between chars
+                # cz Gemini Grounding Suks
+                pattern = r'\s*'.join(list(escaped_target))
+                match = re.search(
+                    pattern, support.segment.text or "")  # type: ignore
+                if match:
+                    return match.start()
+                else:
+                    continue
 
-        if first:
-            msg.content[-1].grounding_metadata.first_offset = start_index - \
-                support.segment.start_index  # type: ignore
-            first = False
+            if first:
+                msg.content[-1].grounding_metadata.first_offset = start_index - \
+                    support.segment.start_index  # type: ignore
+                first = False
 
-        msg.content[-1].grounding_metadata.grounding_supports.append(
-            GroundingSupport(support.grounding_chunk_indices, {  # type: ignore
-                "text": support.segment.text,  # type: ignore
-                "start_index": start_index,
-                "end_index": start_index + len(support.segment.text) # type: ignore
-            })  # type: ignore
-        )
+            msg.content[-1].grounding_metadata.grounding_supports.append(
+                GroundingSupport(support.grounding_chunk_indices, {  # type: ignore
+                    "text": support.segment.text,  # type: ignore
+                    "start_index": start_index,
+                    "end_index": start_index + len(support.segment.text) # type: ignore
+                })  # type: ignore
+            )
     update_chat_message(msg)
 
 def handle_generation_failure(msg: Message, error: Exception):
     """
     Handles the failure to generate a response from the AI model.
     """
-    error_message = f"Failed to generate response after multiple retries: {
-        str(error)}"
+    import traceback
+    error_message = f"Failed to generate response after multiple retries: {str(error)}\n\nTraceback:\n```\n{traceback.format_exc()}\n```"
     if not msg.content or msg.content[-1].text is None:
         msg.content.append(Content(text=error_message))
     else:
@@ -667,7 +839,7 @@ def SummarizeMessage(MessageID: str):
     Use this for verbose or lengthy messages that contain information that can be condensed without losing critical meaning.
     """
     chat: list[types.Content] = [
-        chat_history.getMsg(MessageID).for_summarizer(),
+        *chat_history.getMsg(MessageID).for_summarizer(),
         types.Content(
             role="user",
             parts=[
@@ -709,8 +881,7 @@ def SummarizeHistory(StartMessageID: str, EndMessageID: str):
     Use this for older conversations that are no longer directly relevant but provide useful context.
     """
     chat: list[types.Content] = [
-        *(msg.for_summarizer()
-            for msg in chat_history.getMsgRange(StartMessageID, EndMessageID)),
+        # *(*msg.for_summarizer() for msg in chat_history.getMsgRange(StartMessageID, EndMessageID)),
         types.Content(
             role="user",
             parts=[
@@ -947,9 +1118,11 @@ if __name__ == "__main__":
     chat_history_file = os.path.join(config.AI_DIR, "chat_history.json")
     chat_history.load_from_json(chat_history_file)
     try:
+        threading.Thread(target=tools.run_reminders)
         socketio.run(app, host='127.0.0.1', port=5000,
                      debug=True, use_reloader=False)
     finally:
         chat_history_file = os.path.join(config.AI_DIR, "chat_history.json")
         chat_history.save_to_json(chat_history_file)
+        tools.save_jobs()
         print("Chat history saved.")

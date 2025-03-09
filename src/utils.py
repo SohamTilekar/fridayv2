@@ -1,6 +1,7 @@
 import time
 import functools
 import config
+import traceback
 
 def retry(max_retries=config.MAX_RETRIES, delay=config.RETRY_DELAY):
     """
@@ -23,6 +24,7 @@ def retry(max_retries=config.MAX_RETRIES, delay=config.RETRY_DELAY):
                         time.sleep(delay * (2 ** attempt))  # Exponential backoff
                     else:
                         print(f"Max retries reached for {func.__name__}.  Raising exception.")
+                        traceback.print_exc()
                         raise  # Re-raise the exception
                 attempt += 1
             return None # Should not reach here if exception is raised

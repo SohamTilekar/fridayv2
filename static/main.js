@@ -161,7 +161,6 @@ function renderMessageContent(msgDiv, msg) {
   msg.content.forEach((contentItem) => {
     const contentDiv = document.createElement("div");
     contentDiv.classList.add("message-content");
-
     let contentHtml = "";
     if (contentItem.text && contentItem.text.trim() !== "") {
       let textContent = contentItem.text;
@@ -182,6 +181,10 @@ function renderMessageContent(msgDiv, msg) {
                   </div>
               `;
       }
+    } else if (contentItem.function_call) {
+      contentHtml = renderFunctionCall(contentItem.function_call);
+    } else if (contentItem.function_response) {
+      contentHtml = renderFunctionResponse(contentItem.function_response);
     } else if (contentItem.text) {
       contentHtml = `
               <div class="thinking-loader">
@@ -343,7 +346,7 @@ function enhanceCodeBlocks(scope) {
       langName.innerText = lang;
 
     copyButton.addEventListener("click", () =>
-      copyToClipboard(codeBlock.innerText, copyButton),
+      copyToClipboard(codeBlock.textContent, copyButton),
     );
 
     codeBlock.classList.add("code-block");
@@ -392,9 +395,19 @@ function applyGroundingInfo(contentText, groundingMetadata) {
       const x = groundingMetadata.grounding_chuncks[c];
       tooltipContent += `- [${x[0]}](${x[1]})\n`;
     });
-    result =
-      result.substring(0, idx) +
-      `<i class="bi bi-info-circle grounding-marker" data-tooltip="${encodeURIComponent(marked.parse(tooltipContent))}"></i>` +
+    console.log(result.substring(0, idx));
+    console.log(result.substring(idx));
+    result = result.substring(0, idx).endsWith("```")
+      ? result.substring(0, idx) +
+      "\n" +
+      `<i class="bi bi-info-circle grounding-marker" data-tooltip="${encodeURIComponent(
+        marked.parse(tooltipContent),
+      )}"></i>` +
+      result.substring(idx)
+      : result.substring(0, idx) +
+      `<i class="bi bi-info-circle grounding-marker" data-tooltip="${encodeURIComponent(
+        marked.parse(tooltipContent),
+      )}"></i>` +
       result.substring(idx);
   });
 
@@ -534,6 +547,82 @@ function displayAttachments(attachmentDiv, file) {
   const attachmentElement = createAttachmentElement(file);
   attachmentDiv.appendChild(attachmentElement);
   attachmentDiv.appendChild(document.createElement("br"));
+}
+
+// --------------------------------------------------------------------------
+// --- Func Call & Responce Display ---
+// --------------------------------------------------------------------------
+
+/**
+ * Renders a function call in a minimalist dark format
+ * @param {Object} functionCall - Object containing name and args properties
+ * @returns {string} HTML string for function call display
+ */
+function renderFunctionCall(functionCall) {
+  const name = functionCall.name;
+  const args = functionCall.args;
+  
+  const paramsHtml = Object.entries(args)
+    .map(([key, value]) => {
+      let displayValue = typeof value === 'string' 
+        ? `"${value}"` 
+        : JSON.stringify(value);
+        
+      return `
+        <div class="fn-param">
+          <div class="param-name">${key}:</div>
+          <div class="param-value">${displayValue}</div>
+        </div>
+      `;
+    })
+    .join('');
+
+  return `
+    <div class="fn-container">
+      <div class="fn-header">
+        <span>function</span>
+        <span class="fn-badge">call</span>
+      </div>
+      <div class="fn-body">
+        <div class="fn-name">${name}</div>
+        <div class="fn-params" style="margin-top: 8px;">
+          ${paramsHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Renders a function response, showing either output or error content
+ * @param {Object} functionResponse - Object containing name and response properties
+ * @returns {string} HTML string for function response display
+ */
+function renderFunctionResponse(functionResponse) {
+  const name = functionResponse.name;
+  const response = functionResponse.response;
+  
+  // Determine if it's a success (has output field) or error (has error field)
+  const isSuccess = response.output !== undefined;
+  const headerClass = isSuccess ? "response-success" : "response-error";
+  const statusClass = isSuccess ? "status-success" : "status-error";
+  const statusText = isSuccess ? "success" : "error";
+  
+  // Get the content to display (either output or error)
+  const contentToDisplay = isSuccess ? response.output : response.error;
+  const formattedContent = JSON.stringify(contentToDisplay, null, 2);
+  
+  return `
+    <div class="fn-container fn-response">
+      <div class="fn-header response-header ${headerClass}">
+        <span>${name}</span>
+        <span class="status-badge ${statusClass}">${statusText}</span>
+      </div>
+      <div class="response-body">
+        <pre class="response-content">${formattedContent}</pre>
+      </div>
+    </div>
+  `;
 }
 
 // --------------------------------------------------------------------------
@@ -798,6 +887,10 @@ const marked = new Marked(
     emptyLangClass: "hljs",
     langPrefix: "hljs language-",
     highlight(code, lang, info) {
+      code = code.replace(
+        /<i class="bi bi-info-circle grounding-marker" data-tooltip="%3Cul%3E%0A%3Cli%3E%3Ca%20href%3D%22[^"]*"><\/i>/g,
+        "",
+      );
       const language = lang && hljs.getLanguage(lang) ? lang : null;
       if (language !== null) return hljs.highlight(code, { language }).value;
       else return hljs.highlightAuto(code).value;
