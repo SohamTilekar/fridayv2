@@ -38,6 +38,7 @@ For each model, consider its rate limit (RPM = requests per minute, req/day = re
     *   Latency: High
     *   Best For: Multimodal understanding, Reasoning, Coding
     *   Use Cases: Complex problem-solving, showing reasoning process, difficult code/math.
+    *   **Important:** Dose not Suport any kind of tool calling
 *   **Medium2.0:**
     *   Rate Limit: 15 RPM, 1500 req/day
     *   Latency: Medium

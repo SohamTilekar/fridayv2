@@ -1037,6 +1037,8 @@ def reduceTokensUsage():
         "RemoveAttachment": RemoveAttachment,
         "RemoveMessage": RemoveMessage,
         "RemoveMessageHistory": RemoveMessageHistory,
+        "RemoveFunctionCall": RemoveFunctionCall,
+        "RemoveFunctionResponce": RemoveFunctionResponce
     }
 
     for attempt in range(config.MAX_RETRIES):
