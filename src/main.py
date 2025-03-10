@@ -694,17 +694,19 @@ def generate_content_with_retry(msg: Message) -> Message:
     """Generates content from Gemini, retrying on token limits."""
 
     def handle_part(part: types.Part):
+        if msg.content and msg.content[-1].text is not None:
+            msg.content[-1].processing = False
         if part.thought and part.text:
             msg.thought += part.text
         elif part.text:
             if not msg.content:
                 msg.content.append(Content(text="", processing=True))
             if msg.content[-1].text is None:
-                msg.content[-1].processing = False
                 msg.content.append(Content(text=part.text))
             else:
                 msg.content[-1].text += part.text
         elif part.function_call:
+
             handle_function_call(part.function_call)
 
     def handle_function_call(func_call: types.FunctionCall):
