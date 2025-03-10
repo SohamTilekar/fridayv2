@@ -763,8 +763,6 @@ socket.on("delete_message", deleteMessage);
 // --- Right Panel Functions ---
 // --------------------------------------------------------------------------
 
-// Add this code to main.js or include it in a script tag at the end of your HTML file
-
 document.addEventListener('DOMContentLoaded', function() {
   // Create a resizer element
   const resizer = document.createElement('div');
@@ -801,7 +799,6 @@ document.addEventListener('DOMContentLoaded', function() {
   // Variables for tracking the resize
   let isResizing = false;
   let lastDownX = 0;
-  let originalRightPanelWidth = rightPanel.offsetWidth; // Store original width
   let panelWasHidden = false; // Track if the panel was hidden
 
   // Function to start resizing from the right edge
@@ -865,33 +862,45 @@ document.addEventListener('DOMContentLoaded', function() {
     chatContainer.style.width = `${chatContainerPercent}%`;
   });
 
+  // Function to save the right panel width to local storage
+  function saveRightPanelWidth() {
+    const containerWidth = document.querySelector('.container-fluid').offsetWidth;
+    const rightPanelWidth = rightPanel.offsetWidth;
+    const paddingLeft = parseFloat(window.getComputedStyle(rightPanel).paddingLeft);
+    const paddingRight = parseFloat(window.getComputedStyle(rightPanel).paddingRight);
+    const contentWidth = rightPanelWidth - paddingLeft - paddingRight;
+    const rightPanelPercent = (contentWidth / containerWidth) * 100;
+    localStorage.setItem('rightPanelWidth', rightPanelPercent.toString());
+  }
+  
+  // Function to load the right panel width from local storage
+  function loadRightPanelWidth() {
+    const savedWidth = localStorage.getItem('rightPanelWidth');
+    console.log('Loading width:', savedWidth);
+    if (savedWidth) {
+      const rightPanelPercent = parseFloat(savedWidth) ? parseFloat(savedWidth) : 0.1;
+      rightPanel.style.width = `${rightPanelPercent}%`;
+      chatContainer.style.width = `${100 - rightPanelPercent}%`;
+    }
+  }
+
+  // Call loadRightPanelWidth on page load
+  loadRightPanelWidth();
+
   document.addEventListener('mouseup', () => {
     if (isResizing) {
       isResizing = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       panelWasHidden = false; // Reset the flag
+
+      // Save the right panel width when resizing stops
+      saveRightPanelWidth();
     }
   });
 
-  // Function to update Bootstrap classes based on current widths
-  function updateBootstrapClasses(chatEl, panelEl) {
-    // Remove all column classes
-    chatEl.className = chatEl.className.replace(/col-md-\\d+/g, '');
-    panelEl.className = panelEl.className.replace(/col-md-\\d+/g, '');
-
-    // Add chat-container class back if it was removed
-    if (!chatEl.classList.contains('chat-container')) {
-      chatEl.classList.add('chat-container');
-    }
-
-    // Add right-panel class back if it was removed
-    if (!panelEl.classList.contains('right-panel')) {
-      panelEl.classList.add('right-panel');
-    }
-
-    // We don't re-add Bootstrap classes since we're using direct width percentages now
-  }
+  // Save initial width on load in case the user doesn't resize
+  window.addEventListener('beforeunload', saveRightPanelWidth);
 });
 
 // ==========================================================================
