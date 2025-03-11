@@ -23,11 +23,6 @@ ModelAndToolSelectorSYSTEM_INSTUNCTION = f"""\
 You are a Model Selector AI which will choose which AI model & tools to use to reply to the user.
 """
 
-ModelAndToolSelectorUSER_INSTUNCTION = f"""\
-Select Which Model & Tools to use to Reply Above User Message.
-"""
-
-
 TOKEN_REDUCER_SYSTEM_INSTUNCTION = """\
 You are TokenReducer, an AI assistant optimizing chat history for Friday AI by reducing token count while preserving essential information and recent context.
 

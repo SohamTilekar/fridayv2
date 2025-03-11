@@ -126,6 +126,59 @@ body {
     box-shadow: none;
 }
 
+/* Dropdown Styles (for model selection) */
+.model-dropdown {
+    position: relative;
+    display: inline-block;
+    margin-right: 10px; /* Add some spacing between the dropdown and buttons */
+}
+
+/* Toggle Button Styles */
+.toggle-button {
+    background-color: #6c757d; /* Default background */
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    margin-right: 5px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: background-color 0.2s ease;
+}
+
+.toggle-button[data-state="selected"] {
+    background-color: #28a745; /* Green for selected */
+}
+
+.toggle-button[data-state="disabled"] {
+    background-color: #959ca3; /* Gray for disabled */
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+/* Toggle Button Styles */
+.toggle-button {
+    background-color: #6c757d; /* Default background */
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    margin-right: 5px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: background-color 0.2s ease-in-out;
+}
+
+.toggle-button[data-state="selected"] {
+    background-color: #28a745; /* Green for selected */
+}
+
+.toggle-button[data-state="disabled"] {
+    background-color: #959ca3; /* Gray for disabled */
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Message Styles */
 /* -------------------------------------------------------------------------- */

@@ -691,6 +691,444 @@ function updateTextareaRows() {
   textarea.rows = Math.min(lines, 7);
 }
 
+// Constants and element references
+const modelSelect = document.getElementById('model-select');
+const toggleButtons = document.querySelectorAll('.toggle-button');
+const autoSelectButton = document.getElementById('autoselect-tool');
+const googleSearchButton = document.getElementById('google-search-tool');
+const reminderButton = document.getElementById('reminder-tool');
+const fetchWebsiteButton = document.getElementById('fetch-website-tool');
+
+// Global variables to store model compatibility information
+let toolSupportedModels = [];
+let searchGroundingSupportedModels = [];
+
+// ========== MODEL SELECTION ==========
+
+// Fetch available models from the backend
+async function fetchModels() {
+    try {
+        const response = await fetch('/get_models');
+        if (!response.ok) {
+            throw new Error('Failed to fetch models');
+        }
+        const models = await response.json();
+
+        // Clear existing options
+        modelSelect.innerHTML = '';
+
+        // Add new options based on API response
+        models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model;
+            modelSelect.appendChild(option);
+        });
+        const option = document.createElement('option');
+        option.value = "auto";
+        option.textContent = "auto";
+        modelSelect.appendChild(option);
+
+        // Load saved selection after populating options
+        loadSelectedModel();
+    } catch (error) {
+        console.error('Error fetching models:', error);
+    }
+}
+
+// Fetch model compatibility information from the backend
+async function fetchModelCompatibility() {
+    try {
+        const response = await fetch('/get_model_compatibility');
+        if (!response.ok) {
+            throw new Error('Failed to fetch model compatibility');
+        }
+        const compatibility = await response.json();
+        
+        // Store compatibility information
+        toolSupportedModels = compatibility.toolSupportedModels || [];
+        searchGroundingSupportedModels = compatibility.searchGroundingSupportedModels || [];
+        
+        // Update tool availability based on current model after compatibility info is loaded
+        updateToolAvailability(modelSelect.value);
+    } catch (error) {
+        console.error('Error fetching model compatibility:', error);
+        // Fallback to hardcoded values if fetch fails
+        toolSupportedModels = ['Large20', 'Medium20', 'Small20', 'Large15', 'Medium15', 'Small15'];
+        searchGroundingSupportedModels = ['Large20', 'Large15', 'Medium20', 'Medium15'];
+        updateToolAvailability(modelSelect.value);
+    }
+}
+
+// Load saved model from local storage
+function loadSelectedModel() {
+    const savedModel = localStorage.getItem('selectedModel');
+    if (savedModel && Array.from(modelSelect.options).some(opt => opt.value === savedModel)) {
+        modelSelect.value = savedModel;
+    } else if (modelSelect.options.length > 0) {
+        // Set first option as default if saved model is invalid
+        saveSelectedModel(modelSelect.options[0].value);
+    }
+
+    // Send the current selection to the backend
+    updateModelSelection(modelSelect.value);
+}
+
+// Save selected model to local storage and update backend
+function saveSelectedModel(model) {
+    localStorage.setItem('selectedModel', model);
+    updateModelSelection(model);
+}
+
+// Send model selection to the backend
+function updateModelSelection(selectedModel) {
+    if (window.io) {
+        const socket = io();
+        socket.emit('set_models', selectedModel == "auto" ? null : selectedModel);
+    } else {
+        console.error('Socket.IO not available');
+    }
+}
+
+// Updated function to dynamically check model compatibility with tools
+function updateToolAvailability(selectedModel) {
+    // First clear any existing disabled or selected states for a fresh start
+    const allButtons = document.querySelectorAll('.toggle-button');
+    
+    // Special case for 'auto' selection
+    if (selectedModel === 'auto') {
+        // When auto is selected, check if auto button is selected and update accordingly
+        if (autoSelectButton.dataset.state === 'selected') {
+            // If Auto is selected, disable all other buttons
+            allButtons.forEach(button => {
+                if (button.id !== 'autoselect-tool') {
+                    button.dataset.state = 'disabled';
+                }
+            });
+        } else {
+            // If Auto is not selected, enable all buttons
+            allButtons.forEach(button => {
+                if (button.dataset.state === 'disabled') {
+                    button.dataset.state = 'unselected';
+                }
+            });
+        }
+        
+        saveButtonStates();
+        updateToolsSelection();
+        return;
+    }
+    
+    // Check if the selected model supports tools
+    const modelSupportsTools = toolSupportedModels.includes(selectedModel);
+    const modelSupportsSearch = searchGroundingSupportedModels.includes(selectedModel);
+    
+    // Check current button states
+    const isAutoSelected = autoSelectButton.dataset.state === 'selected';
+    const isGoogleSearchSelected = googleSearchButton && googleSearchButton.dataset.state === 'selected';
+    
+    // If Auto is selected, apply its rules regardless of model
+    if (isAutoSelected) {
+        updateToggleButtonStates('auto');
+        return;
+    }
+    
+    // First, handle the Google Search button
+    if (googleSearchButton) {
+        if (!modelSupportsSearch) {
+            // If currently selected but not supported, unselect it
+            if (googleSearchButton.dataset.state === 'selected') {
+                googleSearchButton.dataset.state = 'unselected';
+            }
+            googleSearchButton.dataset.state = 'disabled';
+        } else if (googleSearchButton.dataset.state === 'disabled' && modelSupportsSearch) {
+            // Re-enable if it was disabled but is now supported
+            googleSearchButton.dataset.state = 'unselected';
+        }
+    }
+    
+    // If Google is selected, apply its rules to other buttons
+    if (isGoogleSearchSelected && modelSupportsSearch) {
+        updateToggleButtonStates('google');
+        return;
+    }
+    
+    // Handle reminder and fetch website buttons
+    const otherToolButtons = [
+        document.getElementById('reminder-tool'),
+        document.getElementById('fetch-website-tool')
+    ];
+    
+    otherToolButtons.forEach(button => {
+        if (button) {
+            if (!modelSupportsTools) {
+                // If selected but not supported, unselect it
+                if (button.dataset.state === 'selected') {
+                    button.dataset.state = 'unselected';
+                }
+                button.dataset.state = 'disabled';
+            } else if (button.dataset.state === 'disabled' && modelSupportsTools) {
+                // Re-enable if it was disabled but is now supported
+                button.dataset.state = 'unselected';
+            }
+        }
+    });
+    
+    saveButtonStates();
+    updateToolsSelection();
+}
+
+// Handle model selection
+modelSelect.addEventListener('change', function() {
+    const selectedModel = this.value;
+    saveSelectedModel(selectedModel);
+    updateToolAvailability(selectedModel);
+});
+
+// ========== TOOLS SELECTION ==========
+
+// Fetch available tools from the backend
+async function fetchTools() {
+    try {
+        const response = await fetch('/get_tools');
+        if (!response.ok) {
+            throw new Error('Failed to fetch tools');
+        }
+        const tools = await response.json();
+
+        // Remove any existing buttons except the Auto button
+        const toolsContainer = document.getElementById('selector');
+        const buttons = toolsContainer.querySelectorAll('.toggle-button:not(#autoselect-tool)');
+        buttons.forEach(button => button.remove());
+
+        // Create new buttons for each tool
+        tools.forEach(tool => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'toggle-button';
+            button.id = `${tool.toLowerCase()}-tool`;
+            button.dataset.state = 'unselected';
+            button.textContent = tool;
+
+            // Add event listener to the new button
+            button.addEventListener('click', function() {
+                if (this.dataset.state !== 'disabled') {
+                    this.dataset.state = (this.dataset.state === 'unselected') ? 'selected' : 'unselected';
+                    saveButtonStates();
+                    
+                    // If this is Google Search being selected, update other buttons
+                    if (this.id === 'google-search-tool' && this.dataset.state === 'selected') {
+                        updateToggleButtonStates('google');
+                    } else {
+                        updateToolsSelection();
+                    }
+                }
+            });
+
+            toolsContainer.appendChild(button);
+        });
+
+        // Re-query toggleButtons after adding new ones
+        const allToggleButtons = document.querySelectorAll('.toggle-button');
+        toggleButtons.forEach = Array.prototype.forEach.bind(allToggleButtons);
+
+        // Load saved button states
+        loadButtonStates();
+    } catch (error) {
+        console.error('Error fetching tools:', error);
+    }
+}
+
+// Load saved button states from local storage
+function loadButtonStates() {
+    const allButtons = document.querySelectorAll('.toggle-button');
+    allButtons.forEach(button => {
+        const savedState = localStorage.getItem(button.id + '-state');
+        if (savedState) {
+            button.dataset.state = savedState;
+        }
+    });
+
+    // Apply model compatibility check after loading saved states
+    updateToolAvailability(modelSelect.value);
+}
+
+// Save button states to local storage
+function saveButtonStates() {
+    const allButtons = document.querySelectorAll('.toggle-button');
+    allButtons.forEach(button => {
+        localStorage.setItem(button.id + '-state', button.dataset.state);
+    });
+}
+
+// Update toggle button states based on Auto or Google Search selection
+function updateToggleButtonStates(selectedTool) {
+    const allButtons = document.querySelectorAll('.toggle-button');
+
+    allButtons.forEach(button => {
+        if (selectedTool === 'auto') {
+            // If Auto is selected, disable all other buttons
+            if (button.id !== 'autoselect-tool') {
+                button.dataset.state = 'disabled';
+            }
+        } else if (selectedTool === 'google') {
+            // If Google Search is selected, disable Reminder and Fetch
+            if (button.id === 'reminder-tool' || button.id === 'fetch-website-tool') {
+                button.dataset.state = 'disabled';
+            } else if (button.id !== 'autoselect-tool' && button.id !== 'google-search-tool') {
+                // For any other buttons besides Auto and Google, set to unselected if they were disabled
+                if (button.dataset.state === 'disabled') {
+                    button.dataset.state = 'unselected';
+                }
+            }
+        } else {
+            // No tool is selected, enable all buttons (or keep their state)
+            // Only change state if the button was previously disabled
+            if (button.dataset.state === 'disabled') {
+                button.dataset.state = 'unselected';
+            }
+        }
+    });
+    
+    saveButtonStates();
+    updateToolsSelection();
+}
+
+// Send tools selection to the backend
+function updateToolsSelection() {
+    const isAutoSelected = autoSelectButton.dataset.state === 'selected';
+
+    if (isAutoSelected) {
+        // If Auto is selected, send null to use default behavior
+        if (window.io) {
+            const socket = io();
+            socket.emit('set_tools', null);
+        }
+    } else {
+        // Get all selected tools
+        const selectedTools = [];
+        const allButtons = document.querySelectorAll('.toggle-button:not(#autoselect-tool)');
+
+        allButtons.forEach(button => {
+            if (button.dataset.state === 'selected') {
+                // Convert button ID to tool name format
+                const buttonId = button.id.replace('-tool', '');
+                let toolName;
+
+                // Map button IDs to tool names
+                if (buttonId === 'google-search') {
+                    toolName = 'Search';
+                } else if (buttonId === 'reminder') {
+                    toolName = 'Reminder';
+                } else if (buttonId === 'fetch-website') {
+                    toolName = 'FetchWebsite';
+                } else {
+                    // Use capitalized version of the ID for other tools
+                    toolName = buttonId.split('-').map(word =>
+                        word.charAt(0).toUpperCase() + word.slice(1)
+                    ).join('');
+                }
+
+                selectedTools.push(toolName);
+            }
+        });
+
+        // Send selected tools to backend
+        if (window.io) {
+            const socket = io();
+            socket.emit('set_tools', selectedTools.length > 0 ? selectedTools : []);
+        }
+    }
+}
+
+// Set up Auto button click handler
+autoSelectButton.addEventListener('click', function() {
+    if (this.dataset.state === 'disabled') {
+        return; // Don't do anything if the button is disabled
+    }
+    
+    const isBeingSelected = this.dataset.state === 'unselected';
+    this.dataset.state = isBeingSelected ? 'selected' : 'unselected';
+    
+    if (isBeingSelected) {
+        // If Auto is being turned ON, disable all other buttons
+        updateToggleButtonStates('auto');
+    } else {
+        // If Auto is being turned OFF, apply model compatibility
+        updateToolAvailability(modelSelect.value);
+    }
+});
+
+// Set up Google Search button click handler
+googleSearchButton.addEventListener('click', function() {
+    if (this.dataset.state === 'disabled') {
+        return; // Don't do anything if the button is disabled
+    }
+    
+    // If Auto is selected, clicking any other button should do nothing
+    if (autoSelectButton.dataset.state === 'selected') {
+        return;
+    }
+    
+    const isBeingSelected = this.dataset.state === 'unselected';
+    this.dataset.state = isBeingSelected ? 'selected' : 'unselected';
+    
+    if (isBeingSelected) {
+        // If Google Search is being turned ON, apply its rules to other buttons
+        updateToggleButtonStates('google');
+    } else {
+        // If Google Search is being turned OFF, restore compatibility based on model
+        updateToolAvailability(modelSelect.value);
+    }
+});
+
+// Initialize listeners for all buttons
+function initializeButtonListeners() {
+    // Remove any existing listeners first to avoid duplicates
+    const allButtons = document.querySelectorAll('.toggle-button:not(#autoselect-tool):not(#google-search-tool)');
+    
+    allButtons.forEach(button => {
+        // Clone the button to remove all event listeners
+        const newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
+        
+        // Add new event listener
+        newButton.addEventListener('click', function() {
+            if (this.dataset.state === 'disabled') {
+                return; // Don't do anything if the button is disabled
+            }
+            
+            // If Auto is selected or Google is selected, clicking other buttons should do nothing
+            if (autoSelectButton.dataset.state === 'selected' || 
+                (googleSearchButton.dataset.state === 'selected' && 
+                (this.id === 'reminder-tool' || this.id === 'fetch-website-tool'))) {
+                return;
+            }
+            
+            this.dataset.state = (this.dataset.state === 'unselected') ? 'selected' : 'unselected';
+            saveButtonStates();
+            updateToolsSelection();
+        });
+    });
+}
+
+// Initialize everything when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+    fetchModels();
+    fetchTools();
+    fetchModelCompatibility();
+    
+    // Initialize button listeners after a short delay to ensure DOM is ready
+    setTimeout(initializeButtonListeners, 500);
+});
+
+// Re-initialize listeners after fetching tools
+const originalFetchTools = fetchTools;
+fetchTools = async function() {
+    await originalFetchTools();
+    initializeButtonListeners();
+};
+
 // ==========================================================================
 // --- Socket Communication ---
 // ==========================================================================
@@ -752,6 +1190,8 @@ const sendMessage = async () => {
 
 socket.on("connect", () => {
   socket.emit("get_chat_history");
+  updateModelSelection();
+  updateToolsSelection();
 });
 
 socket.on("chat_update", updateChatDisplay);

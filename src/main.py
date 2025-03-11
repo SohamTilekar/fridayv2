@@ -24,20 +24,8 @@ socketio = SocketIO(app)
 
 client = genai.Client(api_key=config.GOOGLE_API)
 
-ReminderTool = types.Tool(
-    function_declarations=[
-        types.FunctionDeclaration.from_callable(callable=tools.CreateReminder, client=client),
-        types.FunctionDeclaration.from_callable(callable=tools.CancelReminder, client=client)
-    ]
-)
-
-GoogleTool = types.Tool(google_search=types.GoogleSearch())
-
-FetchTool = types.Tool(
-    function_declarations=[
-        types.FunctionDeclaration.from_callable(callable=tools.FetchWebsite, client=client)
-    ]
-)
+model: Optional[str] = None # None for Auto
+selected_tools: Optional[list[Literal['FetchWebsite', 'Reminder', 'SearchGrounding']]] = None # None for Auto
 
 #region
 
@@ -721,41 +709,101 @@ def generate_content_with_retry(msg: Message) -> Message:
             msg.content.append(Content(function_response=FunctionResponce(id=func_call.id, name=func_call.name, response={"error": e})))
 
     @utils.retry()
-    def getModelAndTools():
+    def getModelAndTools() -> tuple[str, list]:
         chat = chat_history.for_ai(msg)
-        chat.append(types.Content(parts=[types.Part(text=prompt.ModelAndToolSelectorUSER_INSTUNCTION)], role="user"))
-        selector_responce = client.models.generate_content(
-                model="gemini-2.0-flash-lite-001",
+        global model
+        if model is not None and selected_tools is not None:
+            return config.Models[model].value, selected_tools
+        elif model is not None:
+            if model in config.SearchGroundingSuportedModels:
+                chat.append(types.Content(parts=[types.Part(text="Select Which Tools to use to Reply Above User Message.")], role="user"))
+                tols = [types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ToolSelector)])]
+            elif model in config.ToolSuportedModels:
+                chat.append(types.Content(parts=[types.Part(
+                    text=f"Select Which Tools to use to Reply Above User Message. Important: Dont use `SearchGrounding` tool cz it is not suported by current model")],
+                    role="user"))
+                tols = [types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ToolSelector)])]
+            else:
+                return config.Models[model].value, []
+        elif selected_tools is not None:
+            if selected_tools.count(tools.Tools.SearchGrounding.name) == 1:
+                chat.append(types.Content(parts=[types.Part(text=f"Select Which Model to use to Reply Above User Message, Important: Use following models only {config.SearchGroundingSuportedModels} cz they only suport `SearchGrounding`.")], role="user"))
+            else:
+                chat.append(types.Content(parts=[types.Part(text=f"Select Which Model to use to Reply Above User Message, Important: Use following models only {config.ToolSuportedModels} cz they only suport Tool Calling.")], role="user"))
+            tols = [types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ModelSelector)])]
+        else:
+            chat.append(types.Content(parts=[types.Part(text=f"Select Which Model and tool to use to Reply Above User Message")], role="user"))
+            tols = [types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ModelAndToolSelector)])]
+        for _ in range(3):
+            selector_responce = client.models.generate_content(
+                model=config.MODEL_TOOL_SELECTOR,
                 contents=chat, # type: ignore
                 config=types.GenerateContentConfig(
                     system_instruction=prompt.ModelAndToolSelectorSYSTEM_INSTUNCTION,
-                    temperature=config.CHAT_AI_TEMP,
+                    temperature=0.1,
                     max_output_tokens=config.MAX_OUTPUT_TOKEN_LIMIT,
-                    tools=[types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ModelAndToolSelector)])],
+                    tools=tols, # type: ignore
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True, maximum_remote_calls=None),
                 )
             )
-        print(selector_responce)
-        if selector_responce.function_calls and selector_responce.function_calls[0].name == "ModelAndToolSelector" and selector_responce.function_calls[0].args:
-            model, tols = tools.ModelAndToolSelector(**selector_responce.function_calls[0].args)
+            if selector_responce.function_calls and selector_responce.function_calls[0].args:
+                name = selector_responce.function_calls[0].name
+                if name == "ToolSelector" and model is not None:
+                    try:
+                        return config.Models[model].value, tools.ToolSelector(**selector_responce.function_calls[0].args)
+                    except Exception as e:
+                        chat.append(types.Content(parts=[types.Part(function_response=types.FunctionResponse(
+                            id=selector_responce.function_calls[0].id,
+                            name=name,
+                            response={"error": f"Error Occured while clling function, error: {e}"}
+                        ))], role="user"))
+                        continue
+                elif name == "ModelSelector" and selected_tools is not None:
+                    try:
+                        return tools.ModelSelector(**selector_responce.function_calls[0].args), tools.ToolSelector(selected_tools)
+                    except Exception as e:
+                        chat.append(types.Content(parts=[types.Part(function_response=types.FunctionResponse(
+                            id=selector_responce.function_calls[0].id,
+                            name=name,
+                            response={"error": f"Error Occured while clling function, error: {e}"}
+                        ))], role="user"))
+                        continue
+                elif name == "ModelAndToolSelector":
+                    try:
+                        return tools.ModelAndToolSelector(**selector_responce.function_calls[0].args)
+                    except Exception as e:
+                        chat.append(types.Content(parts=[types.Part(function_response=types.FunctionResponse(
+                            id=selector_responce.function_calls[0].id,
+                            name=name,
+                            response={"error": f"Error Occured while clling function, error: {e}"}
+                        ))], role="user"))
+                        continue
+                else:
+                    chat.append(types.Content(parts=[types.Part(function_response=types.FunctionResponse(
+                        id=selector_responce.function_calls[0].id,
+                        name=name,
+                        response={"error": f"Unknown Function of name: {name}"}
+                    ))], role="user"))
+                    continue
+            else:
+                chat.append(types.Content(parts=[types.Part(text=f"Select Which Model and tool to use to Reply Above User Message, You dident call the function")], role="user"))
+                continue
         else:
-            raise Exception("Cant Select Model or Tool")
-        return model, tols
-    model, tols = getModelAndTools()
-    print(model, tols)
+            raise Exception("Cant Select models & tool Plz Select one manulty")
+    selected_model, selectd_tols = getModelAndTools()
+    print(selected_model, selectd_tols)
     while True:
         response = client.models.generate_content_stream(
-            model=model,
+            model=selected_model,
             contents=chat_history.for_ai(msg), # type: ignore
             config=types.GenerateContentConfig(
                 system_instruction=prompt.SYSTEM_INSTUNCTION + tools.get_reminders(),
                 temperature=config.CHAT_AI_TEMP,
                 max_output_tokens=config.MAX_OUTPUT_TOKEN_LIMIT,
-                tools=tols, # type: ignore
+                tools=selectd_tols, # type: ignore
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True, maximum_remote_calls=None),
             )
         )
-
         func_call = False
         for content in response:
             if content.candidates and content.candidates[0].content and content.candidates[0].content.parts:
@@ -1177,6 +1225,30 @@ def handle_retry_message(msg_id: str):
     except ValueError as e:
         print(f"Error retrying message: {e}")
 
+@app.route("/get_models")
+def get_models() -> list[str]:
+    return config.ModelsSet
+
+@socketio.on("set_models")
+def set_models(lmodel: Optional[str] = None):
+    global model
+    model = lmodel
+
+@socketio.on("set_tools")
+def set_tools(ltools: Optional[list[Literal['FetchWebsite', 'Reminder', 'SearchGrounding']]] = None) -> None:
+    global selected_tools
+    selected_tools = ltools
+
+@app.route("/get_tools")
+def get_tools() -> list[str]:
+    return tools.Tools.tool_names()
+
+@app.route("/get_model_compatibility")
+def get_model_compatibility() -> dict:
+    return {
+        "toolSupportedModels": config.ToolSuportedModels,
+        "searchGroundingSupportedModels": config.SearchGroundingSuportedModels
+    }
 
 @socketio.on("get_chat_history")
 def handle_get_chat_history():
