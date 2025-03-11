@@ -153,15 +153,10 @@ function renderMessageContent(msgDiv, msg) {
          <div class="dot"></div>
      </div>`;
 
-  const attachmentDiv = document.createElement("div");
-  attachmentDiv.classList.add("attachments");
-  attachmentDiv.innerHTML = "<strong>Attachments:</strong><br>";
-
   // Render each Content item separately
   msg.content.forEach((contentItem) => {
     const contentDiv = document.createElement("div");
     contentDiv.classList.add("message-content");
-    let contentHtml = "";
     if (contentItem.text && contentItem.text.trim() !== "") {
       let textContent = contentItem.text;
       if (contentItem.grounding_metadata) {
@@ -170,43 +165,41 @@ function renderMessageContent(msgDiv, msg) {
           contentItem.grounding_metadata,
         );
       }
-      contentHtml = marked.parse(textContent);
+      contentDiv.innerHTML = marked.parse(textContent);
       if (contentItem.processing) {
-        contentHtml = `
-                  ${contentHtml}
+        contentDiv.innerHTML += `
                   <div class="thinking-loader">
-                      <div class="dot"></div>
-                      <div class="dot"></div>
-                      <div class="dot"></div>
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                  <div class="dot"></div>
                   </div>
               `;
       }
+      msgDiv.appendChild(contentDiv);
+      // Enhance code blocks/inlines
+      enhanceCodeBlocks(contentDiv);
+      enhanceCodeInlines(contentDiv);
+      if (contentItem.grounding_metadata)
+        initializeTooltips(contentDiv);
     } else if (contentItem.function_call) {
-      contentHtml = renderFunctionCall(contentItem.function_call);
+      contentDiv.innerHTML = renderFunctionCall(contentItem.function_call);
+      msgDiv.appendChild(contentDiv);
     } else if (contentItem.function_response) {
-      contentHtml = renderFunctionResponse(contentItem.function_response);
+      contentDiv.innerHTML = renderFunctionResponse(contentItem.function_response);
+      msgDiv.appendChild(contentDiv);
     } else if (contentItem.text) {
-      contentHtml = `
-              <div class="thinking-loader">
-                  <div class="dot"></div>
-                  <div class="dot"></div>
-                  <div class="dot"></div>
-              </div>
-          `;
+      contentDiv.innerHTML = `
+      <div class="thinking-loader">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      </div>
+      `;
+      msgDiv.appendChild(contentDiv);
     } else if (contentItem.attachment && msg.role == "user") {
-      displayAttachments(attachmentDiv, contentItem.attachment);
+      msgDiv.appendChild(createAttachmentElement(contentItem.attachment));
     }
-    contentDiv.innerHTML = contentHtml;
-    msgDiv.appendChild(contentDiv);
-
-    // Enhance code blocks/inlines
-    enhanceCodeBlocks(contentDiv);
-    enhanceCodeInlines(contentDiv);
-    initializeTooltips(contentDiv);
   });
-
-  if (attachmentDiv.innerHTML != "<strong>Attachments:</strong><br>")
-    msgDiv.appendChild(attachmentDiv);
 }
 
 /**
@@ -395,8 +388,6 @@ function applyGroundingInfo(contentText, groundingMetadata) {
       const x = groundingMetadata.grounding_chuncks[c];
       tooltipContent += `- [${x[0]}](${x[1]})\n`;
     });
-    console.log(result.substring(0, idx));
-    console.log(result.substring(idx));
     result = result.substring(0, idx).endsWith("```")
       ? result.substring(0, idx) +
       "\n" +
@@ -511,18 +502,14 @@ function initializeTooltips(element) {
 function createAttachmentElement(file) {
   if (file.type.startsWith("image/")) {
     const img = document.createElement("img");
+    img.classList.add("img-attachment");
     img.src = `data:${file.type};base64,${file.content}`;
     img.alt = file.filename;
-    img.style.maxWidth = "50px";
-    img.style.maxHeight = "50px";
-    img.style.display = "block";
     return img;
   } else if (file.type.startsWith("video/")) {
     const video = document.createElement("video");
+    video.classList.add("vid-attachment")
     video.alt = file.name;
-    video.style.maxWidth = "50px";
-    video.style.maxHeight = "50px";
-    video.style.marginRight = "5px";
     video.controls = false;
     video.muted = true;
     video.autoplay = true;
@@ -531,6 +518,8 @@ function createAttachmentElement(file) {
     video.type = file.type;
     video.play();
     return video;
+  // } else if (file.type.startsWith("text/")) {
+    
   } else {
     const fileLink = document.createElement("a");
     fileLink.href = `data:${file.type};base64,${file.content}`;
@@ -538,15 +527,6 @@ function createAttachmentElement(file) {
     fileLink.textContent = file.filename;
     return fileLink;
   }
-}
-
-/**
- * Displays the attached files in the chat.
- */
-function displayAttachments(attachmentDiv, file) {
-  const attachmentElement = createAttachmentElement(file);
-  attachmentDiv.appendChild(attachmentElement);
-  attachmentDiv.appendChild(document.createElement("br"));
 }
 
 // --------------------------------------------------------------------------
@@ -782,12 +762,8 @@ function saveSelectedModel(model) {
 
 // Send model selection to the backend
 function updateModelSelection(selectedModel) {
-    if (window.io) {
-        const socket = io();
-        socket.emit('set_models', selectedModel == "auto" ? null : selectedModel);
-    } else {
-        console.error('Socket.IO not available');
-    }
+    selectedModel = selectedModel ? selectedModel : modelSelect.value
+    socket.emit('set_models', selectedModel == "auto" ? null : selectedModel);
 }
 
 // Updated function to dynamically check model compatibility with tools
@@ -887,58 +863,6 @@ modelSelect.addEventListener('change', function() {
 
 // ========== TOOLS SELECTION ==========
 
-// Fetch available tools from the backend
-async function fetchTools() {
-    try {
-        const response = await fetch('/get_tools');
-        if (!response.ok) {
-            throw new Error('Failed to fetch tools');
-        }
-        const tools = await response.json();
-
-        // Remove any existing buttons except the Auto button
-        const toolsContainer = document.getElementById('selector');
-        const buttons = toolsContainer.querySelectorAll('.toggle-button:not(#autoselect-tool)');
-        buttons.forEach(button => button.remove());
-
-        // Create new buttons for each tool
-        tools.forEach(tool => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'toggle-button';
-            button.id = `${tool.toLowerCase()}-tool`;
-            button.dataset.state = 'unselected';
-            button.textContent = tool;
-
-            // Add event listener to the new button
-            button.addEventListener('click', function() {
-                if (this.dataset.state !== 'disabled') {
-                    this.dataset.state = (this.dataset.state === 'unselected') ? 'selected' : 'unselected';
-                    saveButtonStates();
-                    
-                    // If this is Google Search being selected, update other buttons
-                    if (this.id === 'google-search-tool' && this.dataset.state === 'selected') {
-                        updateToggleButtonStates('google');
-                    } else {
-                        updateToolsSelection();
-                    }
-                }
-            });
-
-            toolsContainer.appendChild(button);
-        });
-
-        // Re-query toggleButtons after adding new ones
-        const allToggleButtons = document.querySelectorAll('.toggle-button');
-        toggleButtons.forEach = Array.prototype.forEach.bind(allToggleButtons);
-
-        // Load saved button states
-        loadButtonStates();
-    } catch (error) {
-        console.error('Error fetching tools:', error);
-    }
-}
-
 // Load saved button states from local storage
 function loadButtonStates() {
     const allButtons = document.querySelectorAll('.toggle-button');
@@ -1000,10 +924,7 @@ function updateToolsSelection() {
 
     if (isAutoSelected) {
         // If Auto is selected, send null to use default behavior
-        if (window.io) {
-            const socket = io();
-            socket.emit('set_tools', null);
-        }
+        socket.emit('set_tools', null);
     } else {
         // Get all selected tools
         const selectedTools = [];
@@ -1017,7 +938,7 @@ function updateToolsSelection() {
 
                 // Map button IDs to tool names
                 if (buttonId === 'google-search') {
-                    toolName = 'Search';
+                    toolName = 'SearchGrounding';
                 } else if (buttonId === 'reminder') {
                     toolName = 'Reminder';
                 } else if (buttonId === 'fetch-website') {
@@ -1032,12 +953,7 @@ function updateToolsSelection() {
                 selectedTools.push(toolName);
             }
         });
-
-        // Send selected tools to backend
-        if (window.io) {
-            const socket = io();
-            socket.emit('set_tools', selectedTools.length > 0 ? selectedTools : []);
-        }
+      socket.emit('set_tools', selectedTools.length > 0 ? selectedTools : []);
     }
 }
 
@@ -1115,19 +1031,11 @@ function initializeButtonListeners() {
 // Initialize everything when the page loads
 document.addEventListener('DOMContentLoaded', function() {
     fetchModels();
-    fetchTools();
     fetchModelCompatibility();
     
     // Initialize button listeners after a short delay to ensure DOM is ready
     setTimeout(initializeButtonListeners, 500);
 });
-
-// Re-initialize listeners after fetching tools
-const originalFetchTools = fetchTools;
-fetchTools = async function() {
-    await originalFetchTools();
-    initializeButtonListeners();
-};
 
 // ==========================================================================
 // --- Socket Communication ---
@@ -1190,7 +1098,7 @@ const sendMessage = async () => {
 
 socket.on("connect", () => {
   socket.emit("get_chat_history");
-  updateModelSelection();
+  updateModelSelection()
   updateToolsSelection();
 });
 
@@ -1316,7 +1224,6 @@ document.addEventListener('DOMContentLoaded', function() {
   // Function to load the right panel width from local storage
   function loadRightPanelWidth() {
     const savedWidth = localStorage.getItem('rightPanelWidth');
-    console.log('Loading width:', savedWidth);
     if (savedWidth) {
       const rightPanelPercent = parseFloat(savedWidth) ? parseFloat(savedWidth) : 0.1;
       rightPanel.style.width = `${rightPanelPercent}%`;

@@ -13,13 +13,15 @@ ReminderTool = types.Tool(function_declarations=[
 ])
 SearchGrounding = types.Tool(google_search=types.GoogleSearch())
 
+type ToolLiteral = Literal["FetchWebsite", "Reminder", "SearchGrounding"]
+
 class Tools(enum.Enum):
-    FetchTool = FetchTool
-    ReminderTool = ReminderTool
+    FetchWebsite = FetchTool
+    Reminder = ReminderTool
     SearchGrounding = SearchGrounding
     @staticmethod
-    def tool_names():
-        return ["FetchWebsite", "Reminder", SearchGrounding]
+    def tool_names() -> list[Literal["FetchWebsite", "Reminder", "SearchGrounding"]]:
+        return ["FetchWebsite", "Reminder", "SearchGrounding"]
 
 def ModelAndToolSelector(
         model: Literal["Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
@@ -122,15 +124,6 @@ Choose the fewest number of tools necessary to fulfill the user's request. Addin
 """
     ftools: list[types.Tool] = []
     for tool in tools:
-        if tool == "FetchWebsite":
-            ftools.append(FetchTool)
-        elif tool == "Reminder":
-            ftools.append(ReminderTool)
-        elif tool == "SearchGrounding":
-            if len(tools) != 1:
-                raise Exception("Other tools along side SearchGrounding is not valid")
-            ftools.append(SearchGrounding)
-        else:
-            raise Exception("Unknown Tool passed: " + tool)
+        ftools.append(Tools[tool].value)
     return ftools
 
