@@ -3,7 +3,7 @@
 // --- Global Variables ---
 let fileContents = []; // Global variable to store file information (name and content)
 let videoId = null; // Unique ID for the video being uploaded
-const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
+const CHUNK_SIZE = 512 * 1024; // 0.5MB chunks
 // ==========================================================================
 // --- Helper Functions ---
 // ==========================================================================
@@ -185,8 +185,7 @@ function renderMessageContent(msgDiv, msg) {
       contentDiv.innerHTML = renderFunctionCall(contentItem.function_call);
       msgDiv.appendChild(contentDiv);
     } else if (contentItem.function_response) {
-      contentDiv.innerHTML = renderFunctionResponse(contentItem.function_response);
-      msgDiv.appendChild(contentDiv);
+      renderFunctionResponse(contentItem.function_response);
     } else if (contentItem.text) {
       contentDiv.innerHTML = `
       <div class="thinking-loader">
@@ -267,16 +266,17 @@ const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
   msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
   msgDiv.id = msg.id;
 
-  renderMessageContent(msgDiv, msg); // Render the message content
-
-  const controlsDiv = createMessageControls(msg); // Create the controls
-  msgDiv.appendChild(controlsDiv);
-
   if (appendAtTop) {
     chatBox.prepend(msgDiv);
   } else {
     chatBox.appendChild(msgDiv);
   }
+
+  renderMessageContent(msgDiv, msg); // Render the message content
+  
+  const controlsDiv = createMessageControls(msg); // Create the controls
+  msgDiv.appendChild(controlsDiv);
+
 });
 
 const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
@@ -496,37 +496,162 @@ function initializeTooltips(element) {
 // --- Attachment Display ---
 // --------------------------------------------------------------------------
 
-/**
- * Creates an element to display attachments.
- */
-function createAttachmentElement(file) {
+function displayAttachmentInRightPanel(file) {
+  const rightPanel = document.querySelector('.right-panel');
+  const attachmentDisplayArea = document.getElementById('attachment-display-area');
+
+  if (rightPanel.classList.contains('d-none')) {
+    rightPanel.classList.remove('d-none');
+  }
+
+  attachmentDisplayArea.innerHTML = ''; // Clear previous content
+
   if (file.type.startsWith("image/")) {
     const img = document.createElement("img");
-    img.classList.add("img-attachment");
+    img.classList.add("img-attachment-panel"); // Add class for styling in right panel
     img.src = `data:${file.type};base64,${file.content}`;
     img.alt = file.filename;
-    return img;
+    attachmentDisplayArea.appendChild(img);
+
+    const downloadButton = createDownloadButton(file);
+    attachmentDisplayArea.appendChild(downloadButton);
+
   } else if (file.type.startsWith("video/")) {
     const video = document.createElement("video");
-    video.classList.add("vid-attachment")
-    video.alt = file.name;
-    video.controls = false;
-    video.muted = true;
-    video.autoplay = true;
-    video.loop = true;
+    video.classList.add("vid-attachment-panel"); // Add class for styling in right panel
+    video.controls = true; // Enable controls in right panel
     video.src = `data:${file.type};base64,${file.content}`;
     video.type = file.type;
-    video.play();
-    return video;
-  // } else if (file.type.startsWith("text/")) {
-    
-  } else {
-    const fileLink = document.createElement("a");
-    fileLink.href = `data:${file.type};base64,${file.content}`;
-    fileLink.download = file.filename;
-    fileLink.textContent = file.filename;
-    return fileLink;
+    attachmentDisplayArea.appendChild(video);
+
+    const downloadButton = createDownloadButton(file);
+    attachmentDisplayArea.appendChild(downloadButton);
+
+  } else if (file.type.startsWith("text/") || file.type === "application/pdf") { // Handle text and pdf as text for now
+    const textContainer = document.createElement('div');
+    textContainer.classList.add('text-attachment-panel');
+
+    let textContent = atob(file.content); // Decode base64 to text
+
+    if (file.type.startsWith("text/javascript") || file.type.startsWith("text/css") || file.type.startsWith("text/html") || file.type.startsWith("text/plain")) {
+        const highlightedCode = hljs.highlightAuto(textContent);
+        textContainer.innerHTML = `<pre><code class="hljs ${highlightedCode.language}">${highlightedCode.value}</code></pre>`;
+    } else {
+        textContainer.textContent = textContent;
+    }
+    attachmentDisplayArea.appendChild(textContainer);
+
+    const copyButton = createCopyButton(textContent);
+    attachmentDisplayArea.appendChild(copyButton);
+    const downloadButton = createDownloadButton(file, textContent); // Pass textContent for download
+    attachmentDisplayArea.appendChild(downloadButton);
   }
+
+  // Activate the content tab
+  const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+  contentTab.show();
+}
+
+function createDownloadButton(file, textContent = null) {
+  const downloadButton = createButton("download-btn", `<i class="bi bi-download"></i> Download`);
+  downloadButton.addEventListener('click', () => {
+      let blob;
+      if (textContent !== null) {
+          blob = new Blob([textContent], { type: file.type });
+      } else {
+          blob = base64ToBlob(file.content, file.type);
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.filename;
+      document.body.appendChild(a); // Required for Firefox
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+  });
+  return downloadButton;
+}
+
+function createCopyButton(textContent) {
+  const copyButton = createButton("copy-text-btn", `<i class="bi bi-clipboard"></i> Copy`);
+  copyButton.addEventListener('click', () => {
+      copyToClipboard(textContent, copyButton);
+  });
+  return copyButton;
+}
+
+function base64ToBlob(base64Data, contentType) {
+  const byteCharacters = atob(base64Data);
+  const byteArrays = [];
+  for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+      const slice = byteCharacters.slice(offset, offset + 512);
+      const byteNumbers = new Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+          byteNumbers[i] = slice.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      byteArrays.push(byteArray);
+  }
+  return new Blob(byteArrays, { type: contentType });
+}
+
+/**
+ * Creates an element to display attachments, now handling all file types 
+ * with preview for images/videos and icon+name for others.
+ */
+function createAttachmentElement(file) {
+  const fileBoxContent = document.createElement("div");
+  fileBoxContent.classList.add("attachment-box-content");
+  fileBoxContent.dataset.file = JSON.stringify(file);
+
+  console.log("createAttachmentElement called for:", file.filename, "Type:", file.type);
+  if (file.type.startsWith("image/")) {
+      const img = document.createElement("img");
+      img.classList.add("img-attachment");
+      img.src = `data:${file.type};base64,${file.content}`;
+      img.alt = file.filename;
+      fileBoxContent.appendChild(img); // Append image to fileBoxContent
+  } else if (file.type.startsWith("video/")) {
+      const video = document.createElement("video");
+      video.classList.add("vid-attachment");
+      video.alt = file.name;
+      video.controls = false;
+      video.muted = true;
+      video.autoplay = true;
+      video.loop = true;
+      video.src = `data:${file.type};base64,${file.content}`;
+      video.type = file.type;
+      fileBoxContent.appendChild(video); // Append video to fileBoxContent
+  } else {
+      const iconFilenameWrapper = document.createElement("div");
+      iconFilenameWrapper.classList.add("icon-filename-wrapper");
+
+      const fileIcon = document.createElement("i");
+      fileIcon.classList.add("bi", "bi-file-earmark-text-fill", "doc-icon");
+      iconFilenameWrapper.appendChild(fileIcon);
+
+      const fileNameSpan = document.createElement("span");
+      fileNameSpan.classList.add("attachment-filename");
+      fileNameSpan.textContent = file.filename; 
+      iconFilenameWrapper.appendChild(fileNameSpan);
+
+      const fileInfoSpan = document.createElement("span");
+      fileInfoSpan.classList.add("attachment-fileinfo");
+      const fileType = file.type.split('/')[0].toUpperCase();
+      const fileSizeKB = (file.content.length * (3 / 4) / 1024).toFixed(2);
+      fileInfoSpan.textContent = `${fileType} · ${fileSizeKB} KB`;
+
+      fileBoxContent.appendChild(iconFilenameWrapper);    
+      fileBoxContent.appendChild(fileInfoSpan);          
+  }
+  fileBoxContent.addEventListener('click', function(event) {
+    event.stopPropagation(); // Stop event from bubbling up to chat-box
+    const fileData = JSON.parse(this.dataset.file); // Retrieve file data
+    displayAttachmentInRightPanel(fileData);
+  });
+
+  return fileBoxContent;
 }
 
 // --------------------------------------------------------------------------
@@ -534,75 +659,99 @@ function createAttachmentElement(file) {
 // --------------------------------------------------------------------------
 
 /**
- * Renders a function call in a minimalist dark format
+ * Renders a function call in a box format, similar to the images,
+ * with JSON values rendered correctly and omitting empty arguments.
  * @param {Object} functionCall - Object containing name and args properties
  * @returns {string} HTML string for function call display
  */
 function renderFunctionCall(functionCall) {
   const name = functionCall.name;
-  const args = functionCall.args;
-  
-  const paramsHtml = Object.entries(args)
-    .map(([key, value]) => {
-      let displayValue = typeof value === 'string' 
-        ? `"${value}"` 
-        : JSON.stringify(value);
-        
-      return `
-        <div class="fn-param">
-          <div class="param-name">${key}:</div>
-          <div class="param-value">${displayValue}</div>
-        </div>
-      `;
-    })
-    .join('');
+  const args = functionCall.args || {};
+  const functionId = functionCall.id;
+  const iconClass = getFunctionIconClass(name);
+
+  const formattedArgs = Object.entries(args)
+      .filter(([key, value]) => value !== null && value !== undefined && value !== "")
+      .map(([key, value]) => {
+          let displayValue;
+          try {
+              displayValue = JSON.stringify(value);
+          } catch (e) {
+              displayValue = String(value);
+          }
+          return `<span class="fn-arg"><span class="fn-argk">${key}</span>=<span class="fn-argv">${displayValue}</span></span>`;
+      })
+      .join(', ');
+
+  const argsDisplay = formattedArgs ? ` <span class="fn-args"> ${formattedArgs}</span>` : '';
 
   return `
-    <div class="fn-container">
-      <div class="fn-header">
-        <span>function</span>
-        <span class="fn-badge">call</span>
+      <div class="fn-call-box" id="fn-call-${functionId}">
+          <span class="fn-icon"><i class="${iconClass}"></i></span>
+          <span class="fn-text">
+              <span class="fn-name">${name}</span>${argsDisplay}
+          </span>
+          <span class="fn-response">
+              <span class="fn-arrow">-></span> 
+              <div class="thinking-loader">
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+              </div>
+          </span>
       </div>
-      <div class="fn-body">
-        <div class="fn-name">${name}</div>
-        <div class="fn-params" style="margin-top: 8px;">
-          ${paramsHtml}
-        </div>
-      </div>
-    </div>
   `;
 }
 
 /**
- * Renders a function response, showing either output or error content
+* Helper function to determine the icon class based on the function name.
+* You can customize this based on your function names and desired icons.
+* @param {string} functionName
+* @returns {string} Bootstrap Icons class
+*/
+function getFunctionIconClass(functionName) {
+  functionName = functionName.toLowerCase();
+  if (functionName.includes("read") || functionName.includes("get") || functionName.includes("fetch")) {
+      return "bi bi-file-earmark-text"; // Example icon for reading/fetching files or data
+  } else if (functionName.includes("execute") || functionName.includes("run")) {
+      return "bi bi-play-btn"; // Example icon for executing commands
+  } else if (functionName.includes("create") || functionName.includes("make") || functionName.includes("generate")) {
+      return "bi bi-pencil-square"; // Example icon for creating/writing files
+  } else {
+      return "bi bi-gear"; // Default gear icon for other functions
+  }
+}
+
+/**
+ * Updates the function call box in-place to display the function response
+ * inline, after the '->' indicator.
  * @param {Object} functionResponse - Object containing name and response properties
- * @returns {string} HTML string for function response display
  */
 function renderFunctionResponse(functionResponse) {
-  const name = functionResponse.name;
+  const functionId = functionResponse.id;
   const response = functionResponse.response;
-  
-  // Determine if it's a success (has output field) or error (has error field)
+
+  // Determine if it's a success (has output) or error (has error)
   const isSuccess = response.output !== undefined;
-  const headerClass = isSuccess ? "response-success" : "response-error";
-  const statusClass = isSuccess ? "status-success" : "status-error";
-  const statusText = isSuccess ? "success" : "error";
-  
-  // Get the content to display (either output or error)
+  const statusClass = isSuccess ? "response-success" : "response-error";
+
+  // Get the content to display (either output or error) and format as JSON
   const contentToDisplay = isSuccess ? response.output : response.error;
   const formattedContent = JSON.stringify(contentToDisplay, null, 2);
-  
-  return `
-    <div class="fn-container fn-response">
-      <div class="fn-header response-header ${headerClass}">
-        <span>${name}</span>
-        <span class="status-badge ${statusClass}">${statusText}</span>
-      </div>
-      <div class="response-body">
-        <pre class="response-content">${formattedContent}</pre>
-      </div>
-    </div>
-  `;
+
+  // Find the corresponding .fn-response span within the fn-call-box using the ID
+  const fnResponseSpan = document.querySelector(`#fn-call-${functionId} .fn-response`);
+
+  if (fnResponseSpan) {
+      // Update the innerHTML of the .fn-response span with the formatted response
+      fnResponseSpan.innerHTML = `
+          <span class="fn-arrow">-></span>
+          <span><pre class="fn-inline-response-content ${statusClass}">${formattedContent}</pre></span>
+      `;
+  } else {
+      // Fallback in case the function call element is not found
+      console.error(`Function call element with ID ${functionId} not found for response update.`);
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -610,7 +759,7 @@ function renderFunctionResponse(functionResponse) {
 // --------------------------------------------------------------------------
 
 /**
- * Displays file names in boxes with delete buttons.
+ * Displays file names in boxes with delete buttons and preview.
  */
 function displayFileNames() {
   const displayArea = document.getElementById("file-display-area");
@@ -622,16 +771,7 @@ function displayFileNames() {
     const fileBox = document.createElement("div");
     fileBox.classList.add("file-box");
 
-    let fileDisplayElement;
-    if (fileData.type.startsWith("image/")) {
-      fileDisplayElement = createAttachmentElement(fileData);
-    } else if (fileData.type.startsWith("video/")) {
-      fileDisplayElement = createAttachmentElement(fileData);
-    } else {
-      const fileNameSpan = document.createElement("span");
-      fileNameSpan.textContent = fileData.name;
-      fileDisplayElement = fileNameSpan;
-    }
+    const fileDisplayElement = createAttachmentElement(fileData); // Directly use createAttachmentElement
     fileBox.appendChild(fileDisplayElement);
 
     const deleteButton = document.createElement("button");
@@ -1205,6 +1345,12 @@ document.addEventListener('DOMContentLoaded', function() {
     let rightPanelPercent = (rightPanelWidth / containerWidth) * 100;
     let chatContainerPercent = (chatContainerWidth / containerWidth) * 100;
 
+    if (chatContainerPercent > 99.9) {
+      rightPanel.style.width = `0.1%`;
+      chatContainer.style.width = `99.9%`;
+      return;
+    }
+
     // Apply the new widths
     rightPanel.style.width = `${rightPanelPercent}%`;
     chatContainer.style.width = `${chatContainerPercent}%`;
@@ -1245,7 +1391,11 @@ document.addEventListener('DOMContentLoaded', function() {
       saveRightPanelWidth();
     }
   });
-
+  // Initialize Bootstrap Tabs explicitly
+  var tabElList = [].slice.call(document.querySelectorAll('#rightPanelTabs button'))
+  tabElList.forEach(tabEl => {
+    new bootstrap.Tab(tabEl)
+  })
   // Save initial width on load in case the user doesn't resize
   window.addEventListener('beforeunload', saveRightPanelWidth);
 });
@@ -1292,6 +1442,7 @@ const handleFileInputChange = async () => {
           let content = await readFileAsBase64(file);
           fileContents.push({
             name: file.name,
+            filename: file.name,
             type: file.type,
             content: content,
           });
@@ -1299,6 +1450,7 @@ const handleFileInputChange = async () => {
           console.error("Error reading file:", error);
           fileContents.push({
             name: file.name,
+            filename: file.name,
             type: file.type,
             content: `Error reading file: ${error.message}`,
           });
