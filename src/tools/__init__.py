@@ -26,7 +26,7 @@ class Tools(enum.Enum):
 def ModelAndToolSelector(
         model: Literal["Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
         tools: list[Literal["FetchWebsite", "Reminder", "SearchGrounding"]]
-    ) -> tuple[str, list[types.Tool]]:
+    ) -> tuple[str, bool, list[types.Tool]]:
     f"""\
 Use this tool to choose the best AI model with tools to respond to the user's request, considering the model capabilities, rate limits, latency, benchmark scores, and tool requirements.
 
@@ -73,7 +73,7 @@ only {config.SearchGroundingSuportedModels} suports SearchGrounding.
             ftools.append(SearchGrounding)
         else:
             raise Exception("Unknown Tool passed: " + tool)
-    return (config.Models[model].value, ftools)
+    return (config.Models[model].value, model in config.ToolSuportedModels, ftools)
 
 def ModelSelector(
         model: Literal["Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
