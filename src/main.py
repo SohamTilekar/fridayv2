@@ -956,6 +956,7 @@ def generate_content_with_retry(msg: Message) -> Message:
         # Main content generation loop
         while True:
             try:
+                start_time = time.time()  # Record start time before request
                 # Generate streaming content
                 response = client.models.generate_content_stream(
                     model=selected_model,
@@ -996,6 +997,20 @@ def generate_content_with_retry(msg: Message) -> Message:
                 if msg.content:
                     msg.content[-1].processing = False
                     update_chat_message(msg)
+
+                # sleep for some time if needed
+                end_time = time.time()  # Record end time after response processing
+                elapsed_time = end_time - start_time  # Calculate elapsed time
+
+                rpm_limit = config.model_RPM_map.get(selected_model, 1)  # Get RPM limit, default to 1 if not found
+                target_delay_per_request_sec = 60.0 / rpm_limit  # Calculate target delay in seconds
+                print(f"{target_delay_per_request_sec=}")
+                print(f"{elapsed_time=}")
+                sleep_duration = max(0, target_delay_per_request_sec - elapsed_time) # Calculate sleep duration, ensure it's not negative
+                print(f"{sleep_duration=}")
+                if sleep_duration > 0:
+                    print(f"Sleeping for {sleep_duration:.2f} seconds to respect RPM limit.")
+                    time.sleep(sleep_duration)  # Sleep to respect RPM limit
 
                 # Continue loop if a function call occurred (to handle function responses)
                 if function_call_occurred:
