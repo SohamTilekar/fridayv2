@@ -1,10 +1,13 @@
+# reminder.py
 import pickle
 import time
 import schedule
 import config
-from typing import Literal
+from typing import Literal, List
 import os
+import datetime
 
+from notification import Notification, Content, notifications
 
 class Reminder:
     message: str
@@ -12,18 +15,32 @@ class Reminder:
     skip_next: bool
     re_remind: bool
     id: int
+
     def __init__(self, message: str, once: bool) -> None:
         self.message = message
         self.once = once
         self.skip_next = False
         self.re_remind = False
+        self.id = hash(self) # Generate ID here
 
     def __call__(self):
         if self.skip_next:
             self.skip_next = False
             return
-        from ..main import socketio
-        socketio.emit("notify", self.message)
+
+        # Create a Notification object
+        notification = Notification(
+            notification_type="Reminder",
+            snipit=Content(text=self.message[:100] + "..." if len(self.message) > 100 else self.message),
+            time=datetime.datetime.now(),
+            sevarity="Mid", # Or "Low" or "High" as appropriate
+            reminder=True,
+            personal=True,
+        )
+        notification.content = [Content(text=self.message)]
+
+        notifications.append(notification)
+
         if self.once:
             return schedule.CancelJob
 
@@ -175,7 +192,7 @@ def CreateReminder(
     else:
         raise ValueError("Invalid interval type or parameters.")
     
-    job.job_func.func.id = hash(reminder)  # type: ignore
+    job.job_func.func.id = reminder.id  # type: ignore
     return job.job_func.func.id  # type: ignore
 
 def CancelReminder(

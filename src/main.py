@@ -10,6 +10,9 @@ import config
 import uuid
 from io import BytesIO  # Import BytesIO
 from typing import Any, Literal, Optional, Iterator
+from mail import start_checking_mail
+from global_shares import global_shares
+import notification
 import json
 import os
 import base64
@@ -21,6 +24,7 @@ import tools
 
 app = Flask("Friday")
 socketio = SocketIO(app)
+global_shares["socketio"] = socketio
 
 client = genai.Client(api_key=config.GOOGLE_API)
 
@@ -1568,6 +1572,22 @@ def upload_video_chunck(data: dict[str, str | int]):
 def end_upload_video(id: str):
     videos[id] = (videos[id][0], True)
 
+#region Notification Handling
+@socketio.on("get_notifications")
+def handle_get_notifications():
+    socketio.emit("notification_update", [notification.jsonify() for notification in notification.notifications.notifications])
+
+@socketio.on("mark_read")
+def handle_mark_read(data):
+    notification_id = data.get("notification_id")
+    if notification_id:
+        notification.notifications.delete(notification_id)
+        socketio.emit("delete_notification", notification_id)
+        notification.notifications.save_to_json(os.path.join(config.AI_DIR, "notifications.json")) # Save the updated notifications
+    else:
+        print("Error: notification_id not provided for mark_read")
+#endregion
+
 @socketio.on("send_message")
 def handle_send_message(data):
     message = data.get("message", "")
@@ -1666,12 +1686,17 @@ def root():
 if __name__ == "__main__":
     chat_history_file = os.path.join(config.AI_DIR, "chat_history.json")
     chat_history.load_from_json(chat_history_file)
+    notification_file = os.path.join(config.AI_DIR, "notifications.json")
+    notification.notifications.load_from_json(notification_file)
+    mail_checker = threading.Thread(target=start_checking_mail, daemon=True)
+    mail_checker.start()
     try:
-        threading.Thread(target=tools.run_reminders)
+        reminder_runer = threading.Thread(target=tools.run_reminders, daemon=True)
+        reminder_runer.start()
         socketio.run(app, host='127.0.0.1', port=5000,
                      debug=True, use_reloader=False)
     finally:
-        chat_history_file = os.path.join(config.AI_DIR, "chat_history.json")
         chat_history.save_to_json(chat_history_file)
+        notification.notifications.save_to_json(notification_file)
         tools.save_jobs()
         print("Chat history saved.")

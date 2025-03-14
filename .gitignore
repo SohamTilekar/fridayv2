@@ -5,3 +5,5 @@ data/*
 *.swp
 */config.py
 *.pyc
+credentials.json
+token.json

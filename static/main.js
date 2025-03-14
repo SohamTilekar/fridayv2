@@ -60,6 +60,114 @@ function handleChatBoxUpdate(updateFunction) {
   };
 }
 
+// --------------------------------------------------------------------------
+// --- Notification Display ---
+// --------------------------------------------------------------------------
+
+/**
+ * Renders a single notification based on its type.
+ */
+function renderNotification(notification) {
+  const notificationDiv = document.createElement("div");
+  notificationDiv.classList.add("notification");
+  notificationDiv.dataset.notificationId = notification.id; // Store notification ID
+
+  // Render content based on notification type
+  if (notification.type === "Mail") {
+      notificationDiv.innerHTML = `
+          <div class="notification-header">
+              <span class="notification-subject">${notification.subject}</span>
+              <span class="notification-sender">From: ${notification.sender}</span>
+          </div>
+          <div class="notification-body">
+              ${notification.body.map(content => {
+                  if (content.type === "text") {
+                      return marked.parse(content.text);
+                  } else if (content.type === "html") {
+                      return `<div>${content.html}</div>`; // Render HTML directly
+                  } else {
+                      return ""; // Ignore other content types for now
+                  }
+              }).join("")}
+          </div>
+          <div class="notification-time">
+              ${new Date(notification.time).toLocaleTimeString()}
+          </div>
+      `;
+  } else if (notification.type === "Reminder") {
+      notificationDiv.innerHTML = `
+          <div class="notification-header">
+              <span class="notification-subject">Reminder</span>
+          </div>
+          <div class="notification-body">
+              <p>${notification.snipit.text}</p>
+          </div>
+          <div class="notification-time">
+              ${new Date(notification.time).toLocaleTimeString()}
+          </div>
+      `;
+  } else {
+      notificationDiv.innerHTML = `
+          <div class="notification-header">
+              <span class="notification-subject">General Notification</span>
+          </div>
+          <div class="notification-body">
+              <p>${notification.snipit.text}</p>
+          </div>
+          <div class="notification-time">
+              ${new Date(notification.time).toLocaleTimeString()}
+          </div>
+      `;
+  }
+
+  // Add "Mark as Read" button
+  const markReadButton = document.createElement("button");
+  markReadButton.classList.add("mark-read-button");
+  markReadButton.innerHTML = `<i class="bi bi-check-circle"></i> Mark as Read`;
+  markReadButton.addEventListener("click", () => markNotificationRead(notification.id));
+  notificationDiv.appendChild(markReadButton);
+
+  return notificationDiv;
+}
+
+/**
+* Updates the notification display area with the given notification.
+*/
+function updateNotificationDisplay(notification) {
+  const notificationDisplayArea = document.getElementById("notification-display-area");
+  const notificationElement = renderNotification(notification);
+  notificationDisplayArea.prepend(notificationElement); // Add new notifications to the top
+}
+
+/**
+* Marks a notification as read by removing it from the UI and sending a request to the server.
+*/
+function markNotificationRead(notificationId) {
+  socket.emit("mark_read", { notification_id: notificationId });
+}
+
+/**
+* Deletes a notification from the UI.
+*/
+function deleteNotification(notificationId) {
+  const notificationElement = document.querySelector(`.notification[data-notification-id="${notificationId}"]`);
+  if (notificationElement) {
+      notificationElement.remove();
+  }
+}
+
+/**
+* Updates the entire notification display with the given notifications.
+*/
+function updateNotificationDisplayAll(notifications) {
+  const notificationDisplayArea = document.getElementById("notification-display-area");
+  notificationDisplayArea.innerHTML = ""; // Clear existing notifications
+  notifications.forEach(notification => {
+      const notificationElement = renderNotification(notification);
+      notificationDisplayArea.appendChild(notificationElement);
+  });
+}
+
 // ==========================================================================
 // --- Core Functionality ---
 // ==========================================================================
@@ -554,6 +662,7 @@ function displayAttachmentInRightPanel(file) {
 
 function createDownloadButton(file, textContent = null) {
   const downloadButton = createButton("download-btn", `<i class="bi bi-download"></i> Download`);
+  downloadButton.classList.add("btn", "btn-secondary");
   downloadButton.addEventListener('click', () => {
       let blob;
       if (textContent !== null) {
@@ -575,6 +684,7 @@ function createDownloadButton(file, textContent = null) {
 
 function createCopyButton(textContent) {
   const copyButton = createButton("copy-text-btn", `<i class="bi bi-clipboard"></i> Copy`);
+  copyButton.classList.add("btn", "btn-secondary");
   copyButton.addEventListener('click', () => {
       copyToClipboard(textContent, copyButton);
   });
@@ -1247,6 +1357,18 @@ socket.on("updated_msg", updateMessageInChatBox);
 socket.on("add_message", addMessageToChatBox);
 socket.on("delete_message", deleteMessage);
 
+socket.on("add_notification", (notification) => {
+  updateNotificationDisplay(notification);
+});
+
+socket.on("notification_update", (notifications) => {
+  updateNotificationDisplayAll(notifications);
+});
+
+socket.on("delete_notification", (notificationId) => {
+  deleteNotification(notificationId);
+});
+
 // --------------------------------------------------------------------------
 // --- Right Panel Functions ---
 // --------------------------------------------------------------------------
@@ -1527,3 +1649,14 @@ const marked = new Marked(
     },
   }),
 );
+
+document.addEventListener('DOMContentLoaded', function() {
+  fetchModels();
+  fetchModelCompatibility();
+
+  // Initialize button listeners after a short delay to ensure DOM is ready
+  setTimeout(initializeButtonListeners, 500);
+
+  // Request existing notifications on page load
+  socket.emit("get_notifications");
+});

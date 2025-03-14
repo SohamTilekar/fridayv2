@@ -455,7 +455,7 @@ pre {
 
 #attachment-display-area {
     overflow-y: auto; /* Make this area scrollable */
-    max-height: calc(100vh - 80px); /* Example max-height, adjust '80px' as needed for tabs/padding */
+    max-height: calc(100vh - 40px); /* Example max-height, adjust '80px' as needed for tabs/padding */
     overflow-x: hidden; /* Hide horizontal scrollbar if not needed */
     padding: var(--padding-md); /* Keep padding for content spacing */
 }
@@ -518,7 +518,6 @@ pre {
     font-family: "Fira Code", monospace;
     font-size: 0.9rem;
     color: var(--gray-100);
-    margin-bottom: var(--margin);
     padding: var(--padding-md);
     background-color: var(--gray-800);
     border-radius: var(--border-radius);
@@ -527,6 +526,7 @@ pre {
 
 .download-btn,
 .copy-text-btn {
+    margin-left: var(--margin);
     margin-top: var(--margin);
 }
 
@@ -660,6 +660,84 @@ pre {
 .rendered-content-block p:last-child {
     margin-bottom: 0; /* Remove bottom margin from last paragraph */
 }
+/* -------------------------------------------------------------------------- */
+/* Notification Styles */
+/* -------------------------------------------------------------------------- */
+
+#notification-display-area {
+    overflow-y: auto; /* Make this area scrollable */
+    max-height: calc(100vh - 40px); /* Example max-height, adjust '80px' as needed for tabs/padding */
+    overflow-x: hidden; /* Hide horizontal scrollbar if not needed */
+    padding: var(--padding-md); /* Keep padding for content spacing */
+}
+
+.notification {
+    background-color: var(--gray-800);
+    border-radius: var(--border-radius);
+    margin-bottom: var(--margin);
+    padding: var(--padding-md);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    word-break: break-word;
+}
+
+.notification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--gray-700);
+    padding-bottom: 0.3rem;
+}
+
+.notification-subject {
+    font-weight: 500;
+    color: var(--accent);
+}
+
+.notification-sender {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+}
+
+.notification-body {
+    margin-bottom: 0.5rem;
+}
+
+.notification-body p,
+.notification-body div {
+    font-size: 0.9rem;
+    color: var(--gray-300);
+    line-height: 1.4;
+}
+
+.notification-time {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    text-align: right;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mark as Read Button Styles */
+/* -------------------------------------------------------------------------- */
+
+.mark-read-button {
+    border: none;
+    border-radius: var(--border-radius);
+    background-color: var(--gray-700);
+    color: var(--gray-100);
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    margin-top: 0.5rem;
+    outline: none !important; /* Override bootstrap outline */
+    box-shadow: none !important; /* Override bootstrap shadow */
+}
+
+.mark-read-button:hover {
+    background-color: var(--gray-600);
+    color: var(--gray-100);
+}
 
 /* -------------------------------------------------------------------------- */
 /* Utility Styles - Refined buttons and separators */
@@ -771,7 +849,7 @@ pre {
 /* Table Styles - Basic styling for tables */
 /* -------------------------------------------------------------------------- */
 
-table {
+.message-content table {
     width: 100%;
     margin-bottom: var(--margin);
     border-collapse: collapse;
@@ -782,27 +860,27 @@ table {
     border: none; /* Remove default table border */
 }
 
-th,
-td {
+.message-content th,
+.message-content td {
     padding: 0.6rem;
     text-align: left;
     border-bottom: 1px solid var(--gray-700); /* Separator for rows */
     border-right: 1px solid var(--gray-700); /* Separator for columns */
 }
 
-th {
+.message-content th {
     background-color: var(--gray-700); /* Header background */
     font-weight: 500;
     color: var(--gray-200); /* Lighter header text */
 }
 
 /* Remove border from the last column and row for cleaner look */
-tr th:last-child,
-tr td:last-child {
+.message-content tr th:last-child,
+.message-content tr td:last-child {
     border-right: none;
 }
 
-tr:last-child td {
+.message-content tr:last-child td {
     border-bottom: none;
 }
 
