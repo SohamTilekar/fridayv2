@@ -455,7 +455,6 @@ pre {
 
 #attachment-display-area {
     overflow-y: auto; /* Make this area scrollable */
-    max-height: calc(100vh - 40px); /* Example max-height, adjust '80px' as needed for tabs/padding */
     overflow-x: hidden; /* Hide horizontal scrollbar if not needed */
     padding: var(--padding-md); /* Keep padding for content spacing */
 }
@@ -666,7 +665,6 @@ pre {
 
 #notification-display-area {
     overflow-y: auto; /* Make this area scrollable */
-    max-height: calc(100vh - 40px); /* Example max-height, adjust '80px' as needed for tabs/padding */
     overflow-x: hidden; /* Hide horizontal scrollbar if not needed */
     padding: var(--padding-md); /* Keep padding for content spacing */
 }

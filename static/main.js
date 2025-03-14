@@ -74,28 +74,41 @@ function renderNotification(notification) {
 
   // Render content based on notification type
   if (notification.type === "Mail") {
-      notificationDiv.innerHTML = `
-          <div class="notification-header">
-              <span class="notification-subject">${notification.subject}</span>
-              <span class="notification-sender">From: ${notification.sender}</span>
-          </div>
-          <div class="notification-body">
-              ${notification.body.map(content => {
-                  if (content.type === "text") {
-                      return marked.parse(content.text);
-                  } else if (content.type === "html") {
-                      return `<div>${content.html}</div>`; // Render HTML directly
-                  } else {
-                      return ""; // Ignore other content types for now
-                  }
-              }).join("")}
-          </div>
-          <div class="notification-time">
-              ${new Date(notification.time).toLocaleTimeString()}
-          </div>
-      `;
+    let bodyContent = "";
+    notification.body.forEach(content => {
+        if (content.type === "text") {
+            bodyContent += `<p>${content.text}</p>`;
+        } else if (content.type === "html") {
+            // Create the iframe element
+            const iframe = document.createElement('iframe');
+            iframe.sandbox = "allow-same-origin allow-scripts";
+            iframe.style.border = "none";
+            iframe.style.width = "100%";
+
+            // Set the srcdoc attribute
+            iframe.srcdoc = content.html;
+
+            // Append the iframe to a container
+            const iframeContainer = document.createElement('div');
+            iframeContainer.appendChild(iframe);
+            bodyContent += iframeContainer.outerHTML;
+        }
+    });
+
+    notificationDiv.innerHTML = `
+        <div class="notification-header">
+            <span class="notification-subject">${notification.subject}</span>
+            <span class="notification-sender">From: ${notification.sender}</span>
+        </div>
+        <div class="notification-body">
+            ${bodyContent}
+        </div>
+        <div class="notification-time">
+            ${new Date(notification.time).toLocaleTimeString()}
+        </div>
+    `;
   } else if (notification.type === "Reminder") {
-      notificationDiv.innerHTML = `
+    notificationDiv.innerHTML = `
           <div class="notification-header">
               <span class="notification-subject">Reminder</span>
           </div>
@@ -107,7 +120,7 @@ function renderNotification(notification) {
           </div>
       `;
   } else {
-      notificationDiv.innerHTML = `
+    notificationDiv.innerHTML = `
           <div class="notification-header">
               <span class="notification-subject">General Notification</span>
           </div>
@@ -152,7 +165,7 @@ function markNotificationRead(notificationId) {
 function deleteNotification(notificationId) {
   const notificationElement = document.querySelector(`.notification[data-notification-id="${notificationId}"]`);
   if (notificationElement) {
-      notificationElement.remove();
+    notificationElement.remove();
   }
 }
 
@@ -163,8 +176,8 @@ function updateNotificationDisplayAll(notifications) {
   const notificationDisplayArea = document.getElementById("notification-display-area");
   notificationDisplayArea.innerHTML = ""; // Clear existing notifications
   notifications.forEach(notification => {
-      const notificationElement = renderNotification(notification);
-      notificationDisplayArea.appendChild(notificationElement);
+    const notificationElement = renderNotification(notification);
+    notificationDisplayArea.appendChild(notificationElement);
   });
 }
 
@@ -381,7 +394,7 @@ const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
   }
 
   renderMessageContent(msgDiv, msg); // Render the message content
-  
+
   const controlsDiv = createMessageControls(msg); // Create the controls
   msgDiv.appendChild(controlsDiv);
 
@@ -642,10 +655,10 @@ function displayAttachmentInRightPanel(file) {
     let textContent = atob(file.content); // Decode base64 to text
 
     if (file.type.startsWith("text/javascript") || file.type.startsWith("text/css") || file.type.startsWith("text/html") || file.type.startsWith("text/plain")) {
-        const highlightedCode = hljs.highlightAuto(textContent);
-        textContainer.innerHTML = `<pre><code class="hljs ${highlightedCode.language}">${highlightedCode.value}</code></pre>`;
+      const highlightedCode = hljs.highlightAuto(textContent);
+      textContainer.innerHTML = `<pre><code class="hljs ${highlightedCode.language}">${highlightedCode.value}</code></pre>`;
     } else {
-        textContainer.textContent = textContent;
+      textContainer.textContent = textContent;
     }
     attachmentDisplayArea.appendChild(textContainer);
 
@@ -664,20 +677,20 @@ function createDownloadButton(file, textContent = null) {
   const downloadButton = createButton("download-btn", `<i class="bi bi-download"></i> Download`);
   downloadButton.classList.add("btn", "btn-secondary");
   downloadButton.addEventListener('click', () => {
-      let blob;
-      if (textContent !== null) {
-          blob = new Blob([textContent], { type: file.type });
-      } else {
-          blob = base64ToBlob(file.content, file.type);
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.filename;
-      document.body.appendChild(a); // Required for Firefox
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+    let blob;
+    if (textContent !== null) {
+      blob = new Blob([textContent], { type: file.type });
+    } else {
+      blob = base64ToBlob(file.content, file.type);
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.filename;
+    document.body.appendChild(a); // Required for Firefox
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   });
   return downloadButton;
 }
@@ -686,7 +699,7 @@ function createCopyButton(textContent) {
   const copyButton = createButton("copy-text-btn", `<i class="bi bi-clipboard"></i> Copy`);
   copyButton.classList.add("btn", "btn-secondary");
   copyButton.addEventListener('click', () => {
-      copyToClipboard(textContent, copyButton);
+    copyToClipboard(textContent, copyButton);
   });
   return copyButton;
 }
@@ -695,13 +708,13 @@ function base64ToBlob(base64Data, contentType) {
   const byteCharacters = atob(base64Data);
   const byteArrays = [];
   for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-      const slice = byteCharacters.slice(offset, offset + 512);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
+    const slice = byteCharacters.slice(offset, offset + 512);
+    const byteNumbers = new Array(slice.length);
+    for (let i = 0; i < slice.length; i++) {
+      byteNumbers[i] = slice.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    byteArrays.push(byteArray);
   }
   return new Blob(byteArrays, { type: contentType });
 }
@@ -717,45 +730,45 @@ function createAttachmentElement(file) {
 
   console.log("createAttachmentElement called for:", file.filename, "Type:", file.type);
   if (file.type.startsWith("image/")) {
-      const img = document.createElement("img");
-      img.classList.add("img-attachment");
-      img.src = `data:${file.type};base64,${file.content}`;
-      img.alt = file.filename;
-      fileBoxContent.appendChild(img); // Append image to fileBoxContent
+    const img = document.createElement("img");
+    img.classList.add("img-attachment");
+    img.src = `data:${file.type};base64,${file.content}`;
+    img.alt = file.filename;
+    fileBoxContent.appendChild(img); // Append image to fileBoxContent
   } else if (file.type.startsWith("video/")) {
-      const video = document.createElement("video");
-      video.classList.add("vid-attachment");
-      video.alt = file.name;
-      video.controls = false;
-      video.muted = true;
-      video.autoplay = true;
-      video.loop = true;
-      video.src = `data:${file.type};base64,${file.content}`;
-      video.type = file.type;
-      fileBoxContent.appendChild(video); // Append video to fileBoxContent
+    const video = document.createElement("video");
+    video.classList.add("vid-attachment");
+    video.alt = file.name;
+    video.controls = false;
+    video.muted = true;
+    video.autoplay = true;
+    video.loop = true;
+    video.src = `data:${file.type};base64,${file.content}`;
+    video.type = file.type;
+    fileBoxContent.appendChild(video); // Append video to fileBoxContent
   } else {
-      const iconFilenameWrapper = document.createElement("div");
-      iconFilenameWrapper.classList.add("icon-filename-wrapper");
+    const iconFilenameWrapper = document.createElement("div");
+    iconFilenameWrapper.classList.add("icon-filename-wrapper");
 
-      const fileIcon = document.createElement("i");
-      fileIcon.classList.add("bi", "bi-file-earmark-text-fill", "doc-icon");
-      iconFilenameWrapper.appendChild(fileIcon);
+    const fileIcon = document.createElement("i");
+    fileIcon.classList.add("bi", "bi-file-earmark-text-fill", "doc-icon");
+    iconFilenameWrapper.appendChild(fileIcon);
 
-      const fileNameSpan = document.createElement("span");
-      fileNameSpan.classList.add("attachment-filename");
-      fileNameSpan.textContent = file.filename; 
-      iconFilenameWrapper.appendChild(fileNameSpan);
+    const fileNameSpan = document.createElement("span");
+    fileNameSpan.classList.add("attachment-filename");
+    fileNameSpan.textContent = file.filename;
+    iconFilenameWrapper.appendChild(fileNameSpan);
 
-      const fileInfoSpan = document.createElement("span");
-      fileInfoSpan.classList.add("attachment-fileinfo");
-      const fileType = file.type.split('/')[0].toUpperCase();
-      const fileSizeKB = (file.content.length * (3 / 4) / 1024).toFixed(2);
-      fileInfoSpan.textContent = `${fileType} · ${fileSizeKB} KB`;
+    const fileInfoSpan = document.createElement("span");
+    fileInfoSpan.classList.add("attachment-fileinfo");
+    const fileType = file.type.split('/')[0].toUpperCase();
+    const fileSizeKB = (file.content.length * (3 / 4) / 1024).toFixed(2);
+    fileInfoSpan.textContent = `${fileType} · ${fileSizeKB} KB`;
 
-      fileBoxContent.appendChild(iconFilenameWrapper);    
-      fileBoxContent.appendChild(fileInfoSpan);          
+    fileBoxContent.appendChild(iconFilenameWrapper);
+    fileBoxContent.appendChild(fileInfoSpan);
   }
-  fileBoxContent.addEventListener('click', function(event) {
+  fileBoxContent.addEventListener('click', function (event) {
     event.stopPropagation(); // Stop event from bubbling up to chat-box
     const fileData = JSON.parse(this.dataset.file); // Retrieve file data
     displayAttachmentInRightPanel(fileData);
@@ -781,17 +794,17 @@ function renderFunctionCall(functionCall) {
   const iconClass = getFunctionIconClass(name);
 
   const formattedArgs = Object.entries(args)
-      .filter(([key, value]) => value !== null && value !== undefined && value !== "")
-      .map(([key, value]) => {
-          let displayValue;
-          try {
-              displayValue = JSON.stringify(value);
-          } catch (e) {
-              displayValue = String(value);
-          }
-          return `<span class="fn-arg"><span class="fn-argk">${key}</span>=<span class="fn-argv">${displayValue}</span></span>`;
-      })
-      .join(', ');
+    .filter(([key, value]) => value !== null && value !== undefined && value !== "")
+    .map(([key, value]) => {
+      let displayValue;
+      try {
+        displayValue = JSON.stringify(value);
+      } catch (e) {
+        displayValue = String(value);
+      }
+      return `<span class="fn-arg"><span class="fn-argk">${key}</span>=<span class="fn-argv">${displayValue}</span></span>`;
+    })
+    .join(', ');
 
   const argsDisplay = formattedArgs ? ` <span class="fn-args"> ${formattedArgs}</span>` : '';
 
@@ -822,13 +835,13 @@ function renderFunctionCall(functionCall) {
 function getFunctionIconClass(functionName) {
   functionName = functionName.toLowerCase();
   if (functionName.includes("read") || functionName.includes("get") || functionName.includes("fetch")) {
-      return "bi bi-file-earmark-text"; // Example icon for reading/fetching files or data
+    return "bi bi-file-earmark-text"; // Example icon for reading/fetching files or data
   } else if (functionName.includes("execute") || functionName.includes("run")) {
-      return "bi bi-play-btn"; // Example icon for executing commands
+    return "bi bi-play-btn"; // Example icon for executing commands
   } else if (functionName.includes("create") || functionName.includes("make") || functionName.includes("generate")) {
-      return "bi bi-pencil-square"; // Example icon for creating/writing files
+    return "bi bi-pencil-square"; // Example icon for creating/writing files
   } else {
-      return "bi bi-gear"; // Default gear icon for other functions
+    return "bi bi-gear"; // Default gear icon for other functions
   }
 }
 
@@ -853,14 +866,14 @@ function renderFunctionResponse(functionResponse) {
   const fnResponseSpan = document.querySelector(`#fn-call-${functionId} .fn-response`);
 
   if (fnResponseSpan) {
-      // Update the innerHTML of the .fn-response span with the formatted response
-      fnResponseSpan.innerHTML = `
+    // Update the innerHTML of the .fn-response span with the formatted response
+    fnResponseSpan.innerHTML = `
           <span class="fn-arrow">-></span>
           <span><pre class="fn-inline-response-content ${statusClass}">${formattedContent}</pre></span>
       `;
   } else {
-      // Fallback in case the function call element is not found
-      console.error(`Function call element with ID ${functionId} not found for response update.`);
+    // Fallback in case the function call element is not found
+    console.error(`Function call element with ID ${functionId} not found for response update.`);
   }
 }
 
@@ -937,355 +950,376 @@ let searchGroundingSupportedModels = [];
 
 // Fetch available models from the backend
 async function fetchModels() {
-    try {
-        const response = await fetch('/get_models');
-        if (!response.ok) {
-            throw new Error('Failed to fetch models');
-        }
-        const models = await response.json();
-
-        // Clear existing options
-        modelSelect.innerHTML = '';
-
-        // Add new options based on API response
-        models.forEach(model => {
-            const option = document.createElement('option');
-            option.value = model;
-            option.textContent = model;
-            modelSelect.appendChild(option);
-        });
-        const option = document.createElement('option');
-        option.value = "auto";
-        option.textContent = "auto";
-        modelSelect.appendChild(option);
-
-        // Load saved selection after populating options
-        loadSelectedModel();
-    } catch (error) {
-        console.error('Error fetching models:', error);
+  try {
+    const response = await fetch('/get_models');
+    if (!response.ok) {
+      throw new Error('Failed to fetch models');
     }
+    const models = await response.json();
+
+    // Clear existing options
+    modelSelect.innerHTML = '';
+
+    // Add new options based on API response
+    models.forEach(model => {
+      const option = document.createElement('option');
+      option.value = model;
+      option.textContent = model;
+      modelSelect.appendChild(option);
+    });
+    const option = document.createElement('option');
+    option.value = "auto";
+    option.textContent = "auto";
+    modelSelect.appendChild(option);
+
+    // Load saved selection after populating options
+    loadSelectedModel();
+  } catch (error) {
+    console.error('Error fetching models:', error);
+  }
 }
 
 // Fetch model compatibility information from the backend
 async function fetchModelCompatibility() {
-    try {
-        const response = await fetch('/get_model_compatibility');
-        if (!response.ok) {
-            throw new Error('Failed to fetch model compatibility');
-        }
-        const compatibility = await response.json();
-        
-        // Store compatibility information
-        toolSupportedModels = compatibility.toolSupportedModels || [];
-        searchGroundingSupportedModels = compatibility.searchGroundingSupportedModels || [];
-        
-        // Update tool availability based on current model after compatibility info is loaded
-        updateToolAvailability(modelSelect.value);
-    } catch (error) {
-        console.error('Error fetching model compatibility:', error);
-        // Fallback to hardcoded values if fetch fails
-        toolSupportedModels = ['Large20', 'Medium20', 'Small20', 'Large15', 'Medium15', 'Small15'];
-        searchGroundingSupportedModels = ['Large20', 'Large15', 'Medium20', 'Medium15'];
-        updateToolAvailability(modelSelect.value);
+  try {
+    const response = await fetch('/get_model_compatibility');
+    if (!response.ok) {
+      throw new Error('Failed to fetch model compatibility');
     }
+    const compatibility = await response.json();
+
+    // Store compatibility information
+    toolSupportedModels = compatibility.toolSupportedModels || [];
+    searchGroundingSupportedModels = compatibility.searchGroundingSupportedModels || [];
+
+    // Update tool availability based on current model after compatibility info is loaded
+    updateToolAvailability(modelSelect.value);
+  } catch (error) {
+    console.error('Error fetching model compatibility:', error);
+    // Fallback to hardcoded values if fetch fails
+    toolSupportedModels = ['Large20', 'Medium20', 'Small20', 'Large15', 'Medium15', 'Small15'];
+    searchGroundingSupportedModels = ['Large20', 'Large15', 'Medium20', 'Medium15'];
+    updateToolAvailability(modelSelect.value);
+  }
 }
 
 // Load saved model from local storage
 function loadSelectedModel() {
-    const savedModel = localStorage.getItem('selectedModel');
-    if (savedModel && Array.from(modelSelect.options).some(opt => opt.value === savedModel)) {
-        modelSelect.value = savedModel;
-    } else if (modelSelect.options.length > 0) {
-        // Set first option as default if saved model is invalid
-        saveSelectedModel(modelSelect.options[0].value);
-    }
+  const savedModel = localStorage.getItem('selectedModel');
+  if (savedModel && Array.from(modelSelect.options).some(opt => opt.value === savedModel)) {
+    modelSelect.value = savedModel;
+  } else if (modelSelect.options.length > 0) {
+    // Set first option as default if saved model is invalid
+    saveSelectedModel(modelSelect.options[0].value);
+  }
 
-    // Send the current selection to the backend
-    updateModelSelection(modelSelect.value);
+  // Send the current selection to the backend
+  updateModelSelection(modelSelect.value);
 }
 
 // Save selected model to local storage and update backend
 function saveSelectedModel(model) {
-    localStorage.setItem('selectedModel', model);
-    updateModelSelection(model);
+  localStorage.setItem('selectedModel', model);
+  updateModelSelection(model);
 }
 
 // Send model selection to the backend
 function updateModelSelection(selectedModel) {
-    selectedModel = selectedModel ? selectedModel : modelSelect.value
-    socket.emit('set_models', selectedModel == "auto" ? null : selectedModel);
+  selectedModel = selectedModel ? selectedModel : modelSelect.value
+  socket.emit('set_models', selectedModel == "auto" ? null : selectedModel);
 }
 
 // Updated function to dynamically check model compatibility with tools
 function updateToolAvailability(selectedModel) {
-    // First clear any existing disabled or selected states for a fresh start
-    const allButtons = document.querySelectorAll('.toggle-button');
-    
-    // Special case for 'auto' selection
-    if (selectedModel === 'auto') {
-        // When auto is selected, check if auto button is selected and update accordingly
-        if (autoSelectButton.dataset.state === 'selected') {
-            // If Auto is selected, disable all other buttons
-            allButtons.forEach(button => {
-                if (button.id !== 'autoselect-tool') {
-                    button.dataset.state = 'disabled';
-                }
-            });
-        } else {
-            // If Auto is not selected, enable all buttons
-            allButtons.forEach(button => {
-                if (button.dataset.state === 'disabled') {
-                    button.dataset.state = 'unselected';
-                }
-            });
+  // First clear any existing disabled or selected states for a fresh start
+  const allButtons = document.querySelectorAll('.toggle-button');
+
+  // Special case for 'auto' selection
+  if (selectedModel === 'auto') {
+    // When auto is selected, check if auto button is selected and update accordingly
+    if (autoSelectButton.dataset.state === 'selected') {
+      // If Auto is selected, disable all other buttons
+      allButtons.forEach(button => {
+        if (button.id !== 'autoselect-tool') {
+          button.dataset.state = 'disabled';
         }
-        
-        saveButtonStates();
-        updateToolsSelection();
-        return;
-    }
-    
-    // Check if the selected model supports tools
-    const modelSupportsTools = toolSupportedModels.includes(selectedModel);
-    const modelSupportsSearch = searchGroundingSupportedModels.includes(selectedModel);
-    
-    // Check current button states
-    const isAutoSelected = autoSelectButton.dataset.state === 'selected';
-    const isGoogleSearchSelected = googleSearchButton && googleSearchButton.dataset.state === 'selected';
-    
-    // If Auto is selected, apply its rules regardless of model
-    if (isAutoSelected) {
-        updateToggleButtonStates('auto');
-        return;
-    }
-    
-    // First, handle the Google Search button
-    if (googleSearchButton) {
-        if (!modelSupportsSearch) {
-            // If currently selected but not supported, unselect it
-            if (googleSearchButton.dataset.state === 'selected') {
-                googleSearchButton.dataset.state = 'unselected';
-            }
-            googleSearchButton.dataset.state = 'disabled';
-        } else if (googleSearchButton.dataset.state === 'disabled' && modelSupportsSearch) {
-            // Re-enable if it was disabled but is now supported
-            googleSearchButton.dataset.state = 'unselected';
+      });
+    } else {
+      // If Auto is not selected, enable all buttons
+      allButtons.forEach(button => {
+        if (button.dataset.state === 'disabled') {
+          button.dataset.state = 'unselected';
         }
+      });
     }
-    
-    // If Google is selected, apply its rules to other buttons
-    if (isGoogleSearchSelected && modelSupportsSearch) {
-        updateToggleButtonStates('google');
-        return;
-    }
-    
-    // Handle reminder and fetch website buttons
-    const otherToolButtons = [
-        document.getElementById('reminder-tool'),
-        document.getElementById('fetch-website-tool')
-    ];
-    
-    otherToolButtons.forEach(button => {
-        if (button) {
-            if (!modelSupportsTools) {
-                // If selected but not supported, unselect it
-                if (button.dataset.state === 'selected') {
-                    button.dataset.state = 'unselected';
-                }
-                button.dataset.state = 'disabled';
-            } else if (button.dataset.state === 'disabled' && modelSupportsTools) {
-                // Re-enable if it was disabled but is now supported
-                button.dataset.state = 'unselected';
-            }
-        }
-    });
-    
+
     saveButtonStates();
     updateToolsSelection();
+    return;
+  }
+
+  // Check if the selected model supports tools
+  const modelSupportsTools = toolSupportedModels.includes(selectedModel);
+  const modelSupportsSearch = searchGroundingSupportedModels.includes(selectedModel);
+
+  // Check current button states
+  const isAutoSelected = autoSelectButton.dataset.state === 'selected';
+  const isGoogleSearchSelected = googleSearchButton && googleSearchButton.dataset.state === 'selected';
+
+  // If Auto is selected, apply its rules regardless of model
+  if (isAutoSelected) {
+    updateToggleButtonStates('auto');
+    return;
+  }
+
+  // First, handle the Google Search button
+  if (googleSearchButton) {
+    if (!modelSupportsSearch) {
+      // If currently selected but not supported, unselect it
+      if (googleSearchButton.dataset.state === 'selected') {
+        googleSearchButton.dataset.state = 'unselected';
+      }
+      googleSearchButton.dataset.state = 'disabled';
+    } else if (googleSearchButton.dataset.state === 'disabled' && modelSupportsSearch) {
+      // Re-enable if it was disabled but is now supported
+      googleSearchButton.dataset.state = 'unselected';
+    }
+  }
+
+  // If Google is selected, apply its rules to other buttons
+  if (isGoogleSearchSelected && modelSupportsSearch) {
+    updateToggleButtonStates('google');
+    return;
+  }
+
+  // Handle reminder and fetch website buttons
+  const otherToolButtons = [
+    document.getElementById('reminder-tool'),
+    document.getElementById('fetch-website-tool')
+  ];
+
+  otherToolButtons.forEach(button => {
+    if (button) {
+      if (!modelSupportsTools) {
+        // If selected but not supported, unselect it
+        if (button.dataset.state === 'selected') {
+          button.dataset.state = 'unselected';
+        }
+        button.dataset.state = 'disabled';
+      } else if (button.dataset.state === 'disabled' && modelSupportsTools) {
+        // Re-enable if it was disabled but is now supported
+        button.dataset.state = 'unselected';
+      }
+    }
+  });
+
+  saveButtonStates();
+  updateToolsSelection();
 }
 
 // Handle model selection
-modelSelect.addEventListener('change', function() {
-    const selectedModel = this.value;
-    saveSelectedModel(selectedModel);
-    updateToolAvailability(selectedModel);
+modelSelect.addEventListener('change', function () {
+  const selectedModel = this.value;
+  saveSelectedModel(selectedModel);
+  updateToolAvailability(selectedModel);
 });
 
 // ========== TOOLS SELECTION ==========
 
 // Load saved button states from local storage
 function loadButtonStates() {
-    const allButtons = document.querySelectorAll('.toggle-button');
-    allButtons.forEach(button => {
-        const savedState = localStorage.getItem(button.id + '-state');
-        if (savedState) {
-            button.dataset.state = savedState;
-        }
-    });
+  const allButtons = document.querySelectorAll('.toggle-button');
+  allButtons.forEach(button => {
+    const savedState = localStorage.getItem(button.id + '-state');
+    if (savedState) {
+      button.dataset.state = savedState;
+    }
+  });
 
-    // Apply model compatibility check after loading saved states
-    updateToolAvailability(modelSelect.value);
+  // Apply model compatibility check after loading saved states
+  updateToolAvailability(modelSelect.value);
 }
 
 // Save button states to local storage
 function saveButtonStates() {
-    const allButtons = document.querySelectorAll('.toggle-button');
-    allButtons.forEach(button => {
-        localStorage.setItem(button.id + '-state', button.dataset.state);
-    });
+  const allButtons = document.querySelectorAll('.toggle-button');
+  allButtons.forEach(button => {
+    localStorage.setItem(button.id + '-state', button.dataset.state);
+  });
 }
 
 // Update toggle button states based on Auto or Google Search selection
 function updateToggleButtonStates(selectedTool) {
-    const allButtons = document.querySelectorAll('.toggle-button');
+  const allButtons = document.querySelectorAll('.toggle-button');
 
-    allButtons.forEach(button => {
-        if (selectedTool === 'auto') {
-            // If Auto is selected, disable all other buttons
-            if (button.id !== 'autoselect-tool') {
-                button.dataset.state = 'disabled';
-            }
-        } else if (selectedTool === 'google') {
-            // If Google Search is selected, disable Reminder and Fetch
-            if (button.id === 'reminder-tool' || button.id === 'fetch-website-tool') {
-                button.dataset.state = 'disabled';
-            } else if (button.id !== 'autoselect-tool' && button.id !== 'google-search-tool') {
-                // For any other buttons besides Auto and Google, set to unselected if they were disabled
-                if (button.dataset.state === 'disabled') {
-                    button.dataset.state = 'unselected';
-                }
-            }
-        } else {
-            // No tool is selected, enable all buttons (or keep their state)
-            // Only change state if the button was previously disabled
-            if (button.dataset.state === 'disabled') {
-                button.dataset.state = 'unselected';
-            }
+  allButtons.forEach(button => {
+    if (selectedTool === 'auto') {
+      // If Auto is selected, disable all other buttons
+      if (button.id !== 'autoselect-tool') {
+        button.dataset.state = 'disabled';
+      }
+    } else if (selectedTool === 'google') {
+      // If Google Search is selected, disable Reminder and Fetch
+      if (button.id === 'reminder-tool' || button.id === 'fetch-website-tool') {
+        button.dataset.state = 'disabled';
+      } else if (button.id !== 'autoselect-tool' && button.id !== 'google-search-tool') {
+        // For any other buttons besides Auto and Google, set to unselected if they were disabled
+        if (button.dataset.state === 'disabled') {
+          button.dataset.state = 'unselected';
         }
-    });
-    
-    saveButtonStates();
-    updateToolsSelection();
+      }
+    } else {
+      // No tool is selected, enable all buttons (or keep their state)
+      // Only change state if the button was previously disabled
+      if (button.dataset.state === 'disabled') {
+        button.dataset.state = 'unselected';
+      }
+    }
+  });
+
+  saveButtonStates();
+  updateToolsSelection();
 }
 
 // Send tools selection to the backend
 function updateToolsSelection() {
-    const isAutoSelected = autoSelectButton.dataset.state === 'selected';
+  const isAutoSelected = autoSelectButton.dataset.state === 'selected';
 
-    if (isAutoSelected) {
-        // If Auto is selected, send null to use default behavior
-        socket.emit('set_tools', null);
-    } else {
-        // Get all selected tools
-        const selectedTools = [];
-        const allButtons = document.querySelectorAll('.toggle-button:not(#autoselect-tool)');
+  if (isAutoSelected) {
+    // If Auto is selected, send null to use default behavior
+    socket.emit('set_tools', null);
+  } else {
+    // Get all selected tools
+    const selectedTools = [];
+    const allButtons = document.querySelectorAll('.toggle-button:not(#autoselect-tool)');
 
-        allButtons.forEach(button => {
-            if (button.dataset.state === 'selected') {
-                // Convert button ID to tool name format
-                const buttonId = button.id.replace('-tool', '');
-                let toolName;
+    allButtons.forEach(button => {
+      if (button.dataset.state === 'selected') {
+        // Convert button ID to tool name format
+        const buttonId = button.id.replace('-tool', '');
+        let toolName;
 
-                // Map button IDs to tool names
-                if (buttonId === 'google-search') {
-                    toolName = 'SearchGrounding';
-                } else if (buttonId === 'reminder') {
-                    toolName = 'Reminder';
-                } else if (buttonId === 'fetch-website') {
-                    toolName = 'FetchWebsite';
-                } else {
-                    // Use capitalized version of the ID for other tools
-                    toolName = buttonId.split('-').map(word =>
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                    ).join('');
-                }
+        // Map button IDs to tool names
+        if (buttonId === 'google-search') {
+          toolName = 'SearchGrounding';
+        } else if (buttonId === 'reminder') {
+          toolName = 'Reminder';
+        } else if (buttonId === 'fetch-website') {
+          toolName = 'FetchWebsite';
+        } else {
+          // Use capitalized version of the ID for other tools
+          toolName = buttonId.split('-').map(word =>
+            word.charAt(0).toUpperCase() + word.slice(1)
+          ).join('');
+        }
 
-                selectedTools.push(toolName);
-            }
-        });
-      socket.emit('set_tools', selectedTools.length > 0 ? selectedTools : []);
-    }
+        selectedTools.push(toolName);
+      }
+    });
+    socket.emit('set_tools', selectedTools.length > 0 ? selectedTools : []);
+  }
 }
 
 // Set up Auto button click handler
-autoSelectButton.addEventListener('click', function() {
-    if (this.dataset.state === 'disabled') {
-        return; // Don't do anything if the button is disabled
-    }
-    
-    const isBeingSelected = this.dataset.state === 'unselected';
-    this.dataset.state = isBeingSelected ? 'selected' : 'unselected';
-    
-    if (isBeingSelected) {
-        // If Auto is being turned ON, disable all other buttons
-        updateToggleButtonStates('auto');
-    } else {
-        // If Auto is being turned OFF, apply model compatibility
-        updateToolAvailability(modelSelect.value);
-    }
+autoSelectButton.addEventListener('click', function () {
+  if (this.dataset.state === 'disabled') {
+    return; // Don't do anything if the button is disabled
+  }
+
+  const isBeingSelected = this.dataset.state === 'unselected';
+  this.dataset.state = isBeingSelected ? 'selected' : 'unselected';
+
+  if (isBeingSelected) {
+    // If Auto is being turned ON, disable all other buttons
+    updateToggleButtonStates('auto');
+  } else {
+    // If Auto is being turned OFF, apply model compatibility
+    updateToolAvailability(modelSelect.value);
+  }
 });
 
 // Set up Google Search button click handler
-googleSearchButton.addEventListener('click', function() {
-    if (this.dataset.state === 'disabled') {
-        return; // Don't do anything if the button is disabled
-    }
-    
-    // If Auto is selected, clicking any other button should do nothing
-    if (autoSelectButton.dataset.state === 'selected') {
-        return;
-    }
-    
-    const isBeingSelected = this.dataset.state === 'unselected';
-    this.dataset.state = isBeingSelected ? 'selected' : 'unselected';
-    
-    if (isBeingSelected) {
-        // If Google Search is being turned ON, apply its rules to other buttons
-        updateToggleButtonStates('google');
-    } else {
-        // If Google Search is being turned OFF, restore compatibility based on model
-        updateToolAvailability(modelSelect.value);
-    }
+googleSearchButton.addEventListener('click', function () {
+  if (this.dataset.state === 'disabled') {
+    return; // Don't do anything if the button is disabled
+  }
+
+  // If Auto is selected, clicking any other button should do nothing
+  if (autoSelectButton.dataset.state === 'selected') {
+    return;
+  }
+
+  const isBeingSelected = this.dataset.state === 'unselected';
+  this.dataset.state = isBeingSelected ? 'selected' : 'unselected';
+
+  if (isBeingSelected) {
+    // If Google Search is being turned ON, apply its rules to other buttons
+    updateToggleButtonStates('google');
+  } else {
+    // If Google Search is being turned OFF, restore compatibility based on model
+    updateToolAvailability(modelSelect.value);
+  }
 });
 
 // Initialize listeners for all buttons
 function initializeButtonListeners() {
-    // Remove any existing listeners first to avoid duplicates
-    const allButtons = document.querySelectorAll('.toggle-button:not(#autoselect-tool):not(#google-search-tool)');
-    
-    allButtons.forEach(button => {
-        // Clone the button to remove all event listeners
-        const newButton = button.cloneNode(true);
-        button.parentNode.replaceChild(newButton, button);
-        
-        // Add new event listener
-        newButton.addEventListener('click', function() {
-            if (this.dataset.state === 'disabled') {
-                return; // Don't do anything if the button is disabled
-            }
-            
-            // If Auto is selected or Google is selected, clicking other buttons should do nothing
-            if (autoSelectButton.dataset.state === 'selected' || 
-                (googleSearchButton.dataset.state === 'selected' && 
-                (this.id === 'reminder-tool' || this.id === 'fetch-website-tool'))) {
-                return;
-            }
-            
-            this.dataset.state = (this.dataset.state === 'unselected') ? 'selected' : 'unselected';
-            saveButtonStates();
-            updateToolsSelection();
-        });
+  // Remove any existing listeners first to avoid duplicates
+  const allButtons = document.querySelectorAll('.toggle-button:not(#autoselect-tool):not(#google-search-tool)');
+
+  allButtons.forEach(button => {
+    // Clone the button to remove all event listeners
+    const newButton = button.cloneNode(true);
+    button.parentNode.replaceChild(newButton, button);
+
+    // Add new event listener
+    newButton.addEventListener('click', function () {
+      if (this.dataset.state === 'disabled') {
+        return; // Don't do anything if the button is disabled
+      }
+
+      // If Auto is selected or Google is selected, clicking other buttons should do nothing
+      if (autoSelectButton.dataset.state === 'selected' ||
+        (googleSearchButton.dataset.state === 'selected' &&
+          (this.id === 'reminder-tool' || this.id === 'fetch-website-tool'))) {
+        return;
+      }
+
+      this.dataset.state = (this.dataset.state === 'unselected') ? 'selected' : 'unselected';
+      saveButtonStates();
+      updateToolsSelection();
     });
+  });
 }
 
 // Initialize everything when the page loads
-document.addEventListener('DOMContentLoaded', function() {
-    fetchModels();
-    fetchModelCompatibility();
-    
-    // Initialize button listeners after a short delay to ensure DOM is ready
-    setTimeout(initializeButtonListeners, 500);
+document.addEventListener('DOMContentLoaded', function () {
+  fetchModels();
+  fetchModelCompatibility();
+
+  // Initialize button listeners after a short delay to ensure DOM is ready
+  setTimeout(initializeButtonListeners, 500);
 });
+
+// Function to calculate and set the max-height of scrollable areas
+function setScrollableAreaMaxHeight() {
+  const rightPanelTabs = document.getElementById('rightPanelTabs');
+  const attachmentDisplayArea = document.getElementById('attachment-display-area');
+  const notificationDisplayArea = document.getElementById('notification-display-area');
+
+  if (!rightPanelTabs || !attachmentDisplayArea || !notificationDisplayArea) {
+    return; // Exit if elements are not found
+  }
+
+  const tabsHeight = rightPanelTabs.offsetHeight;
+  const availableHeight = window.innerHeight - tabsHeight - 22; // 20 is for margin
+
+  attachmentDisplayArea.style.maxHeight = `${availableHeight}px`;
+  notificationDisplayArea.style.maxHeight = `${availableHeight}px`;
+}
+
+// Call the function on page load and window resize
+document.addEventListener('DOMContentLoaded', setScrollableAreaMaxHeight);
+window.addEventListener('resize', setScrollableAreaMaxHeight);
 
 // ==========================================================================
 // --- Socket Communication ---
@@ -1373,7 +1407,7 @@ socket.on("delete_notification", (notificationId) => {
 // --- Right Panel Functions ---
 // --------------------------------------------------------------------------
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   // Create a resizer element
   const resizer = document.createElement('div');
   resizer.className = 'panel-resizer';
@@ -1488,7 +1522,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const rightPanelPercent = (contentWidth / containerWidth) * 100;
     localStorage.setItem('rightPanelWidth', rightPanelPercent.toString());
   }
-  
+
   // Function to load the right panel width from local storage
   function loadRightPanelWidth() {
     const savedWidth = localStorage.getItem('rightPanelWidth');
@@ -1650,7 +1684,7 @@ const marked = new Marked(
   }),
 );
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   fetchModels();
   fetchModelCompatibility();
 

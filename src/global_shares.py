@@ -5,4 +5,4 @@ class Shared(TypedDict):
     socketio: SocketIO
     mail_service: Any
 
-global_shares: Shared = {}
+global_shares: Shared = {"socketio": None, "mail_service": None}

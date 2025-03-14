@@ -3,7 +3,7 @@ import functools
 import config
 import traceback
 
-def retry(max_retries=config.MAX_RETRIES, delay=config.RETRY_DELAY, exceptions=None):
+def retry(max_retries: int | float = config.MAX_RETRIES, delay=config.RETRY_DELAY, exceptions=None):
     """
     A decorator that retries a function up to `max_retries` times with exponential backoff.
 
