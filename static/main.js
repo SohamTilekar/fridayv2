@@ -232,25 +232,25 @@ function generateUUID() {
 /**
  * Uploads video in chunks.
  */
-const uploadVideoInChunks = async (base64Video, filename, videoId) => {
-  const totalChunks = Math.ceil(base64Video.length / CHUNK_SIZE);
+const uploadFileInChunks = async (base64File, filename, fileId) => {
+  const totalChunks = Math.ceil(base64File.length / CHUNK_SIZE);
 
-  socket.emit("start_upload_video", videoId);
+  socket.emit("start_upload_file", fileId);
 
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE;
-    const end = Math.min(start + CHUNK_SIZE, base64Video.length);
-    const chunk = base64Video.substring(start, end);
+    const end = Math.min(start + CHUNK_SIZE, base64File.length);
+    const chunk = base64File.substring(start, end);
 
-    socket.emit("upload_video_chunck", {
-      id: videoId,
+    socket.emit("upload_file_chunck", {
+      id: fileId,
       chunck: chunk,
       idx: i,
       filename: filename,
     });
   }
 
-  socket.emit("end_upload_video", videoId);
+  socket.emit("end_upload_file", fileId);
 };
 
 // ==========================================================================
@@ -1336,36 +1336,13 @@ const sendMessage = async () => {
 
   for (let i = 0; i < fileContents.length; i++) {
     const fileData = fileContents[i];
-    if (fileData.type.startsWith("video/")) {
-      videoId = generateUUID();
-      await uploadVideoInChunks(fileData.content, fileData.name, videoId);
-      filesData.push({
-        filename: fileData.name,
-        type: fileData.type,
-        id: videoId,
-      });
-    } else {
-      try {
-        let base64Content = fileData.content;
-        filesData.push({
-          filename: fileData.name,
-          content: base64Content,
-          type: fileData.type,
-        });
-      } catch (error) {
-        console.error("Error processing file:", error);
-        addMessageToChatBox(document.getElementById("chat-box"), {
-          role: "model",
-          content: [
-            {
-              text: `Error processing file ${fileData.name}: ${error.message}`,
-            },
-          ],
-          id: Date.now().toString(36),
-        });
-        return;
-      }
-    }
+    fileId = generateUUID();
+    await uploadFileInChunks(fileData.content, fileData.name, fileId);
+    filesData.push({
+      filename: fileData.name,
+      type: fileData.type,
+      id: fileId,
+    });
   }
 
   input.value = "";

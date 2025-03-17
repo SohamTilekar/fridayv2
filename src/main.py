@@ -76,14 +76,16 @@ class File:
         elif msg is None:
             raise TypeError("msg Paramiter of is not provided")
 
-        if self.type.startswith("text/"):
-            return types.Part.from_text(text=f"\nFile Name: {self.filename}\nFile Content: {self.content.decode('utf-8')}") # type: ignore
-        elif self.type.startswith(("image/", "video/") or self.type == "application/pdf"):
+        # if self.type.startswith("text/"):
+        #     return types.Part.from_text(text=f"\nFile Name: {self.filename}\nFile Content: {self.content.decode('utf-8')}") # type: ignore
+        elif self.type.startswith("text/") or self.type.startswith(("image/", "video/") or self.type == "application/pdf"):
             # Use cloud URI if available, otherwise upload
             if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
                 return self.cloud_uri  # type: ignore
             if self.type.startswith("image/"):
                 prefix = "Processing Image:"
+            if self.type.startswith("text/"):
+                prefix = "Processing Text File:"
             elif self.type.startswith("video/"):
                 prefix = "Processing Video:"
             else:
@@ -1002,20 +1004,16 @@ def generate_content_with_retry(msg: Message) -> Message:
                 end_time = time.time()  # Record end time after response processing
                 elapsed_time = end_time - start_time  # Calculate elapsed time
 
-                rpm_limit = config.model_RPM_map.get(selected_model, 1)  # Get RPM limit, default to 1 if not found
-                target_delay_per_request_sec = 60.0 / rpm_limit  # Calculate target delay in seconds
-                print(f"{target_delay_per_request_sec=}")
-                print(f"{elapsed_time=}")
-                sleep_duration = max(0, target_delay_per_request_sec - elapsed_time) # Calculate sleep duration, ensure it's not negative
-                print(f"{sleep_duration=}")
-                if sleep_duration > 0:
-                    print(f"Sleeping for {sleep_duration:.2f} seconds to respect RPM limit.")
-                    time.sleep(sleep_duration)  # Sleep to respect RPM limit
-
-                # Continue loop if a function call occurred (to handle function responses)
-                if function_call_occurred:
-                    continue
-                if finish_region == types.FinishReason.MAX_TOKENS:
+                if function_call_occurred or finish_region == types.FinishReason.MAX_TOKENS:
+                    rpm_limit = config.model_RPM_map.get(selected_model, 1)  # Get RPM limit, default to 1 if not found
+                    target_delay_per_request_sec = 60.0 / rpm_limit  # Calculate target delay in seconds
+                    print(f"{target_delay_per_request_sec=}")
+                    print(f"{elapsed_time=}")
+                    sleep_duration = max(0, target_delay_per_request_sec - elapsed_time) # Calculate sleep duration, ensure it's not negative
+                    print(f"{sleep_duration=}")
+                    if sleep_duration > 0:
+                        print(f"Sleeping for {sleep_duration:.2f} seconds to respect RPM limit.")
+                        time.sleep(sleep_duration)  # Sleep to respect RPM limit
                     continue
 
                 # Otherwise break the loop
@@ -1570,22 +1568,22 @@ def reduceTokensUsage():
     return False
 
 # ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
-videos: dict[str, tuple[dict[int, str], bool]] = {}
+files: dict[str, tuple[dict[int, str], bool]] = {}
 
-@socketio.on("start_upload_video")
-def start_upload_video(id: str):
-    videos[id] = ({}, False)
+@socketio.on("start_upload_file")
+def start_upload_file(id: str):
+    files[id] = ({}, False)
 
-@socketio.on("upload_video_chunck")
-def upload_video_chunck(data: dict[str, str | int]):
+@socketio.on("upload_file_chunck")
+def upload_file_chunck(data: dict[str, str | int]):
     id: str = data["id"]  # type: ignore
     chunck: str = data["chunck"]  # type: ignore
     idx: int = data["idx"]  # type: ignore
-    videos[id][0][idx] = chunck
+    files[id][0][idx] = chunck
 
-@socketio.on("end_upload_video")
-def end_upload_video(id: str):
-    videos[id] = (videos[id][0], True)
+@socketio.on("end_upload_file")
+def end_upload_file(id: str):
+    files[id] = (files[id][0], True)
 
 #region Notification Handling
 @socketio.on("get_notifications")
@@ -1613,26 +1611,21 @@ def handle_send_message(data):
         file_type: str = file_data.get("type")
         filename: str = file_data.get("filename")
 
-        if file_type.startswith(("text/", "image/")):
-            content_base64: str = file_data.get("content")
-            file_content = base64.b64decode(content_base64)
-            file_attachments.append(File(file_content, file_type, filename))
-        elif file_type.startswith(("video/")):
-            id: str = file_data.get("id")
-            while (not videos.get(id)):
-                time.sleep(0.1)
-            while (not videos[id][1]):
-                time.sleep(0.2)
-            vid = videos[id][0]
-            x = 0
-            content: str = ""
-            while (vid.get(x) is not None):
-                content += vid[x]
-                x += 1
-            decoded_content = base64.b64decode(content)
-            file_attachments.append(File(
-                decoded_content, file_type, filename, None, File._generate_valid_video_file_id()))
-            del videos[id]
+        id: str = file_data.get("id")
+        while (not files.get(id)):
+            time.sleep(0.1)
+        while (not files[id][1]):
+            time.sleep(0.2)
+        vid = files[id][0]
+        x = 0
+        content: str = ""
+        while (vid.get(x) is not None):
+            content += vid[x]
+            x += 1
+        decoded_content = base64.b64decode(content)
+        file_attachments.append(File(
+            decoded_content, file_type, filename, None, File._generate_valid_video_file_id()))
+        del files[id]
 
     complete_chat(message, file_attachments)
 
