@@ -4,12 +4,16 @@ import json
 import datetime
 import time
 import base64
+from typing import Literal
+
+import httplib2
 import config
 import ssl
 from rich import print
 import utils
 from global_shares import global_shares
 
+import google.auth.exceptions
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -22,7 +26,7 @@ from notification import EmailNotification, Content, notifications
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError), max_retries=float("inf"))
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError), max_retries=float("inf"))
 def get_gmail_service():
     """Authenticates and returns the Gmail API service."""
     creds = None
@@ -57,12 +61,12 @@ def save_last_mail_checked(timestamp):
     with open(config.AI_DIR/'mail_last_checked.json', 'w') as f:
         json.dump({'last_checked': timestamp.isoformat()}, f)
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError), max_retries=float("inf"))
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError), max_retries=float("inf"))
 def mark_as_read(message_id):
     """Marks the given message as read."""
     global_shares["mail_service"].users().messages().modify(userId='me', id=message_id, body={'removeLabelIds': ['UNREAD']}).execute()
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError), max_retries=float("inf"))
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, ), max_retries=float("inf"))
 def check_emails(service, last_checked):
     date_string = int(last_checked.timestamp())
     query = f'is:unread after:{date_string}'
@@ -89,20 +93,22 @@ def check_emails(service, last_checked):
         try:
             payload = msg['payload']
             if 'parts' in payload:
+                has_html = False
                 for part in payload['parts']:
                     print(part['mimeType'])
-                    if part['mimeType'] == 'text/plain':
-                        text_body = base64.urlsafe_b64decode(part['body']['data']).decode()
-                        body_contents.append(Content(type="text", text=text_body))
-                        if not snipit_content.text or snipit_content.text == "Empty Body": # Set snipit from first text part
-                            snipit_content = Content(type="text", text=text_body[:100] + "..." if len(text_body) > 100 else text_body)
-                    elif part['mimeType'] == 'text/html':
+                    if part['mimeType'] == 'text/html':
+                        has_html = True
                         html_body = base64.urlsafe_b64decode(part['body']['data']).decode()
                         body_contents.append(Content(type="html", html=html_body))
-                        if not snipit_content.text or snipit_content.text == "Empty Body": # Set snipit from first html part if no text snipit yet
-                            # For HTML snipit, we can extract plain text or just take a snippet of HTML
-                            snipit_html = html_body[:100] + "..." if len(html_body) > 100 else html_body
-                            snipit_content = Content(type="html", html=snipit_html)
+                        snipit_content = Content(type="html", html=html_body[:100] + "..." if len(html_body) > 100 else html_body)
+                        break # Exit after processing the HTML part
+                if not has_html:
+                    for part in payload['parts']:
+                        if part['mimeType'] == 'text/plain':
+                            text_body = base64.urlsafe_b64decode(part['body']['data']).decode()
+                            body_contents.append(Content(type="text", text=text_body))
+                            snipit_content = Content(type="text", text=text_body[:100] + "..." if len(text_body) > 100 else text_body)
+                            break # Exit after processing the text part
             elif 'body' in payload and 'data' in payload['body']: # Handling single part messages
                 text_body = base64.urlsafe_b64decode(payload['body']['data']).decode()
                 body_contents.append(Content(type="text", text=text_body))
@@ -112,6 +118,8 @@ def check_emails(service, last_checked):
 
         except KeyError:
             body_contents.append(Content(type="text", text="Error decoding body"))
+        category = get_email_category(service, message['id'])
+        severity = map_category_to_severity(category)
 
         # Create a EmailNotification object
         notification = EmailNotification(
@@ -120,15 +128,40 @@ def check_emails(service, last_checked):
             subject=subject,
             body=body_contents,
             snipit=snipit_content,
-            sevarity="Low",
+            sevarity=severity,
             reminder=False,
             personal=True,
             time=email_time # Use parsed email time
         )
         notifications.append(notification) # Use notifications instead of noti.notifications
 
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError), max_retries=float("inf"))
+def get_email_category(service, message_id: str) -> Literal["CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS", "Other"]:
+    """
+    Gets the category of an email directly from Gmail API labels.
+    """
+    try:
+        msg = service.users().messages().get(userId='me', id=message_id, format='minimal').execute()
+        labels = msg.get('labelIds', [])
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError), max_retries=float("inf"))
+        for label in labels:
+            if label in ["CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]:
+                return label
+        return "Other"
+    except HttpError as e:
+        print("Error Occured: ", e)
+        return "Other"
+
+def map_category_to_severity(category: str) -> Literal["Low", "Mid", "High"]:
+    """Maps email category to a severity level."""
+    if category == "CATEGORY_PERSONAL":
+        return "High"
+    elif category == "CATEGORY_UPDATES":
+        return "Mid"
+    else:
+        return "Low"
+
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError), max_retries=float("inf"))
 def start_checking_mail():
     service = get_gmail_service()
     global_shares['mail_service'] = service
@@ -139,3 +172,18 @@ def start_checking_mail():
             last_checked = datetime.datetime.now()  # Update the last checked timestamp
             save_last_mail_checked(last_checked)
             time.sleep(60)  # Check every 60 seconds
+
+# def list_labels():
+#     # Initialize the Gmail API client
+#     creds = Credentials.from_authorized_user_file('token.json')
+#     service = build('gmail', 'v1', credentials=creds)
+
+#     # List all labels in the user's mailbox
+#     response = service.users().labels().list(userId='me').execute()
+#     labels = response.get('labels', [])
+
+#     # Print the labels
+#     for label in labels:
+#         print(f"Label ID: {label['id']}, Name: {label['name']}, Type: {label['type']}")
+
+# list_labels()
