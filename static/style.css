@@ -102,6 +102,11 @@ body {
     padding: 0px;
     display: flex; /* Ensure tab content takes full height */
     flex-direction: column; /* Stack tabs and content vertically */
+    overflow-x: hidden;
+}
+
+#rightPanelTabs {
+    flex-wrap: nowrap;
 }
 
 .chat-container {
