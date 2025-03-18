@@ -1387,7 +1387,53 @@ socket.on("delete_notification", (notificationId) => {
 });
 
 socket.on("take_permission", (msg) => {
-  socket.emit("set_permission", confirm(msg));
+  // 1. Find the last message in the chat box
+  const chatBox = document.getElementById("chat-box");
+  const lastMessageDiv = chatBox.lastElementChild;
+
+  // Check if there are any messages in the chat box
+  if (!lastMessageDiv) {
+    console.warn("No messages in chat box to append to.");
+    return;
+  }
+
+  // 2. Create the "permission-request" div
+  const permissionRequestDiv = document.createElement("div");
+  permissionRequestDiv.classList.add(
+    "permission-request",
+    "d-flex",
+    "align-items-center",
+    "justify-content-end", /* Align buttons to the right */
+    "mt-2",
+    "p-1" /* Reduced padding */
+  );
+
+  // 3. Create the message text, Agree button, and Deny button
+  const messageText = document.createElement("span"); /* Use span for inline display */
+  messageText.textContent = msg; // Or msg.content if it's an object
+  messageText.classList.add("me-2", "text-muted"); /* Muted text color, margin right */
+  permissionRequestDiv.appendChild(messageText);
+
+  const agreeButton = document.createElement("button");
+  agreeButton.textContent = "Agree";
+  agreeButton.classList.add("btn", "btn-sm", "toggle-button"); /* Use toggle-button style */
+  agreeButton.addEventListener("click", () => {
+    socket.emit("set_permission", true);
+    permissionRequestDiv.remove();
+  });
+  permissionRequestDiv.appendChild(agreeButton);
+
+  const denyButton = document.createElement("button");
+  denyButton.textContent = "Deny";
+  denyButton.classList.add("btn", "btn-sm", "toggle-button"); /* Use toggle-button style */
+  denyButton.addEventListener("click", () => {
+    socket.emit("set_permission", false);
+    permissionRequestDiv.remove();
+  });
+  permissionRequestDiv.appendChild(denyButton);
+
+  // 4. Append the "permission-request" div to the last message
+  lastMessageDiv.appendChild(permissionRequestDiv);
 });
 
 // --------------------------------------------------------------------------

@@ -757,6 +757,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                 args=func_call.args
             )
         ))
+        update_chat_message(msg)
 
         try:
             # Validate function name
@@ -789,6 +790,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                 )
             ))
             print(error_msg)
+        update_chat_message(msg)
 
     @utils.retry(exceptions=(ValueError, AttributeError, ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected))
     def get_model_and_tools() -> tuple[str, bool, list[types.Tool]]:
