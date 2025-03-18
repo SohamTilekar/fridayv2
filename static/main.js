@@ -2,7 +2,7 @@
 
 // --- Global Variables ---
 let fileContents = []; // Global variable to store file information (name and content)
-let videoId = null; // Unique ID for the video being uploaded
+let fileId = null; // Unique ID for the video being uploaded
 const CHUNK_SIZE = 512 * 1024; // 0.5MB chunks
 // ==========================================================================
 // --- Helper Functions ---
@@ -71,29 +71,25 @@ function renderNotification(notification) {
   const notificationDiv = document.createElement("div");
   notificationDiv.classList.add("notification");
   notificationDiv.dataset.notificationId = notification.id; // Store notification ID
-
+  console.log(notification.type)
   // Render content based on notification type
   if (notification.type === "Mail") {
     let bodyContent = "";
     notification.body.forEach(content => {
-        if (content.type === "text") {
-            bodyContent += `<p>${content.text}</p>`;
-        } else if (content.type === "html") {
-            // Create the iframe element
-            const iframe = document.createElement('iframe');
-            iframe.sandbox = "allow-same-origin allow-scripts";
-            iframe.style.border = "none";
-            iframe.style.width = "100%";
+          // Create the iframe element
+          const iframe = document.createElement('iframe');
+          iframe.sandbox = "allow-same-origin allow-scripts";
+          iframe.style.border = "none";
+          iframe.style.width = "100%";
 
-            // Set the srcdoc attribute
-            iframe.srcdoc = content.html;
+          // Set the srcdoc attribute
+          iframe.srcdoc = content.html ? content.html : content.text;
 
-            // Append the iframe to a container
-            const iframeContainer = document.createElement('div');
-            iframeContainer.appendChild(iframe);
-            bodyContent += iframeContainer.outerHTML;
-        }
-    });
+          // Append the iframe to a container
+          const iframeContainer = document.createElement('div');
+          iframeContainer.appendChild(iframe);
+          bodyContent += iframeContainer.outerHTML;
+        });
 
     notificationDiv.innerHTML = `
         <div class="notification-header">
@@ -654,8 +650,15 @@ function displayAttachmentInRightPanel(file) {
 
     let textContent = atob(file.content); // Decode base64 to text
 
-    if (file.type.startsWith("text/javascript") || file.type.startsWith("text/css") || file.type.startsWith("text/html") || file.type.startsWith("text/plain")) {
-      const highlightedCode = hljs.highlightAuto(textContent);
+    if (file.type != "text/plain" && file.type.startsWith("text")) {
+      highlightedCode = null
+      const language = hljs.getLanguage(file.type.split("/")[1]) ? file.type.split("/")[1] : null;
+      if (language !== null)
+        highlightedCode = hljs.highlight(textContent, { language });
+      else if (file.type == "text/x-python")
+        highlightedCode = hljs.highlight(textContent, { language: "py" });
+      else
+        highlightedCode = hljs.highlightAuto(textContent);
       textContainer.innerHTML = `<pre><code class="hljs ${highlightedCode.language}">${highlightedCode.value}</code></pre>`;
     } else {
       textContainer.textContent = textContent;
@@ -728,7 +731,6 @@ function createAttachmentElement(file) {
   fileBoxContent.classList.add("attachment-box-content");
   fileBoxContent.dataset.file = JSON.stringify(file);
 
-  console.log("createAttachmentElement called for:", file.filename, "Type:", file.type);
   if (file.type.startsWith("image/")) {
     const img = document.createElement("img");
     img.classList.add("img-attachment");
@@ -941,6 +943,7 @@ const autoSelectButton = document.getElementById('autoselect-tool');
 const googleSearchButton = document.getElementById('google-search-tool');
 const reminderButton = document.getElementById('reminder-tool');
 const fetchWebsiteButton = document.getElementById('fetch-website-tool');
+const computerToolButton = document.getElementById('computer-tool'); // Add ComputerTool button
 
 // Global variables to store model compatibility information
 let toolSupportedModels = [];
@@ -1095,7 +1098,8 @@ function updateToolAvailability(selectedModel) {
   // Handle reminder and fetch website buttons
   const otherToolButtons = [
     document.getElementById('reminder-tool'),
-    document.getElementById('fetch-website-tool')
+    document.getElementById('fetch-website-tool'),
+    document.getElementById('computer-tool')
   ];
 
   otherToolButtons.forEach(button => {
@@ -1160,7 +1164,7 @@ function updateToggleButtonStates(selectedTool) {
       }
     } else if (selectedTool === 'google') {
       // If Google Search is selected, disable Reminder and Fetch
-      if (button.id === 'reminder-tool' || button.id === 'fetch-website-tool') {
+      if (button.id === 'reminder-tool' || button.id === 'fetch-website-tool' || button.id === 'computer-tool') {
         button.dataset.state = 'disabled';
       } else if (button.id !== 'autoselect-tool' && button.id !== 'google-search-tool') {
         // For any other buttons besides Auto and Google, set to unselected if they were disabled
@@ -1206,6 +1210,8 @@ function updateToolsSelection() {
           toolName = 'Reminder';
         } else if (buttonId === 'fetch-website') {
           toolName = 'FetchWebsite';
+        } else if (buttonId === 'computer') {
+          toolName = 'ComputerTool';
         } else {
           // Use capitalized version of the ID for other tools
           toolName = buttonId.split('-').map(word =>
@@ -1280,7 +1286,7 @@ function initializeButtonListeners() {
       // If Auto is selected or Google is selected, clicking other buttons should do nothing
       if (autoSelectButton.dataset.state === 'selected' ||
         (googleSearchButton.dataset.state === 'selected' &&
-          (this.id === 'reminder-tool' || this.id === 'fetch-website-tool'))) {
+          (this.id === 'reminder-tool' || this.id === 'fetch-website-tool' || this.id === 'computer-tool'))) {
         return;
       }
 
@@ -1378,6 +1384,10 @@ socket.on("notification_update", (notifications) => {
 
 socket.on("delete_notification", (notificationId) => {
   deleteNotification(notificationId);
+});
+
+socket.on("take_permission", (msg) => {
+  socket.emit("set_permission", confirm(msg));
 });
 
 // --------------------------------------------------------------------------

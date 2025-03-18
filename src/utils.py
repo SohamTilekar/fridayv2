@@ -30,7 +30,7 @@ def retry(max_retries: int | float = config.MAX_RETRIES, delay=config.RETRY_DELA
                     
                     if attempt < max_retries - 1:
                         # Calculate backoff time
-                        backoff_time = delay * (2 ** attempt)
+                        backoff_time = min(delay * (2 ** attempt), 128)
                         print(f"Waiting {backoff_time:.2f} seconds before next attempt...")
                         time.sleep(backoff_time)  # Exponential backoff
                     else:

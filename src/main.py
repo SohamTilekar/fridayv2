@@ -1,5 +1,7 @@
 # main.py
 import re
+import ssl
+import httplib2
 from rich import print
 from flask import Flask, render_template, redirect, url_for
 from flask_socketio import SocketIO
@@ -21,6 +23,8 @@ import datetime
 import utils
 import threading
 import tools
+import google.auth.exceptions
+import http.client
 
 app = Flask("Friday")
 socketio = SocketIO(app)
@@ -31,7 +35,25 @@ client = genai.Client(api_key=config.GOOGLE_API)
 model: Optional[str] = None # None for Auto
 selected_tools: Optional[list[tools.ToolLiteral]] = None # None for Auto
 
+permission: Optional[bool] = None
+
 #region
+
+@socketio.on("set_permission")
+def set_permission(val: bool):
+    global permission
+    permission = val
+
+def take_permission(msg: str) -> bool:
+    socketio.emit("take_permission", msg)
+    global permission
+    while permission is None:
+        time.sleep(0.1)
+    perm = permission
+    permission = None
+    return perm
+
+global_shares["take_permision"] = take_permission
 
 class File:
     type: str  # mime types = ""
@@ -94,7 +116,7 @@ class File:
                 msg.content.append(Content(text=f"{prefix} {self.filename}", processing=True))
                 update_chat_message(msg)
                 try:
-                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type = self.type))
+                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type = self.type)) # type: ignore
                     # Check whether the file is ready to be used.
                     while self.cloud_uri.state.name == "PROCESSING":  # type: ignore
                         time.sleep(1)
@@ -115,7 +137,7 @@ class File:
 
     def for_summarizer(self) -> list[types.Part]:
         if self.is_summary:
-            return [self.for_ai()]
+            return [self.for_ai()] # type: ignore
         if self.type.startswith("text/"):
             return [types.Part.from_text(text=f"\nname: {self.filename}\nid: {self.id}\nFile_Content: {self.content.decode('utf-8')}")]  # type: ignore
         elif self.type.startswith(("image/", "video/", "application/pdf")):
@@ -451,10 +473,10 @@ class Message:
                     ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
                     parts_buffer = []
                 if (part := item.for_ai(suport_tools, msg)) and msg and self.id == msg.id:
-                    ai_contents.append(types.Content(parts=[part], role="user"))
+                    ai_contents.append(types.Content(parts=[part], role="user")) # type: ignore
                     ai_contents.append(types.Content(parts=[types.Part(text=self.time_stamp.strftime("%H:%M"))], role="model"))
                 elif part := item.for_ai(suport_tools, msg):
-                    ai_contents.append(types.Content(parts=[part], role="user"))
+                    ai_contents.append(types.Content(parts=[part], role="user")) # type: ignore
             elif part := item.for_ai(suport_tools, msg):
                 if isinstance(part, types.Part):
                     parts_buffer.append(part)
@@ -768,7 +790,7 @@ def generate_content_with_retry(msg: Message) -> Message:
             ))
             print(error_msg)
 
-    @utils.retry(exceptions=(ValueError, AttributeError, ConnectionError))
+    @utils.retry(exceptions=(ValueError, AttributeError, ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected))
     def get_model_and_tools() -> tuple[str, bool, list[types.Tool]]:
         """
         Determines which model and tools to use, with retry logic.

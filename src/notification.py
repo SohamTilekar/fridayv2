@@ -129,7 +129,10 @@ class Notifications():
         self.notifications = notifications if notifications else []
 
     def append(self, notification: Notification):
-        global_shares["socketio"].emit("add_notification", notification.jsonify())
+        if global_shares["socketio"]:
+            global_shares["socketio"].emit("add_notification", notification.jsonify())
+        else:
+            raise Exception("SocketIO not setuped")
         self.notifications.append(notification)
 
     def delete(self, id: str):

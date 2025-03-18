@@ -1,6 +1,6 @@
 import os
 import pathlib
-from ..config import AI_DIR
+from config import AI_DIR
 import subprocess
 import threading
 import queue
@@ -8,6 +8,7 @@ import uuid
 import signal
 import shutil
 from typing import Optional
+from global_shares import global_shares
 
 space_path: pathlib.Path = AI_DIR / "friday_space"
 
@@ -30,18 +31,20 @@ class CodeExecutionEnvironment:
         return cls._instance
 
     @staticmethod
-    def run_command(command: str, timeout: Optional[int] = None) -> tuple[Optional[str], str, int]:
+    def run_command(command: str, timeout: int | None) -> tuple[Optional[str], str, int]:
         """
         Runs a command in the sandbox and returns its output.
 
         Args:
             command (str): The command to run.
-            timeout (Optional[int]): The timeout in seconds.
+            timeout (int | None): The timeout in seconds, None for no time out.
 
         Returns:
             tuple[Optional[str], str, int]: A tuple containing stdout, stderr, and the return code.
         """
         try:
+            if not global_shares["take_permision"](f"Permission for running following command: `{command}`"):
+                return None, "User Declined Permission to run command", 1
             result = subprocess.run(
                 command, shell=True, capture_output=True, text=True, cwd=space_path, timeout=timeout
             )
@@ -52,7 +55,7 @@ class CodeExecutionEnvironment:
             return None, str(e), 1
 
     @staticmethod
-    def create_file(relative_path: str, content: str = "") -> tuple[bool, Optional[str]]:
+    def create_file(relative_path: str, content: str) -> tuple[bool, Optional[str]]:
         """
         Creates a file in the sandbox with the given content.
 
@@ -63,6 +66,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
+        if not global_shares["take_permision"](f"Permission for Creating file: `{relative_path}`"):
+            return False, "User Declined Permission to create file"
         full_path: pathlib.Path = space_path / relative_path
         try:
             with open(full_path, "w") as f:
@@ -82,6 +87,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
+        if not global_shares["take_permision"](f"Permission for Creating folder: `{relative_path}`"):
+            return False, "User Declined Permission to create folder"
         full_path: pathlib.Path = space_path / relative_path
         try:
             os.makedirs(full_path, exist_ok=True)
@@ -100,6 +107,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
+        if not global_shares["take_permision"](f"Permission for Deleting file: `{relative_path}`"):
+            return False, "User Declined Permission to delete file"
         full_path: pathlib.Path = space_path / relative_path
         try:
             os.remove(str(full_path))  # os.remove needs string
@@ -120,6 +129,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
+        if not global_shares["take_permision"](f"Permission for Deleting folder: `{relative_path}`"):
+            return False, "User Declined Permission to delete folder"
         full_path: pathlib.Path = space_path / relative_path
         try:
             shutil.rmtree(full_path)
@@ -140,9 +151,10 @@ class CodeExecutionEnvironment:
         Returns:
             str: The process ID.
         """
+        if not global_shares["take_permision"](f"Permission for running background command: `{command}`"):
+            return "User Declined Permission to run background command"
         process_id: str = str(uuid.uuid4())
         cmd_queue: queue.Queue[Optional[str]] = queue.Queue()
-        env = CodeExecutionEnvironment()
 
         def run():
             try:
@@ -202,7 +214,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
-        env = CodeExecutionEnvironment()
+        if not global_shares["take_permision"](f"Permission for sending input to process: `{process_id}`"):
+            return False, "User Declined Permission to send input"
         if process_id not in CodeExecutionEnvironment.processes:
             return False, "Process not found"
 
@@ -226,7 +239,6 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[Optional[list[str]], Optional[str]]: A tuple containing a list of stdout lines and an optional error message.
         """
-        env = CodeExecutionEnvironment()
         if process_id not in CodeExecutionEnvironment.process_queues:
             return None, "Process not found"
 
@@ -253,7 +265,6 @@ class CodeExecutionEnvironment:
         Returns:
             bool: True if the process is running, False otherwise.
         """
-        env = CodeExecutionEnvironment()
         if process_id not in CodeExecutionEnvironment.processes:
             return False
         return CodeExecutionEnvironment.processes[process_id].poll() is None
@@ -269,7 +280,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
-        env = CodeExecutionEnvironment()
+        if not global_shares["take_permision"](f"Permission for killing process: `{process_id}`"):
+            return False, "User Declined Permission to kill process"
         if process_id not in CodeExecutionEnvironment.processes:
             return False, "Process not found"
 
@@ -292,7 +304,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
-        env = CodeExecutionEnvironment()
+        if not global_shares["take_permision"](f"Permission for sending Ctrl+C to process: `{process_id}`"):
+            return False, "User Declined Permission to send Ctrl+C"
         if process_id not in CodeExecutionEnvironment.processes:
             return False, "Process not found"
 
@@ -317,6 +330,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[Optional[str], Optional[str]]: A tuple containing the file content and an optional error message.
         """
+        if not global_shares["take_permision"](f"Permission for reading file: `{relative_path}`"):
+            return None, "User Declined Permission to read file"
         full_path: pathlib.Path = space_path / relative_path
         try:
             with open(full_path, "r") as f:
@@ -339,6 +354,8 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
+        if not global_shares["take_permision"](f"Permission for writing file: `{relative_path}`"):
+            return False, "User Declined Permission to write file"
         full_path: pathlib.Path = space_path / relative_path
         try:
             with open(full_path, "w") as f:

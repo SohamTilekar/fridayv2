@@ -1,10 +1,12 @@
 # mail.py
+import http.client
 import os.path
 import json
 import datetime
 import time
 import base64
 from typing import Literal
+import threading
 
 import httplib2
 import config
@@ -26,7 +28,7 @@ from notification import EmailNotification, Content, notifications
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError), max_retries=float("inf"))
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected), max_retries=float("inf"))
 def get_gmail_service():
     """Authenticates and returns the Gmail API service."""
     creds = None
@@ -61,12 +63,16 @@ def save_last_mail_checked(timestamp):
     with open(config.AI_DIR/'mail_last_checked.json', 'w') as f:
         json.dump({'last_checked': timestamp.isoformat()}, f)
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError), max_retries=float("inf"))
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected), max_retries=float("inf"))
 def mark_as_read(message_id):
     """Marks the given message as read."""
-    global_shares["mail_service"].users().messages().modify(userId='me', id=message_id, body={'removeLabelIds': ['UNREAD']}).execute()
+    def _mark_as_read(message_id):
+        while not global_shares["mail_service"]:
+            time.sleep(2)
+        global_shares["mail_service"].users().messages().modify(userId='me', id=message_id, body={'removeLabelIds': ['UNREAD']}).execute()
+    threading.Thread(target=_mark_as_read, kwargs={"message_id": message_id}).start()
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, ), max_retries=float("inf"))
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected), max_retries=float("inf"))
 def check_emails(service, last_checked):
     date_string = int(last_checked.timestamp())
     query = f'is:unread after:{date_string}'
@@ -135,7 +141,7 @@ def check_emails(service, last_checked):
         )
         notifications.append(notification) # Use notifications instead of noti.notifications
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError), max_retries=float("inf"))
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected), max_retries=float("inf"))
 def get_email_category(service, message_id: str) -> Literal["CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS", "Other"]:
     """
     Gets the category of an email directly from Gmail API labels.
@@ -161,7 +167,7 @@ def map_category_to_severity(category: str) -> Literal["Low", "Mid", "High"]:
     else:
         return "Low"
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError), max_retries=float("inf"))
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected, google.auth.exceptions.TransportError, http.client.RemoteDisconnected), max_retries=float("inf"))
 def start_checking_mail():
     service = get_gmail_service()
     global_shares['mail_service'] = service
