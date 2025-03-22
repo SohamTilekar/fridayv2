@@ -78,7 +78,8 @@ function renderNotification(notification) {
     notification.body.forEach(content => {
           // Create the iframe element
           const iframe = document.createElement('iframe');
-          iframe.sandbox = "allow-same-origin allow-scripts";
+          iframe.sandbox = "allow-scripts";
+          // iframe.sandbox = "allow-same-origin allow-scripts";
           iframe.style.border = "none";
           iframe.style.width = "100%";
 

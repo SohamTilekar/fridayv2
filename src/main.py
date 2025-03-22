@@ -7,6 +7,7 @@ from flask import Flask, render_template, redirect, url_for
 from flask_socketio import SocketIO
 from google import genai
 from google.genai import types
+import urllib3.connection
 import prompt
 import config
 import uuid
@@ -15,6 +16,7 @@ from typing import Any, Literal, Optional, Iterator
 from mail import start_checking_mail
 from global_shares import global_shares
 import notification
+import lschedule
 import json
 import os
 import base64
@@ -710,7 +712,7 @@ def delete_chat_message(msg_id: str):
 #endregion
 
 #region Gemini Model Interaction
-@utils.retry()
+@utils.retry(exceptions=(ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected, urllib3.connection.HTTPSConnection, urllib3.HTTPSConnectionPool))
 def generate_content_with_retry(msg: Message) -> Message:
     """
     Generates content from Gemini, retrying on token limits or other errors.
@@ -792,7 +794,7 @@ def generate_content_with_retry(msg: Message) -> Message:
             print(error_msg)
         update_chat_message(msg)
 
-    @utils.retry(exceptions=(ValueError, AttributeError, ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected))
+    @utils.retry(exceptions=(ValueError, AttributeError, ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected, urllib3.connection.HTTPSConnection))
     def get_model_and_tools() -> tuple[str, bool, list[types.Tool]]:
         """
         Determines which model and tools to use, with retry logic.
@@ -1061,7 +1063,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                     update_chat_message(msg)
 
                 # Decide whether to retry based on error type
-                if isinstance(e, (ConnectionError, TimeoutError)):
+                if isinstance(e, (ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected, urllib3.connection.HTTPSConnection, urllib3.HTTPConnectionPool)):
                     print(f"Retrying after error: {str(e)}")
                     continue
                 else:
@@ -1159,7 +1161,7 @@ def handle_generation_failure(msg: Message, error: Exception):
 
 #region Token Reduction (Summarization/Removal)
 
-@utils.retry(exceptions=(ConnectionError, TimeoutError, ValueError))
+@utils.retry(exceptions=(ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected, urllib3.connection.HTTPSConnection, urllib3.HTTPSConnectionPool))
 def SummarizeAttachment(AttachmentID: str, MessageID: str):
     """
     Summarizes the content of a specific attachment, linking the summary to the original attachment and message.
@@ -1219,7 +1221,7 @@ def SummarizeAttachment(AttachmentID: str, MessageID: str):
         return f"Error summarizing attachment: {AttachmentID=}, {MessageID=}. Error: {str(e)}"
 
 
-@utils.retry(exceptions=(ConnectionError, TimeoutError, ValueError))
+@utils.retry(exceptions=(ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected, urllib3.connection.HTTPSConnection, urllib3.HTTPSConnectionPool))
 def SummarizeMessage(MessageID: str):
     """
     Summarizes the content of a specific message with its attachments.
@@ -1282,7 +1284,7 @@ def SummarizeMessage(MessageID: str):
         return f"Error summarizing message: {MessageID}. Error: {str(e)}"
 
 
-@utils.retry(exceptions=(ConnectionError, TimeoutError, ValueError))
+@utils.retry(exceptions=(ConnectionError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected, urllib3.connection.HTTPSConnection, urllib3.HTTPSConnectionPool))
 def SummarizeHistory(StartMessageID: str, EndMessageID: str):
     """
     Summarizes a range of messages within StartMessageID & EndMessageID (inclusive).
@@ -1703,6 +1705,69 @@ def handle_delete_message(data):
 
 #endregion
 
+#region Schedule
+
+@socketio.on("get_schedule")
+def handle_get_schedule():
+    socketio.emit("schedule_update", lschedule.schedule.to_dict())
+
+@socketio.on("add_task")
+def handle_add_task(task_data):
+    try:
+        task = lschedule.Task.from_dict(task_data)
+        lschedule.schedule.add_task(task)
+        lschedule.schedule.save_to_json(config.AI_DIR/"schedule.json")  # Save after adding
+        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+    except Exception as e:
+        print(f"Error adding task: {e}")
+        socketio.emit("schedule_error", str(e))  # Send error to client
+
+@socketio.on("update_task")
+def handle_update_task(task_data):
+    try:
+        task = lschedule.Task.from_dict(task_data)
+        existing_task = lschedule.schedule.get_task(task.id)  # Get the existing task
+        # Update only the provided fields
+        existing_task.title = task.title
+        existing_task.start = task.start
+        existing_task.end = task.end
+        existing_task.allDay = task.allDay
+        existing_task.backgroundColor = task.backgroundColor
+        existing_task.borderColor = task.borderColor
+
+        lschedule.schedule.update_task(existing_task)  # Update the task
+        lschedule.schedule.save_to_json(config.AI_DIR/"schedule.json")  # Save after updating
+        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+    except Exception as e:
+        print(f"Error updating task: {e}")
+        socketio.emit("schedule_error", str(e))
+
+@socketio.on("complete_task")
+def handle_complete_task(task_id):
+    try:
+        task = lschedule.schedule.get_task(task_id)
+        task.completed = True
+        lschedule.schedule.update_task(task)
+        lschedule.schedule.save_to_json(config.AI_DIR/"schedule.json")
+        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+    except Exception as e:
+        print(f"Error completing task: {e}")
+        socketio.emit("schedule_error", str(e))
+
+@socketio.on("reopen_task")
+def handle_reopen_task(task_id):
+    try:
+        task = lschedule.schedule.get_task(task_id)
+        task.completed = False
+        lschedule.schedule.update_task(task)
+        lschedule.schedule.save_to_json(config.AI_DIR/"schedule.json")
+        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+    except Exception as e:
+        print(f"Error reopening task: {e}")
+        socketio.emit("schedule_error", str(e))
+
+#endregion
+
 #region Flask Routes
 
 @app.route('/favicon.ico')
@@ -1720,6 +1785,7 @@ if __name__ == "__main__":
     chat_history.load_from_json(chat_history_file)
     notification_file = os.path.join(config.AI_DIR, "notifications.json")
     notification.notifications.load_from_json(notification_file)
+    lschedule.schedule = lschedule.Schedule.load_from_json(config.AI_DIR/"schedule.json")
     mail_checker = threading.Thread(target=start_checking_mail, daemon=True)
     mail_checker.start()
     try:
@@ -1730,5 +1796,6 @@ if __name__ == "__main__":
     finally:
         chat_history.save_to_json(chat_history_file)
         notification.notifications.save_to_json(notification_file)
+        lschedule.schedule.save_to_json(config.AI_DIR/"schedule.json")
         tools.save_jobs()
         print("Chat history saved.")
