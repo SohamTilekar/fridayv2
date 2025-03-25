@@ -1,3 +1,4 @@
+import mimetypes
 import os
 import pathlib
 from config import AI_DIR
@@ -31,7 +32,7 @@ class CodeExecutionEnvironment:
         return cls._instance
 
     @staticmethod
-    def run_command(command: str, timeout: int | None) -> tuple[Optional[str], str, int]:
+    def RunCommand(command: str, timeout: int | None) -> tuple[Optional[str], str, int]:
         """
         Runs a command in the sandbox and returns its output.
 
@@ -55,7 +56,7 @@ class CodeExecutionEnvironment:
             return None, str(e), 1
 
     @staticmethod
-    def create_file(relative_path: str, content: str) -> tuple[bool, Optional[str]]:
+    def CreateFile(relative_path: str, content: str) -> tuple[bool, Optional[str]]:
         """
         Creates a file in the sandbox with the given content.
 
@@ -77,7 +78,7 @@ class CodeExecutionEnvironment:
             return False, str(e)
 
     @staticmethod
-    def create_folder(relative_path: str) -> tuple[bool, Optional[str]]:
+    def CreateFolder(relative_path: str) -> tuple[bool, Optional[str]]:
         """
         Creates a folder in the sandbox.
 
@@ -97,7 +98,7 @@ class CodeExecutionEnvironment:
             return False, str(e)
 
     @staticmethod
-    def delete_file(relative_path: str) -> tuple[bool, Optional[str]]:
+    def DeleteFile(relative_path: str) -> tuple[bool, Optional[str]]:
         """
         Deletes a file in the sandbox.
 
@@ -119,7 +120,7 @@ class CodeExecutionEnvironment:
             return False, str(e)
 
     @staticmethod
-    def delete_folder(relative_path: str) -> tuple[bool, Optional[str]]:
+    def DeleteFolder(relative_path: str) -> tuple[bool, Optional[str]]:
         """
         Deletes a folder in the sandbox.
 
@@ -141,7 +142,7 @@ class CodeExecutionEnvironment:
             return False, str(e)
 
     @staticmethod
-    def run_command_background(command: str) -> str:
+    def RunCommandBackground(command: str) -> str:
         """
         Runs a command in the background and returns a process ID.
 
@@ -203,7 +204,7 @@ class CodeExecutionEnvironment:
         return process_id
 
     @staticmethod
-    def send_stdin(process_id: str, input_str: str) -> tuple[bool, Optional[str]]:
+    def SendSTDIn(process_id: str, input_str: str) -> tuple[bool, Optional[str]]:
         """
         Sends input to a background process.
 
@@ -229,7 +230,7 @@ class CodeExecutionEnvironment:
             return False, str(e)
 
     @staticmethod
-    def get_stdout(process_id: str) -> tuple[Optional[list[str]], Optional[str]]:
+    def GetSTDOut(process_id: str) -> tuple[Optional[list[str]], Optional[str]]:
         """
         Gets any available stdout from a background process.
 
@@ -255,7 +256,7 @@ class CodeExecutionEnvironment:
         return output, None
 
     @staticmethod
-    def is_process_running(process_id: str) -> bool:
+    def IsProcessRunning(process_id: str) -> bool:
         """
         Checks if a process is currently running.
 
@@ -270,7 +271,7 @@ class CodeExecutionEnvironment:
         return CodeExecutionEnvironment.processes[process_id].poll() is None
 
     @staticmethod
-    def kill_process(process_id: str) -> tuple[bool, Optional[str]]:
+    def KillProcess(process_id: str) -> tuple[bool, Optional[str]]:
         """
         Kills a background process.
 
@@ -294,7 +295,7 @@ class CodeExecutionEnvironment:
             return False, str(e)
 
     @staticmethod
-    def send_control_c(process_id: str) -> tuple[bool, Optional[str]]:
+    def SendControlC(process_id: str) -> tuple[bool, Optional[str]]:
         """
         Sends a Ctrl+C signal to a background process.
 
@@ -320,7 +321,7 @@ class CodeExecutionEnvironment:
             return False, str(e)
 
     @staticmethod
-    def read_file(relative_path: str) -> tuple[Optional[str], Optional[str]]:
+    def ReadFile(relative_path: str) -> tuple[Optional[str], Optional[str]]:
         """
         Reads the content of a file in the sandbox.
 
@@ -343,7 +344,7 @@ class CodeExecutionEnvironment:
             return None, str(e)
 
     @staticmethod
-    def write_file(relative_path: str, content: str) -> tuple[bool, Optional[str]]:
+    def WriteFile(relative_path: str, content: str) -> tuple[bool, Optional[str]]:
         """
         Writes content to a file in the sandbox.
 
@@ -363,3 +364,81 @@ class CodeExecutionEnvironment:
             return True, None
         except Exception as e:
             return False, str(e)
+
+    @staticmethod
+    def LinkAttachment(relative_paths: list[str]) -> str:
+        """
+            Link the given attachment in the message to show/display it to user.
+            - Supported files are:
+                - Image (png, jpeg, webp, heic, heif)
+                - Video (mp4, mpeg, mov, avi, x-flv, mpg, webm, wmv, 3gpp)
+                - Text (txt, json, py, cpp, c, etc.)
+                - PDF (pdf)
+        """
+        supported_image_types = ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]
+        supported_video_types = ["video/mp4", "video/mpeg", "video/quicktime", "video/x-msvideo", "video/x-flv", "video/mpeg", "video/webm", "video/x-ms-wmv", "video/3gpp"]
+
+        for relative_path in relative_paths:
+            file_path = space_path / relative_path
+            if not os.path.exists(file_path):
+                raise Exception(f"File `{relative_path}` not found")
+
+            mime_type, _ = mimetypes.guess_type(file_path)
+
+            if mime_type is None:
+                raise Exception(f"Could not determine MIME type for file `{relative_path}`")
+
+            if mime_type.startswith("text/"):
+                continue
+            elif mime_type in supported_image_types:
+                continue
+            elif mime_type in supported_video_types:
+                continue
+            elif mime_type == "application/pdf":
+                continue
+            else:
+                raise Exception(f"File type `{mime_type}` for file `{relative_path}` is not supported")
+
+        return f"{"File is" if len(relative_paths) is 1 else "Files are"} attached below."
+
+    @staticmethod
+    def dir_tree() -> str:
+        """
+        Return a directory ANSI tree as a sting in sandbox.
+        """
+        tree_str = "Computer Sandbox Directory Tree:\n"
+        root_path = pathlib.Path(space_path)
+
+        if not root_path.exists():
+            return f"Error: Path '{space_path}' does not exist."
+        if not root_path.is_dir():
+            return f"Error: Path '{space_path}' is not a directory."
+
+        tree_str += f"{root_path.name}\n"
+
+        def generate_tree(directory: pathlib.Path, prefix: str = "", is_last: bool = False) -> str:
+            nonlocal tree_str
+
+            items = sorted(list(directory.iterdir()), key=lambda x: x.name)
+
+            if not items:
+                return ""
+
+            for index, item in enumerate(items):
+                is_item_last = (index == len(items) - 1)
+                if item.is_dir():
+                    if is_item_last:
+                        tree_str += f"{prefix}└── {item.name}\n"
+                        generate_tree(item, prefix + "    ", is_last=True)
+                    else:
+                        tree_str += f"{prefix}├── {item.name}\n"
+                        generate_tree(item, prefix + "│   ", is_last=False)
+                elif item.is_file():
+                    if is_item_last:
+                        tree_str += f"{prefix}└── {item.name}\n"
+                    else:
+                        tree_str += f"{prefix}├── {item.name}\n"
+            return ""  # Return is not strictly needed, but good practice
+
+        generate_tree(root_path)
+        return tree_str

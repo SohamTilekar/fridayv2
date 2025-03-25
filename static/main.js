@@ -313,7 +313,7 @@ function renderMessageContent(msgDiv, msg) {
       </div>
       `;
       msgDiv.appendChild(contentDiv);
-    } else if (contentItem.attachment && msg.role == "user") {
+    } else if (contentItem.attachment) {
       msgDiv.appendChild(createAttachmentElement(contentItem.attachment));
     }
   });

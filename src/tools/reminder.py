@@ -82,7 +82,7 @@ def get_reminders() -> str:
     Returns:
     - A list of strings, each containing the formatted reminder details.
     """
-    reminders = "\nReminders:\n"
+    reminders = "Reminders:\n"
 
     for job in schedule.get_jobs():
         once = "Yes" if "once" in job.tags else "No"
@@ -125,6 +125,8 @@ def get_reminders() -> str:
             "\n"
         )
         reminders += reminder
+    if reminders == "\nReminders:\n":
+        return "\n- No reminders set\n"
     return reminders
 
 def CreateReminder(

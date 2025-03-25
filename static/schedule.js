@@ -260,7 +260,9 @@ function handleTaskMove(evt) {
     const item = evt.item;
     const plannedDetails = item.querySelector('.planned-details');
     const targetList = evt.to.id; // 'planned-tasks', 'not-planned-tasks', or 'done-tasks'
-
+    const sourceList = evt.from.id;
+    if (sourceList === 'done-tasks')
+        socket.emit("reopen_task", item.id);
     if (targetList === 'planned-tasks') {
         // Add planned details if they don't exist
         if (!plannedDetails) {
@@ -300,7 +302,7 @@ function handleTaskMove(evt) {
                 detailsContainer.classList.toggle('d-none');
                 event.stopPropagation(); // Prevent triggering taskItem click
             });
-
+            
             const detailsContainer = document.createElement('div');
             detailsContainer.classList.add('details-container', 'd-none'); // Initially hidden
 
@@ -318,7 +320,7 @@ function handleTaskMove(evt) {
             plannedDetails.appendChild(toggleButton);
             plannedDetails.appendChild(detailsContainer);
             item.appendChild(plannedDetails);
-
+            
             // --- Event listeners for input changes (moved here) ---
             function updateCalendarEvent() {
                 const taskData = extractTaskData().find(t => t.id === item.id); // Get updated data
@@ -340,7 +342,6 @@ function handleTaskMove(evt) {
                 socket.emit("update_task", taskData); // Send updated task to server
             }
         }
-
     } else if (targetList === 'not-planned-tasks') {
         // Remove planned details
         if (plannedDetails) {
@@ -364,10 +365,6 @@ function handleTaskMove(evt) {
         }
         // Update task on server to mark as complete
         socket.emit("complete_task", item.id);
-    }
-    else {
-        // Moving out of done section
-        socket.emit("reopen_task", item.id);
     }
 }
 
@@ -395,11 +392,20 @@ function populateTaskLists() {
 
     fridaySchedule.tasks.forEach(task => {
         const taskItem = document.createElement('li');
-        taskItem.classList.add('list-group-item');
+        taskItem.classList.add('list-group-item', 'justify-content-between', 'align-items-center'); // Add flex classes
         taskItem.id = task.id;
         taskItem.textContent = task.title;
 
         if (task.completed) { // If task is completed
+            const deleteButton = document.createElement('button');
+            deleteButton.classList.add('delete-file-button'); // Use existing delete button style
+            deleteButton.innerHTML = '<i class="bi bi-x"></i>';
+            deleteButton.addEventListener('click', (event) => {
+                event.stopPropagation(); // Prevent SortableJS from catching the click
+                socket.emit("delete_task", task.id);
+            });
+
+            taskItem.appendChild(deleteButton); // Add delete button to task item
             doneTasksList.appendChild(taskItem);
         }
         else if (task.start) { // If task has a start date, it's planned

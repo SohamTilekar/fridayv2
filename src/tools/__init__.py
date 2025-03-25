@@ -6,42 +6,47 @@ import config
 from .reminder import CreateReminder, save_jobs, run_reminders, get_reminders, CancelReminder
 from .webfetch import FetchWebsite
 from .space import CodeExecutionEnvironment
+from lschedule import CreateTask, UpdateTask
 
-run_command = CodeExecutionEnvironment.run_command
-run_command_background = CodeExecutionEnvironment.run_command_background
-send_stdin = CodeExecutionEnvironment.send_stdin
-get_stdout = CodeExecutionEnvironment.get_stdout
-create_file = CodeExecutionEnvironment.create_file
-create_folder = CodeExecutionEnvironment.create_folder
-delete_file = CodeExecutionEnvironment.delete_file
-delete_folder = CodeExecutionEnvironment.delete_folder
-is_process_running = CodeExecutionEnvironment.is_process_running
-kill_process = CodeExecutionEnvironment.kill_process
-read_file = CodeExecutionEnvironment.read_file
-write_file = CodeExecutionEnvironment.write_file
-send_control_c = CodeExecutionEnvironment.send_control_c
+RunCommand = CodeExecutionEnvironment.RunCommand
+RunCommandBackground = CodeExecutionEnvironment.RunCommandBackground
+SendSTDIn = CodeExecutionEnvironment.SendSTDIn
+GetSTDOut = CodeExecutionEnvironment.GetSTDOut
+CreateFile = CodeExecutionEnvironment.CreateFile
+CreateFolder = CodeExecutionEnvironment.CreateFolder
+DeleteFile = CodeExecutionEnvironment.DeleteFile
+DeleteFolder = CodeExecutionEnvironment.DeleteFolder
+IsProcessRunning = CodeExecutionEnvironment.IsProcessRunning
+KillProcess = CodeExecutionEnvironment.KillProcess
+ReadFile = CodeExecutionEnvironment.ReadFile
+WriteFile = CodeExecutionEnvironment.WriteFile
+SendControlC = CodeExecutionEnvironment.SendControlC
+LinkAttachment = CodeExecutionEnvironment.LinkAttachment
 
 FetchTool = types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=FetchWebsite)])
 ReminderTool = types.Tool(function_declarations=[
     types.FunctionDeclaration.from_callable_with_api_option(callable=CreateReminder),
-    types.FunctionDeclaration.from_callable_with_api_option(callable=CancelReminder)
+    types.FunctionDeclaration.from_callable_with_api_option(callable=CancelReminder),
+    types.FunctionDeclaration.from_callable_with_api_option(callable=CreateTask),
+    types.FunctionDeclaration.from_callable_with_api_option(callable=UpdateTask)
 ])
 SearchGrounding = types.Tool(google_search=types.GoogleSearch())
 ComputerTool = types.Tool(
     function_declarations=[
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.run_command),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.run_command_background),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.send_stdin),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.get_stdout),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.create_file),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.create_folder),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.delete_file),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.delete_folder),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.is_process_running),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.kill_process),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.read_file),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.write_file),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.send_control_c),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.RunCommand),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.RunCommandBackground),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.SendSTDIn),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.GetSTDOut),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.CreateFile),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.CreateFolder),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.DeleteFile),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.DeleteFolder),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.IsProcessRunning),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.KillProcess),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.ReadFile),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.WriteFile),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.SendControlC),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.LinkAttachment),
     ]
 )
 
@@ -109,7 +114,7 @@ only {config.SearchGroundingSuportedModels} suports SearchGrounding.
             ftools.append(ComputerTool)
         else:
             raise Exception("Unknown Tool passed: " + tool)
-    return (config.Models[model].value, model in config.ToolSuportedModels, ftools)
+    return (config.Models[model].value, model in config.ToolSuportedModels and SearchGrounding not in ftools, ftools)
 
 def ModelSelector(
         model: Literal["Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
