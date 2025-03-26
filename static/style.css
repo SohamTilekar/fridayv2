@@ -934,6 +934,44 @@ pre {
     text-align: right;
 }
 
+/* --- Resizable Iframe Container --- */
+.resizable-iframe-container {
+    overflow: auto; /* Necessary for the resize property to work */
+    resize: vertical; /* Allow vertical resizing */
+    min-height: 100px; /* Set a minimum height */
+    max-height: 70vh; /* Set a maximum height (e.g., 70% of viewport height) */
+    height: 250px; /* Set an initial default height */
+    border: 1px solid var(--gray-700); /* Optional: Add a border to see the container */
+    border-radius: var(--border-radius);
+    margin-bottom: var(--margin); /* Add some space below */
+    position: relative; /* Needed if you want to style the handle later */
+    cursor: row-resize !important;
+}
+
+/* Style the iframe within the container */
+.resizable-iframe-container iframe {
+    display: block; /* Prevent extra space below iframe */
+    width: 100%;
+    height: 100%; /* Make iframe fill the container */
+    border: none; /* Ensure no iframe border */
+}
+
+.resizable-iframe-container::-webkit-resizer {
+    border: 2px solid var(--gray-600);
+    background: var(--gray-700);
+}
+
+/* --- Notification Count Bubble --- */
+.notification-count {
+    background-color: var(--danger); /* Red background for the bubble */
+    color: var(--gray-100); /* White text color */
+    font-size: 0.75rem; /* Smaller font size */
+    padding: 0.2rem 0.4rem; /* Adjust padding as needed */
+    border-radius: 1rem; /* Make it circular */
+    margin-left: 0.5rem; /* Add some space between the text and the bubble */
+    vertical-align: middle; /* Vertically align with the text */
+}
+
 /* -------------------------------------------------------------------------- */
 /* Mark as Read Button Styles */
 /* -------------------------------------------------------------------------- */

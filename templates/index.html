@@ -78,7 +78,9 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="notification-tab" data-bs-toggle="tab"
                             data-bs-target="#notification-pane" type="button" role="tab"
-                            aria-controls="notification-pane" aria-selected="false">Notifications</button>
+                            aria-controls="notification-pane" aria-selected="false">
+                            Notifications <span class="notification-count">0</span>
+                        </button>
                     </li>
                     <!-- New Tab -->
                     <li class="nav-item" role="presentation">
@@ -108,10 +110,10 @@
                                 <!-- Calendar will be rendered here -->
                             </div>
                             <!-- To-Do List -->
-                            <hr/>
+                            <hr />
                             <h3>TODO List</h3>
                             <input type="text" id="new-task" class="form-control" placeholder="Add new task">
-                            <br/>
+                            <br />
                             <div id="todo-lists-container" class="d-flex">
                                 <div class="todo-list-column">
                                     <h3>Not Planned</h3>

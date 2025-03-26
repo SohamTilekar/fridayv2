@@ -71,41 +71,38 @@ function renderNotification(notification) {
   const notificationDiv = document.createElement("div");
   notificationDiv.classList.add("notification");
   notificationDiv.dataset.notificationId = notification.id; // Store notification ID
-  console.log(notification.type)
-  // Render content based on notification type
+  notificationDiv.dataset.notificationType = notification.type; // Store type for CSS targeting
+
   if (notification.type === "Mail") {
-    let bodyContent = "";
-    notification.body.forEach(content => {
-      // Create the iframe element
-      const iframe = document.createElement('iframe');
-      iframe.sandbox = "allow-scripts";
-      // iframe.sandbox = "allow-same-origin allow-scripts";
-      iframe.style.border = "none";
-      iframe.style.width = "100%";
+      let bodyContent = "";
+      notification.body.forEach(content => {
+          const iframeContainer = document.createElement('div');
+          iframeContainer.classList.add('resizable-iframe-container'); // Add class for styling
 
-      // Set the srcdoc attribute
-      iframe.srcdoc = content.html ? content.html : content.text;
+          const iframe = document.createElement('iframe');
+          iframe.sandbox = "allow-scripts allow-same-origin"; // Added allow-same-origin for potential script interactions if needed, be cautious
+          iframe.style.border = "none";
+          // iframe width/height will be controlled by the container via CSS
+          iframe.srcdoc = content.html ? content.html : content.text;
 
-      // Append the iframe to a container
-      const iframeContainer = document.createElement('div');
-      iframeContainer.appendChild(iframe);
-      bodyContent += iframeContainer.outerHTML;
-    });
+          iframeContainer.appendChild(iframe);
+          bodyContent += iframeContainer.outerHTML;
+      });
 
-    notificationDiv.innerHTML = `
-        <div class="notification-header">
-            <span class="notification-subject">${notification.subject}</span>
-            <span class="notification-sender">From: ${notification.sender}</span>
-        </div>
-        <div class="notification-body">
-            ${bodyContent}
-        </div>
-        <div class="notification-time">
-            ${new Date(notification.time).toLocaleTimeString()}
-        </div>
-    `;
+      notificationDiv.innerHTML = `
+          <div class="notification-header">
+              <span class="notification-subject">${notification.subject}</span>
+              <span class="notification-sender">From: ${notification.sender}</span>
+          </div>
+          <div class="notification-body">
+              ${bodyContent}
+          </div>
+          <div class="notification-time">
+              ${new Date(notification.time).toLocaleTimeString()}
+          </div>
+      `;
   } else if (notification.type === "Reminder") {
-    notificationDiv.innerHTML = `
+      notificationDiv.innerHTML = `
           <div class="notification-header">
               <span class="notification-subject">Reminder</span>
           </div>
@@ -117,7 +114,7 @@ function renderNotification(notification) {
           </div>
       `;
   } else {
-    notificationDiv.innerHTML = `
+      notificationDiv.innerHTML = `
           <div class="notification-header">
               <span class="notification-subject">General Notification</span>
           </div>
@@ -141,15 +138,6 @@ function renderNotification(notification) {
 }
 
 /**
-* Updates the notification display area with the given notification.
-*/
-function updateNotificationDisplay(notification) {
-  const notificationDisplayArea = document.getElementById("notification-display-area");
-  const notificationElement = renderNotification(notification);
-  notificationDisplayArea.prepend(notificationElement); // Add new notifications to the top
-}
-
-/**
 * Marks a notification as read by removing it from the UI and sending a request to the server.
 */
 function markNotificationRead(notificationId) {
@@ -157,12 +145,16 @@ function markNotificationRead(notificationId) {
 }
 
 /**
-* Deletes a notification from the UI.
-*/
-function deleteNotification(notificationId) {
-  const notificationElement = document.querySelector(`.notification[data-notification-id="${notificationId}"]`);
-  if (notificationElement) {
-    notificationElement.remove();
+ * Updates the notification count in the bubble on the "Notifications" tab.
+ */
+function updateNotificationCount() {
+  const notificationCountSpan = document.querySelector('#notification-tab .notification-count');
+  const notificationDisplayArea = document.getElementById("notification-display-area");
+  const notificationCount = notificationDisplayArea.querySelectorAll('.notification').length; // Count existing notifications
+
+  if (notificationCountSpan) {
+      notificationCountSpan.textContent = notificationCount;
+      notificationCountSpan.style.display = notificationCount ? 'inline' : 'none'; // Show/hide based on count
   }
 }
 
@@ -173,9 +165,31 @@ function updateNotificationDisplayAll(notifications) {
   const notificationDisplayArea = document.getElementById("notification-display-area");
   notificationDisplayArea.innerHTML = ""; // Clear existing notifications
   notifications.forEach(notification => {
-    const notificationElement = renderNotification(notification);
-    notificationDisplayArea.appendChild(notificationElement);
+      const notificationElement = renderNotification(notification);
+      notificationDisplayArea.appendChild(notificationElement);
   });
+  updateNotificationCount(); // Update the count after rendering
+}
+
+/**
+* Updates the notification display area with the given notification.
+*/
+function updateNotificationDisplay(notification) {
+  const notificationDisplayArea = document.getElementById("notification-display-area");
+  const notificationElement = renderNotification(notification);
+  notificationDisplayArea.prepend(notificationElement); // Add new notifications to the top
+  updateNotificationCount(); // Update the count after adding
+}
+
+/**
+* Deletes a notification from the UI.
+*/
+function deleteNotification(notificationId) {
+  const notificationElement = document.querySelector(`.notification[data-notification-id="${notificationId}"]`);
+  if (notificationElement) {
+      notificationElement.remove();
+  }
+  updateNotificationCount(); // Update the count after deleting
 }
 
 // ==========================================================================
