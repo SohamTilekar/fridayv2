@@ -177,7 +177,7 @@ def start_checking_mail():
             check_emails(service, last_checked)
             last_checked = datetime.datetime.now()  # Update the last checked timestamp
             save_last_mail_checked(last_checked)
-            time.sleep(60)  # Check every 60 seconds
+            time.sleep(10)  # Check every 60 seconds
 
 # def list_labels():
 #     # Initialize the Gmail API client

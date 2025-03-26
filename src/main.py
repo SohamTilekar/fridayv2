@@ -628,30 +628,30 @@ class Message:
 
 
 class ChatHistory:
-    __chat: list[Message] = []
+    _chat: list[Message] = []
 
     def append(self, msg: Message):
-        self.__chat.append(msg)
+        self._chat.append(msg)
         socketio.emit("add_message", msg.jsonify())
 
     def delete_message(self, msg_id):
-        self.__chat = [msg for msg in self.__chat if msg.id != msg_id]
+        self._chat = [msg for msg in self._chat if msg.id != msg_id]
         delete_chat_message(msg_id)
 
     def __len__(self):
-        return len(self.__chat)
+        return len(self._chat)
 
     def __getitem__(self, idx: int):
-        return self.__chat[idx]
+        return self._chat[idx]
 
     def getMsg(self, ID: str) -> Message:
-        for msg in self.__chat:
+        for msg in self._chat:
             if msg.id == ID:
                 return msg
         raise ValueError(f"Message of ID: `{ID}` not found")
 
     def setMsg(self, ID: str, new_msg: Message):
-        for msg in self.__chat:
+        for msg in self._chat:
             if msg.id == ID:
                 msg = new_msg
                 update_chat_message(msg)
@@ -660,13 +660,13 @@ class ChatHistory:
 
     def getMsgRange(self, Start_ID: str, End_ID: str) -> Iterator[Message]:
         idx = 0
-        while idx < len(self.__chat):
-            if self.__chat[idx].id == Start_ID:
-                while idx < len(self.__chat):
-                    if self.__chat[idx].id == End_ID:
-                        return self.__chat[idx]
+        while idx < len(self._chat):
+            if self._chat[idx].id == Start_ID:
+                while idx < len(self._chat):
+                    if self._chat[idx].id == End_ID:
+                        return self._chat[idx]
                     else:
-                        yield self.__chat[idx]
+                        yield self._chat[idx]
                         idx += 1
                 raise ValueError(f"Message of ID: `{End_ID}` not found")
             idx += 1
@@ -675,12 +675,12 @@ class ChatHistory:
     def delMsgRange(self, Start_ID: str, End_ID: str) -> None:
         """Ignore Start_ID msg, delete from Start_ID+1..End_ID"""
         idx = 0
-        while idx < len(self.__chat):
-            if self.__chat[idx].id == Start_ID:
-                while idx < len(self.__chat):
-                    delete_chat_message(self.__chat[idx].id)
-                    del self.__chat[idx]
-                    if self.__chat[idx].id == End_ID:
+        while idx < len(self._chat):
+            if self._chat[idx].id == Start_ID:
+                while idx < len(self._chat):
+                    delete_chat_message(self._chat[idx].id)
+                    del self._chat[idx]
+                    if self._chat[idx].id == End_ID:
                         return
                     else:
                         idx += 1
@@ -690,15 +690,15 @@ class ChatHistory:
 
     def replaceMsgRange(self, Start_ID: str, End_ID: str, msg: Message) -> None:
         idx = 0
-        while idx < len(self.__chat):
-            if self.__chat[idx].id == Start_ID:
-                self.__chat[idx] = msg
+        while idx < len(self._chat):
+            if self._chat[idx].id == Start_ID:
+                self._chat[idx] = msg
                 update_chat_message(msg)
                 idx += 1
-                while idx < len(self.__chat):
-                    del self.__chat[idx]
-                    delete_chat_message(self.__chat[idx].id)
-                    if self.__chat[idx].id == End_ID:
+                while idx < len(self._chat):
+                    del self._chat[idx]
+                    delete_chat_message(self._chat[idx].id)
+                    if self._chat[idx].id == End_ID:
                         return
                     else:
                         idx += 1
@@ -708,32 +708,32 @@ class ChatHistory:
 
     def tripAfter(self, msg_ID: str) -> None:
         idx: int = 0
-        for i, msg in enumerate(self.__chat):
+        for i, msg in enumerate(self._chat):
             if msg.id == msg_ID:
                 idx = i
                 break
-        for i in range(idx + 1, len(self.__chat)):
-            delete_chat_message(self.__chat[i].id)
-        self.__chat = self.__chat[: idx + 1]
+        for i in range(idx + 1, len(self._chat)):
+            delete_chat_message(self._chat[i].id)
+        self._chat = self._chat[: idx + 1]
 
     def for_ai(self, ai_msg: Message, suport_tools: bool) -> list[types.Content]:
         result: list[types.Content] = []
-        for msg in self.__chat:
+        for msg in self._chat:
             result.extend(msg.for_ai(suport_tools, ai_msg))
         return result
 
     def for_summarizer(self) -> list[types.Content]:
         result: list[types.Content] = []
-        for msg in self.__chat:
+        for msg in self._chat:
             result.extend(msg.for_summarizer())
         return result
 
     def jsonify(self) -> list[dict[str, str | Literal["model", "user"] | list]]:
-        return [msg.jsonify() for msg in self.__chat]
+        return [msg.jsonify() for msg in self._chat]
 
     def save_to_json(self, filepath: str):
         """Saves the chat history to a JSON file."""
-        data = [msg.jsonify() for msg in self.__chat]
+        data = [msg.jsonify() for msg in self._chat]
         with open(filepath, "w") as f:
             json.dump(data, f, indent=4)
 
@@ -742,10 +742,10 @@ class ChatHistory:
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
-                self.__chat = []
+                self._chat = []
                 for msg_data in data:
                     msg = Message.from_jsonify(msg_data)
-                    self.__chat.append(msg)
+                    self._chat.append(msg)
         except FileNotFoundError:
             print("Chat history file not found. Starting with an empty chat.")
         except json.JSONDecodeError:

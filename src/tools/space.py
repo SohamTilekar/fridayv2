@@ -14,6 +14,12 @@ from global_shares import global_shares
 space_path: pathlib.Path = AI_DIR / "friday_space"
 
 
+class PermisionError(Exception):
+    """
+    Raise When User declines permision for perticular task
+    """
+    ...
+
 class CodeExecutionEnvironment:
     """
     A singleton class that provides a environment for executing code.
@@ -32,7 +38,7 @@ class CodeExecutionEnvironment:
         return cls._instance
 
     @staticmethod
-    def RunCommand(command: str, timeout: int | None) -> tuple[Optional[str], str, int]:
+    def RunCommand(command: str, timeout: int | None) -> tuple[str, str, int]:
         """
         Runs a command in the sandbox and returns its output.
 
@@ -41,105 +47,68 @@ class CodeExecutionEnvironment:
             timeout (int | None): The timeout in seconds, None for no time out.
 
         Returns:
-            tuple[Optional[str], str, int]: A tuple containing stdout, stderr, and the return code.
+            tuple[str, str, int]: A tuple containing stdout, stderr, and the return code.
         """
-        try:
-            if not global_shares["take_permision"](f"Permission for running following command: `{command}`"):
-                return None, "User Declined Permission to run command", 1
-            result = subprocess.run(
-                command, shell=True, capture_output=True, text=True, cwd=space_path, timeout=timeout
-            )
-            return result.stdout, result.stderr, result.returncode
-        except subprocess.TimeoutExpired:
-            return None, "Command timed out", 1
-        except Exception as e:
-            return None, str(e), 1
+        if not global_shares["take_permision"](f"Permission for running following command: `{command}`"):
+            raise PermisionError("User Declined Permission to run command.")
+        result = subprocess.run(
+            command, shell=True, capture_output=True, text=True, cwd=space_path, timeout=timeout
+        )
+        return result.stdout, result.stderr, result.returncode
 
     @staticmethod
-    def CreateFile(relative_path: str, content: str) -> tuple[bool, Optional[str]]:
+    def CreateFile(relative_path: str, content: str):
         """
         Creates a file in the sandbox with the given content.
 
         Args:
             relative_path (str): The relative path to the file.
             content (str): The content to write to the file.
-
-        Returns:
-            tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
         if not global_shares["take_permision"](f"Permission for Creating file: `{relative_path}`"):
-            return False, "User Declined Permission to create file"
+            raise PermisionError("User Declined Permission to create file.")
         full_path: pathlib.Path = space_path / relative_path
-        try:
-            with open(full_path, "w") as f:
-                f.write(content)
-            return True, None
-        except Exception as e:
-            return False, str(e)
+        with open(full_path, "w") as f:
+            f.write(content)
 
     @staticmethod
-    def CreateFolder(relative_path: str) -> tuple[bool, Optional[str]]:
+    def CreateFolder(relative_path: str):
         """
         Creates a folder in the sandbox.
 
         Args:
             relative_path (str): The relative path to the folder.
-
-        Returns:
-            tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
         if not global_shares["take_permision"](f"Permission for Creating folder: `{relative_path}`"):
-            return False, "User Declined Permission to create folder"
+            raise PermisionError("User Declined Permission to create folder.")
         full_path: pathlib.Path = space_path / relative_path
-        try:
-            os.makedirs(full_path, exist_ok=True)
-            return True, None
-        except Exception as e:
-            return False, str(e)
+        os.makedirs(full_path, exist_ok=True)
 
     @staticmethod
-    def DeleteFile(relative_path: str) -> tuple[bool, Optional[str]]:
+    def DeleteFile(relative_path: str):
         """
         Deletes a file in the sandbox.
 
         Args:
             relative_path (str): The relative path to the file.
-
-        Returns:
-            tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
         if not global_shares["take_permision"](f"Permission for Deleting file: `{relative_path}`"):
-            return False, "User Declined Permission to delete file"
+            raise PermisionError("User Declined Permission to delete file.")
         full_path: pathlib.Path = space_path / relative_path
-        try:
-            os.remove(str(full_path))  # os.remove needs string
-            return True, None
-        except FileNotFoundError:
-            return False, "File not found"
-        except Exception as e:
-            return False, str(e)
+        os.remove(str(full_path))
 
     @staticmethod
-    def DeleteFolder(relative_path: str) -> tuple[bool, Optional[str]]:
+    def DeleteFolder(relative_path: str):
         """
         Deletes a folder in the sandbox.
 
         Args:
             relative_path (str): The relative path to the folder.
-
-        Returns:
-            tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
         if not global_shares["take_permision"](f"Permission for Deleting folder: `{relative_path}`"):
-            return False, "User Declined Permission to delete folder"
+            raise PermisionError("User Declined Permission to delete folder")
         full_path: pathlib.Path = space_path / relative_path
-        try:
-            shutil.rmtree(full_path)
-            return True, None
-        except FileNotFoundError:
-            return False, "Folder not found"
-        except Exception as e:
-            return False, str(e)
+        shutil.rmtree(full_path)
 
     @staticmethod
     def RunCommandBackground(command: str) -> str:
@@ -153,7 +122,7 @@ class CodeExecutionEnvironment:
             str: The process ID.
         """
         if not global_shares["take_permision"](f"Permission for running background command: `{command}`"):
-            return "User Declined Permission to run background command"
+            raise PermisionError("User Declined Permission to run background command")
         process_id: str = str(uuid.uuid4())
         cmd_queue: queue.Queue[Optional[str]] = queue.Queue()
 
@@ -204,44 +173,37 @@ class CodeExecutionEnvironment:
         return process_id
 
     @staticmethod
-    def SendSTDIn(process_id: str, input_str: str) -> tuple[bool, Optional[str]]:
+    def SendSTDIn(process_id: str, input_str: str):
         """
         Sends input to a background process.
 
         Args:
             process_id (str): The ID of the process.
             input_str (str): The input string to send.
-
-        Returns:
-            tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
         if not global_shares["take_permision"](f"Permission for sending input to process: `{process_id}`"):
-            return False, "User Declined Permission to send input"
+            raise PermisionError("User Declined Permission to send input")
         if process_id not in CodeExecutionEnvironment.processes:
-            return False, "Process not found"
+            raise ValueError("Process not found")
 
         process = CodeExecutionEnvironment.processes[process_id]
-        try:
-            if process.stdin:
-                process.stdin.write(input_str + "\n")
-                process.stdin.flush()
-            return True, None
-        except Exception as e:
-            return False, str(e)
+        if process.stdin:
+            process.stdin.write(input_str + "\n")
+            process.stdin.flush()
 
     @staticmethod
-    def GetSTDOut(process_id: str) -> tuple[Optional[list[str]], Optional[str]]:
+    def GetSTDOut(process_id: str):
         """
         Gets any available stdout from a background process.
 
         Args:
             process_id (str): The ID of the process.
-
-        Returns:
-            tuple[Optional[list[str]], Optional[str]]: A tuple containing a list of stdout lines and an optional error message.
+        
+        Return:
+            list[str]: STDOut of the peocess
         """
         if process_id not in CodeExecutionEnvironment.process_queues:
-            return None, "Process not found"
+            raise ValueError("Process not found")
 
         cmd_queue = CodeExecutionEnvironment.process_queues[process_id]
         output: list[str] = []
@@ -253,7 +215,7 @@ class CodeExecutionEnvironment:
                 output.append(line)
         except queue.Empty:
             pass
-        return output, None
+        return output
 
     @staticmethod
     def IsProcessRunning(process_id: str) -> bool:
@@ -271,57 +233,43 @@ class CodeExecutionEnvironment:
         return CodeExecutionEnvironment.processes[process_id].poll() is None
 
     @staticmethod
-    def KillProcess(process_id: str) -> tuple[bool, Optional[str]]:
+    def KillProcess(process_id: str):
         """
         Kills a background process.
 
         Args:
             process_id (str): The ID of the process.
-
-        Returns:
-            tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
         if not global_shares["take_permision"](f"Permission for killing process: `{process_id}`"):
-            return False, "User Declined Permission to kill process"
+            raise PermisionError("User Declined Permission to kill process")
         if process_id not in CodeExecutionEnvironment.processes:
-            return False, "Process not found"
+            raise ValueError("Process not found")
 
         process = CodeExecutionEnvironment.processes[process_id]
-        try:
-            process.terminate()
-            process.wait()
-            return True, None
-        except Exception as e:
-            return False, str(e)
-
+        process.terminate()
+        process.wait()
+    
     @staticmethod
-    def SendControlC(process_id: str) -> tuple[bool, Optional[str]]:
+    def SendControlC(process_id: str):
         """
         Sends a Ctrl+C signal to a background process.
 
         Args:
             process_id (str): The ID of the process.
-
-        Returns:
-            tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
         if not global_shares["take_permision"](f"Permission for sending Ctrl+C to process: `{process_id}`"):
-            return False, "User Declined Permission to send Ctrl+C"
+            raise PermisionError("User Declined Permission to send Ctrl+C")
         if process_id not in CodeExecutionEnvironment.processes:
-            return False, "Process not found"
+            raise ValueError("Process not found")
 
         process = CodeExecutionEnvironment.processes[process_id]
-        try:
-            if os.name == "nt":
-                os.kill(process.pid, signal.CTRL_BREAK_EVENT)
-            else:
-                process.send_signal(signal.SIGINT)
-            return True, None
-        except Exception as e:
-            return False, str(e)
+        if os.name == "nt":
+            os.kill(process.pid, signal.CTRL_BREAK_EVENT)
+        else:
+            process.send_signal(signal.SIGINT)
 
     @staticmethod
-    def ReadFile(relative_path: str) -> tuple[Optional[str], Optional[str]]:
+    def ReadFile(relative_path: str) -> Optional[str]:
         """
         Reads the content of a file in the sandbox.
 
@@ -329,51 +277,50 @@ class CodeExecutionEnvironment:
             relative_path (str): The relative path to the file.
 
         Returns:
-            tuple[Optional[str], Optional[str]]: A tuple containing the file content and an optional error message.
+            Optional[str]: File content.
         """
         if not global_shares["take_permision"](f"Permission for reading file: `{relative_path}`"):
-            return None, "User Declined Permission to read file"
+            raise PermisionError("User Declined Permission to read file")
         full_path: pathlib.Path = space_path / relative_path
-        try:
-            with open(full_path, "r") as f:
-                content: str = f.read()
-            return content, None
-        except FileNotFoundError:
-            return None, "File not found"
-        except Exception as e:
-            return None, str(e)
+        with open(full_path, "r") as f:
+            content: str = f.read()
+        return content
 
     @staticmethod
-    def WriteFile(relative_path: str, content: str) -> tuple[bool, Optional[str]]:
+    def WriteFile(relative_path: str, content: str):
         """
         Writes content to a file in the sandbox.
 
         Args:
             relative_path (str): The relative path to the file.
             content (str): The content to write to the file.
-
-        Returns:
-            tuple[bool, Optional[str]]: A tuple containing a boolean indicating success and an optional error message.
         """
         if not global_shares["take_permision"](f"Permission for writing file: `{relative_path}`"):
-            return False, "User Declined Permission to write file"
+            raise PermisionError("User Declined Permission to write file")
         full_path: pathlib.Path = space_path / relative_path
-        try:
-            with open(full_path, "w") as f:
-                f.write(content)
-            return True, None
-        except Exception as e:
-            return False, str(e)
+        with open(full_path, "w") as f:
+            f.write(content)
 
     @staticmethod
     def LinkAttachment(relative_paths: list[str]) -> str:
         """
-            Link the given attachment in the message to show/display it to user.
-            - Supported files are:
-                - Image (png, jpeg, webp, heic, heif)
-                - Video (mp4, mpeg, mov, avi, x-flv, mpg, webm, wmv, 3gpp)
-                - Text (txt, json, py, cpp, c, etc.)
-                - PDF (pdf)
+        Links the given attachments to the message for display to the user.
+
+        **Supported file types:**
+        - **Images**: png, jpeg, webp, heic, heif
+        - **Videos**: mp4, mpeg, mov, avi, flv, mpg, webm, wmv, 3gpp
+        - **Text files**: txt, json, py, cpp, c, etc. (Any text-based format)
+        - **PDF**: pdf
+
+        **Parameters:**
+        - `relative_paths` (list[str]): A list of relative file paths to be linked.
+
+        **Returns:**
+        - `str`: A message confirming the successful attachment of the files.
+
+        **Raises:**
+        - `ValueError`: If a file does not exist.
+        - `ValueError`: If a file type is unsupported or its MIME type cannot be determined.
         """
         supported_image_types = ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]
         supported_video_types = ["video/mp4", "video/mpeg", "video/quicktime", "video/x-msvideo", "video/x-flv", "video/mpeg", "video/webm", "video/x-ms-wmv", "video/3gpp"]
@@ -381,12 +328,12 @@ class CodeExecutionEnvironment:
         for relative_path in relative_paths:
             file_path = space_path / relative_path
             if not os.path.exists(file_path):
-                raise Exception(f"File `{relative_path}` not found")
+                raise ValueError(f"File `{relative_path}` not found")
 
             mime_type, _ = mimetypes.guess_type(file_path)
 
             if mime_type is None:
-                raise Exception(f"Could not determine MIME type for file `{relative_path}`")
+                raise ValueError(f"Could not determine MIME type for file `{relative_path}`")
 
             if mime_type.startswith("text/"):
                 continue
@@ -397,7 +344,7 @@ class CodeExecutionEnvironment:
             elif mime_type == "application/pdf":
                 continue
             else:
-                raise Exception(f"File type `{mime_type}` for file `{relative_path}` is not supported")
+                raise ValueError(f"File type `{mime_type}` for file `{relative_path}` is not supported")
 
         return f"{"File is" if len(relative_paths) is 1 else "Files are"} attached below."
 

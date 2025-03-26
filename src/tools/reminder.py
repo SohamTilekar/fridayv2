@@ -134,7 +134,6 @@ def CreateReminder(
     interval_type: Literal["minute", "hour", "day", "week"],
     interval_int: int,
     interval_list: list[Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]],
-    interval_str: str,
     specific_time: str,
     once: bool,
 ) -> int:
@@ -150,30 +149,11 @@ def CreateReminder(
     - interval_list (List[str]):
       - Used for 'week' type (e.g., ['monday', 'wednesday']).
       - Pass an empty list if using `interval_int` for 'minute', 'hour', or 'day'.
-    - interval_str (str): Not used but included for structural compatibility.
     - specific_time (str): The time in "HH:MM" format for 'day' or 'week' types (e.g., "08:30").
     - once (bool): If True, the reminder triggers only once.
 
     Returns:
     - int: The ID of the scheduled reminder.
-
-    Examples:
-    - Create a reminder every 30 minutes:
-      ```python
-      CreateReminder(message="Drink water", interval_type="minute", interval_int=30, interval_list=[], interval_str="", specific_time="", once=False)
-      ```
-    - Create a reminder every 2 hours:
-      ```python
-      CreateReminder(message="Stretch", interval_type="hour", interval_int=2, interval_list=[], interval_str="", specific_time="", once=False)
-      ```
-    - Create a daily reminder at a specific time:
-      ```python
-      CreateReminder(message="Take medicine", interval_type="day", interval_int=0, interval_list=[], interval_str="", specific_time="08:00", once=False)
-      ```
-    - Create a weekly reminder on specific days:
-      ```python
-      CreateReminder(message="Team meeting", interval_type="week", interval_int=0, interval_list=["monday", "friday"], interval_str="", specific_time="09:00", once=False)
-      ```
     """
     reminder = Reminder(message, once)
     
@@ -211,16 +191,7 @@ def CancelReminder(
     
     Returns:
     - str: The status message after cancelling the reminder.
-
-    Examples:
-    - Cancel a reminder permanently:
-      ```python
-      CancelReminder(id=12345, forever_or_next="forever")
-      ```
-    - Skip only the next occurrence of a reminder:
-      ```python
-      CancelReminder(id=12345, forever_or_next="next")
-      ```
+    ```
     """
     for job in schedule.jobs:
         if job.job_func.func.id == reminder_id:  # type: ignore

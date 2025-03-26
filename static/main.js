@@ -76,21 +76,21 @@ function renderNotification(notification) {
   if (notification.type === "Mail") {
     let bodyContent = "";
     notification.body.forEach(content => {
-          // Create the iframe element
-          const iframe = document.createElement('iframe');
-          iframe.sandbox = "allow-scripts";
-          // iframe.sandbox = "allow-same-origin allow-scripts";
-          iframe.style.border = "none";
-          iframe.style.width = "100%";
+      // Create the iframe element
+      const iframe = document.createElement('iframe');
+      iframe.sandbox = "allow-scripts";
+      // iframe.sandbox = "allow-same-origin allow-scripts";
+      iframe.style.border = "none";
+      iframe.style.width = "100%";
 
-          // Set the srcdoc attribute
-          iframe.srcdoc = content.html ? content.html : content.text;
+      // Set the srcdoc attribute
+      iframe.srcdoc = content.html ? content.html : content.text;
 
-          // Append the iframe to a container
-          const iframeContainer = document.createElement('div');
-          iframeContainer.appendChild(iframe);
-          bodyContent += iframeContainer.outerHTML;
-        });
+      // Append the iframe to a container
+      const iframeContainer = document.createElement('div');
+      iframeContainer.appendChild(iframe);
+      bodyContent += iframeContainer.outerHTML;
+    });
 
     notificationDiv.innerHTML = `
         <div class="notification-header">
@@ -378,11 +378,13 @@ const retryMessage = (msg) => {
     }, 2000); // Remove class after 2 seconds
   }
 };
+
 const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
   const chatBox = document.getElementById("chat-box");
   const msgDiv = document.createElement("div");
   msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
   msgDiv.id = msg.id;
+  msgDiv.dataset.msg = JSON.stringify(msg); // Store message data
 
   if (appendAtTop) {
     chatBox.prepend(msgDiv);
@@ -791,31 +793,163 @@ function createAttachmentElement(file) {
  * @returns {string} HTML string for function call display
  */
 function renderFunctionCall(functionCall) {
-  const name = functionCall.name;
-  const args = functionCall.args || {};
-  const functionId = functionCall.id;
-  const iconClass = getFunctionIconClass(name);
+    const name = functionCall.name;
+    const args = functionCall.args || {};
+    const functionId = functionCall.id;
+    const iconClass = getFunctionIconClass(name);
+    let isClickable = false; // Flag to determine if the box should be clickable
+    let displayText = `<span class="fn-name">${name}</span>`; // Default display text
 
-  const formattedArgs = Object.entries(args)
-    .filter(([key, value]) => value !== null && value !== undefined && value !== "")
-    .map(([key, value]) => {
-      let displayValue;
-      try {
-        displayValue = JSON.stringify(value);
-      } catch (e) {
-        displayValue = String(value);
-      }
-      return `<span class="fn-arg"><span class="fn-argk">${key}</span>=<span class="fn-argv">${displayValue}</span></span>`;
-    })
-    .join(', ');
+    // --- Specific Function Handling ---
 
-  const argsDisplay = formattedArgs ? ` <span class="fn-args"> ${formattedArgs}</span>` : '';
+    if (name === "CreateFile") {
+        const filename = args.relative_path;
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${filename}</span>`;
+        isClickable = true;
+    } else if (name === "RunCommand") {
+        const command = args.command;
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${command}</span>`;
+        isClickable = true;
+    } else if (name === "CreateReminder") {
+        const message = args.message;
+        const intervalType = args.interval_type;
+        const intervalInt = args.interval_int;
+        const intervalList = args.interval_list;
+        const specificTime = args.specific_time;
+        const once = args.once;
+        displayText = `<span class="fn-name">CreateReminder</span> to <span class="fn-argv">\`${message}\`</span>`;
+        if (once) reminderText += ` <span class="fn-argk">once</span>`;
+        if (intervalType === "minute" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">minute(s)</span>`;
+        else if (intervalType === "hour" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">hour(s)</span>`;
+        else if (intervalType === "day") {
+            if (specificTime) displayText += ` every day at <span class="fn-argv">${specificTime}</span>`;
+            else if (intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">day(s)</span>`;
+        } else if (intervalType === "week" && intervalList && intervalList.length > 0) {
+            const days = intervalList.join(", ");
+            displayText += ` every <span class="fn-argv">${days}</span> at <span class="fn-argv">${specificTime}</span>`;
+        }
+        // No response needed inline for CreateReminder
+    } else if (name === "CancelReminder") {
+        const reminderId = args.reminder_id;
+        const foreverOrNext = args.forever_or_next;
+        displayText = `<span class="fn-name">CancelReminder</span>`;
+        if (foreverOrNext === "forever") displayText += ` of ID <span class="fn-argv">${reminderId}</span> <span class="fn-argk">forever</span>`;
+        else if (foreverOrNext === "next") displayText += ` Next Run of ID <span class="fn-argv">${reminderId}</span>`;
+        // No response needed inline for CancelReminder
+    } else if (name === "CreateTask") {
+        const title = args.title;
+        const startDate = args.start_date;
+        const startTime = args.start_time;
+        const endDate = args.end_date;
+        const endTime = args.end_time;
+        const allDay = args.allDay;
+        const completed = args.completed;
+        displayText = `<span class="fn-name">CreateTask</span> to <span class="fn-argv">\`${title}\`</span>`;
+        if (startDate) {
+            if (startDate === endDate) {
+                displayText += ` on <span class="fn-argv">${startDate}</span>`;
+                if (startTime && endTime) displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
+                else if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+            } else {
+                displayText += ` from <span class="fn-argv">${startDate}</span>`;
+                if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+                if (endDate) {
+                    displayText += ` to <span class="fn-argv">${endDate}</span>`;
+                    if (endTime) displayText += ` until <span class="fn-argv">${endTime}</span>`;
+                }
+            }
+        }
+        if (allDay) displayText += ` <span class="fn-argk">allDay</span>`;
+        if (completed) displayText += ` <span class="fn-argk">completed</span>`;
+        // No response needed inline for CreateTask
+    } else if (name === "UpdateTask") {
+        const taskId = args.task_id;
+        const title = args.title;
+        const startDate = args.start_date;
+        const startTime = args.start_time;
+        const endDate = args.end_date;
+        const endTime = args.end_time;
+        const allDay = args.allDay;
+        const completed = args.completed;
+        displayText = `<span class="fn-name">UpdateTask</span> <span class="fn-argk">ID</span> <span class="fn-argv">\`${taskId}\`</span>`;
+        if (title) displayText += `, <span class="fn-argk">title</span> to <span class="fn-argv">\`${title}\`</span>`;
+        if (startDate) {
+            if (startDate === endDate) {
+                displayText += ` on <span class="fn-argv">${startDate}</span>`;
+                if (startTime && endTime) displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
+                else if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+            } else {
+                displayText += ` from <span class="fn-argv">${startDate}</span>`;
+                if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+                if (endDate) {
+                    displayText += ` to <span class="fn-argv">${endDate}</span>`;
+                    if (endTime) displayText += ` until <span class="fn-argv">${endTime}</span>`;
+                }
+            }
+        }
+        if (allDay !== undefined) displayText += ` <span class="fn-argk">allDay</span> to <span class="fn-argv">${allDay}</span>`;
+        if (completed !== undefined) displayText += ` <span class="fn-argk">completed</span> to <span class="fn-argv">${completed}</span>`;
+        // No response needed inline for UpdateTask
+    } else if (name === "FetchWebsite") {
+        displayText = `<span class="fn-name">${name}</span> from <span class="fn-argv">${args.url}</span>`;
+        isClickable = true; // Make clickable to show content
+    } else if (name === "RunCommandBackground") {
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.command}</span>`;
+        // Response will show process ID
+    } else if (name === "SendSTDIn") {
+        displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>: <span class="fn-argv">\`${args.input_str}\`</span>`;
+        // No response needed inline
+    } else if (name === "GetSTDOut") {
+        displayText = `<span class="fn-name">${name}</span> from <span class="fn-argv">${args.process_id}</span>`;
+        isClickable = true; // Make clickable to show output
+    } else if (name === "CreateFolder") {
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+        // No response needed inline
+    } else if (name === "DeleteFile") {
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+        // No response needed inline
+    } else if (name === "DeleteFolder") {
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+        // No response needed inline
+    } else if (name === "IsProcessRunning") {
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.process_id}</span>?`;
+        // Response will show True/False
+    } else if (name === "KillProcess") {
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.process_id}</span>`;
+        // No response needed inline
+    } else if (name === "ReadFile") {
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+        isClickable = true; // Make clickable to show content
+    } else if (name === "WriteFile") {
+        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+        isClickable = true; // Make clickable to show content
+    } else if (name === "SendControlC") {
+        displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>`;
+        // No response needed inline
+    } else if (name === "LinkAttachment") {
+        return ""; // Don't render LinkAttachment
+    }
+    // --- Default Rendering (Fallback) ---
+    else {
+        const formattedArgs = Object.entries(args)
+            .filter(([key, value]) => value !== null && value !== undefined && value !== "")
+            .map(([key, value]) => {
+                let displayValue;
+                try { displayValue = JSON.stringify(value); }
+                catch (e) { displayValue = String(value); }
+                return `<span class="fn-arg"><span class="fn-argk">${key}</span>=<span class="fn-argv">${displayValue}</span></span>`;
+            })
+            .join(', ');
+        displayText += formattedArgs ? ` <span class="fn-args"> ${formattedArgs}</span>` : '';
+    }
 
-  return `
-      <div class="fn-call-box" id="fn-call-${functionId}">
+    // --- Construct Final HTML ---
+    const clickableClass = isClickable ? " fn-call-box-clickable" : "";
+    return `
+      <div class="fn-call-box${clickableClass}" id="fn-call-${functionId}" data-function-name="${name}" data-function-id="${functionId}">
           <span class="fn-icon"><i class="${iconClass}"></i></span>
           <span class="fn-text">
-              <span class="fn-name">${name}</span>${argsDisplay}
+              ${displayText}
           </span>
           <span class="fn-response">
               <span class="fn-arrow">-></span> 
@@ -856,27 +990,388 @@ function getFunctionIconClass(functionName) {
 function renderFunctionResponse(functionResponse) {
   const functionId = functionResponse.id;
   const response = functionResponse.response;
-
-  // Determine if it's a success (has output) or error (has error)
   const isSuccess = response.output !== undefined;
-  const statusClass = isSuccess ? "response-success" : "response-error";
 
-  // Get the content to display (either output or error) and format as JSON
-  const contentToDisplay = isSuccess ? response.output : response.error;
-  const formattedContent = JSON.stringify(contentToDisplay, null, 2);
-
-  // Find the corresponding .fn-response span within the fn-call-box using the ID
   const fnResponseSpan = document.querySelector(`#fn-call-${functionId} .fn-response`);
+  const fnCallBox = document.getElementById(`fn-call-${functionId}`);
 
-  if (fnResponseSpan) {
-    // Update the innerHTML of the .fn-response span with the formatted response
-    fnResponseSpan.innerHTML = `
-          <span class="fn-arrow">-></span>
-          <span><pre class="fn-inline-response-content ${statusClass}">${formattedContent}</pre></span>
-      `;
+  if (fnResponseSpan && fnCallBox) {
+      const functionName = fnCallBox.dataset.functionName;
+      fnCallBox.classList.remove('fn-call-box-error'); // Remove error class initially
+
+      if (isSuccess) {
+          let successText = "";
+          if (functionName === "CreateReminder") {
+              successText = ` of ID \`${response.output}\``;
+          } else if (functionName === "RunCommandBackground") {
+              successText = ` Process ID: \`${response.output}\``;
+          } else if (functionName === "IsProcessRunning") {
+              successText = ` Running: <span class="fn-argv">${response.output}</span>`;
+          } else if (["FetchWebsite", "GetSTDOut", "ReadFile"].includes(functionName)) {
+              // For functions where output might be large, just show success
+              // Click handler will display full content
+              successText = ` Success`;
+          } else if (["CreateTask", "UpdateTask", "CancelReminder", "CreateFile", "RunCommand", "SendSTDIn", "CreateFolder", "DeleteFile", "DeleteFolder", "KillProcess", "WriteFile", "SendControlC"].includes(functionName)) {
+              // For simple actions, show success message
+              successText = ` Success`;
+          } else {
+              // Default success display (e.g., for functions not explicitly handled)
+              const formattedContent = JSON.stringify(response.output, null, 2);
+              successText = `<span><pre class="fn-inline-response-content">${formattedContent}</pre></span>`;
+          }
+          fnResponseSpan.innerHTML = successText ? `<span class="fn-arrow">-></span>${successText}` : '';
+
+      } else { // Handle Error
+          fnCallBox.classList.add("fn-call-box-clickable"); // Make error box clickable
+          fnCallBox.classList.add('fn-call-box-error');
+          fnResponseSpan.innerHTML = ''; // Clear response area on error
+      }
   } else {
-    // Fallback in case the function call element is not found
-    console.error(`Function call element with ID ${functionId} not found for response update.`);
+      console.error(`Function call element with ID ${functionId} not found for response update.`);
+  }
+}
+
+// Add click handler to chat box
+document.getElementById("chat-box").addEventListener("click", function (event) {
+  const clickableTarget = event.target.closest(".fn-call-box-clickable");
+  const errorTarget = event.target.closest(".fn-call-box-error");
+
+  if (clickableTarget && !errorTarget) { // Handle non-error clicks first
+      const functionName = clickableTarget.dataset.functionName;
+      const functionId = clickableTarget.dataset.functionId;
+
+      if (functionName === "CreateFile") {
+          displayCreateFileContent(functionId);
+      } else if (functionName === "RunCommand") {
+          displayRunCommandOutput(functionId);
+      } else if (functionName === "FetchWebsite") {
+          displayFetchWebsiteOutput(functionId); // New handler
+      } else if (functionName === "GetSTDOut") {
+          displayGetSTDOutOutput(functionId); // New handler
+      } else if (functionName === "ReadFile") {
+          displayReadFileContent(functionId); // New handler
+      } else if (functionName === "WriteFile") {
+          displayWriteFileContent(functionId); // New handler
+      }
+      // Add other non-error clickable handlers here if needed
+
+  } else if (errorTarget) { // Handle error clicks
+      const functionId = errorTarget.dataset.functionId;
+      displayFunctionError(functionId);
+  }
+});
+
+/**
+ * Displays the error of a function call in the right panel.
+ * @param {string} functionId - The ID of the function call.
+ */
+function displayFunctionError(functionId) {
+  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msg = JSON.parse(msgDiv.dataset.msg);
+  const contentItem = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+  if (contentItem && contentItem.function_response) {
+    const functionResponse = contentItem.function_response;
+    const error = functionResponse.response.error;
+
+    const rightPanel = document.querySelector('.right-panel');
+    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+
+    if (rightPanel.classList.contains('d-none')) {
+      rightPanel.classList.remove('d-none');
+    }
+
+    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+
+    // Display the error message
+    const errorContainer = document.createElement('div');
+    errorContainer.classList.add('terminal-error');
+    errorContainer.textContent = error;
+    attachmentDisplayArea.appendChild(errorContainer);
+
+    // Activate the content tab
+    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    contentTab.show();
+  } else {
+    console.error(`Function call with ID ${functionId} not found in message.`);
+  }
+}
+
+/**
+ * Displays the content of a CreateFile function call in the right panel.
+ * @param {string} functionId - The ID of the function call.
+ */
+function displayCreateFileContent(functionId) {
+  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msg = JSON.parse(msgDiv.dataset.msg);
+  const contentItem = msg.content.find(c => c.function_call && c.function_call.id === functionId);
+
+  if (contentItem && contentItem.function_call) {
+    const functionCall = contentItem.function_call;
+    const fileContent = functionCall.args.content;
+    const filename = functionCall.args.relative_path;
+
+    const rightPanel = document.querySelector('.right-panel');
+    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+
+    if (rightPanel.classList.contains('d-none')) {
+      rightPanel.classList.remove('d-none');
+    }
+
+    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+
+    // Display the file path
+    const filePathHeader = document.createElement('h6');
+    filePathHeader.textContent = `File Path: ${filename}`;
+    attachmentDisplayArea.appendChild(filePathHeader);
+
+    // Create a pre element to display the code with highlighting
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    code.classList.add('hljs'); // Add hljs class for highlighting
+    code.textContent = fileContent;
+    pre.appendChild(code);
+    attachmentDisplayArea.appendChild(pre);
+
+    // Highlight the code
+    hljs.highlightElement(code);
+
+    // Activate the content tab
+    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    contentTab.show();
+  } else {
+    console.error(`Function call with ID ${functionId} not found in message.`);
+  }
+}
+
+/**
+* Displays the output of a RunCommand function call in the right panel with a terminal theme.
+* @param {string} functionId - The ID of the function call.
+*/
+function displayRunCommandOutput(functionId) {
+  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msg = JSON.parse(msgDiv.dataset.msg);
+  const contentItemCall = msg.content.find(c => c.function_call && c.function_call.id === functionId);
+  const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+
+  if (contentItemCall && contentItemCall.function_call && contentItemResponce && contentItemResponce.function_response) {
+    const functionCall = contentItemCall.function_call;
+    const functionResponse = contentItemResponce.function_response;
+    const command = functionCall.args.command;
+
+    const rightPanel = document.querySelector('.right-panel');
+    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+
+    if (rightPanel.classList.contains('d-none')) {
+      rightPanel.classList.remove('d-none');
+    }
+
+    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+
+    // Display the command
+    const commandHeader = document.createElement('div');
+    commandHeader.classList.add('terminal-command');
+    commandHeader.textContent = `$ ${command}`;
+    attachmentDisplayArea.appendChild(commandHeader);
+
+    if (functionResponse.response.output) {
+      const output = functionResponse.response.output[0];
+      const error = functionResponse.response.output[1];
+      const returnCode = functionResponse.response.output[2];
+
+      // Display the output
+      const outputContainer = document.createElement('div');
+      outputContainer.classList.add('terminal-output');
+      outputContainer.textContent = output || '';
+      attachmentDisplayArea.appendChild(outputContainer);
+
+      // Display the error
+      if (error) {
+        const errorContainer = document.createElement('div');
+        errorContainer.classList.add('terminal-error');
+        errorContainer.textContent = `stderr: ${error}`;
+        attachmentDisplayArea.appendChild(errorContainer);
+      }
+
+      // Display the return code
+      const returnCodeContainer = document.createElement('div');
+      returnCodeContainer.classList.add('terminal-return-code');
+      returnCodeContainer.textContent = `Return Code: ${returnCode || 0}`;
+      attachmentDisplayArea.appendChild(returnCodeContainer);
+    } else if (functionResponse.response.error) {
+      // Display the error message
+      const errorContainer = document.createElement('div');
+      errorContainer.classList.add('terminal-error');
+      errorContainer.textContent = functionResponse.response.error;
+      attachmentDisplayArea.appendChild(errorContainer);
+    }
+
+    // Activate the content tab
+    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    contentTab.show();
+  } else {
+    console.error(`Function call with ID ${functionId} not found in message.`);
+  }
+}
+
+/**
+ * Displays the output of a FetchWebsite function call in the right panel.
+ * @param {string} functionId - The ID of the function call.
+ */
+function displayFetchWebsiteOutput(functionId) {
+  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msg = JSON.parse(msgDiv.dataset.msg);
+  const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+
+  if (contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
+      const output = contentItemResponce.function_response.response.output;
+
+      const rightPanel = document.querySelector('.right-panel');
+      const attachmentDisplayArea = document.getElementById('attachment-display-area');
+
+      if (rightPanel.classList.contains('d-none')) {
+          rightPanel.classList.remove('d-none');
+      }
+      attachmentDisplayArea.innerHTML = ''; // Clear previous content
+
+      const outputContainer = document.createElement('div');
+      outputContainer.classList.add('text-attachment-panel'); // Use existing style
+      outputContainer.textContent = output;
+      attachmentDisplayArea.appendChild(outputContainer);
+
+      const copyButton = createCopyButton(output);
+      attachmentDisplayArea.appendChild(copyButton);
+
+      // Activate the content tab
+      const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+      contentTab.show();
+  } else {
+      console.error(`Function response for FetchWebsite with ID ${functionId} not found or has no output.`);
+  }
+}
+
+/**
+* Displays the output of a GetSTDOut function call in the right panel.
+* @param {string} functionId - The ID of the function call.
+*/
+function displayGetSTDOutOutput(functionId) {
+  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msg = JSON.parse(msgDiv.dataset.msg);
+  const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+
+  if (contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
+      const outputLines = contentItemResponce.function_response.response.output;
+      const output = outputLines.join('\n'); // Join lines into a single string
+
+      const rightPanel = document.querySelector('.right-panel');
+      const attachmentDisplayArea = document.getElementById('attachment-display-area');
+
+      if (rightPanel.classList.contains('d-none')) {
+          rightPanel.classList.remove('d-none');
+      }
+      attachmentDisplayArea.innerHTML = ''; // Clear previous content
+
+      const outputContainer = document.createElement('div');
+      outputContainer.classList.add('terminal-output'); // Use terminal style
+      outputContainer.textContent = output;
+      attachmentDisplayArea.appendChild(outputContainer);
+
+      const copyButton = createCopyButton(output);
+      attachmentDisplayArea.appendChild(copyButton);
+
+      // Activate the content tab
+      const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+      contentTab.show();
+  } else {
+      console.error(`Function response for GetSTDOut with ID ${functionId} not found or has no output.`);
+  }
+}
+
+/**
+* Displays the content of a ReadFile function call in the right panel.
+* @param {string} functionId - The ID of the function call.
+*/
+function displayReadFileContent(functionId) {
+  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msg = JSON.parse(msgDiv.dataset.msg);
+  const contentItemCall = msg.content.find(c => c.function_call && c.function_call.id === functionId);
+  const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+
+  if (contentItemCall && contentItemCall.function_call && contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
+      const filename = contentItemCall.function_call.args.relative_path;
+      const fileContent = contentItemResponce.function_response.response.output;
+
+      const rightPanel = document.querySelector('.right-panel');
+      const attachmentDisplayArea = document.getElementById('attachment-display-area');
+
+      if (rightPanel.classList.contains('d-none')) {
+          rightPanel.classList.remove('d-none');
+      }
+      attachmentDisplayArea.innerHTML = ''; // Clear previous content
+
+      const filePathHeader = document.createElement('h6');
+      filePathHeader.textContent = `File Path: ${filename}`;
+      attachmentDisplayArea.appendChild(filePathHeader);
+
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.classList.add('hljs');
+      code.textContent = fileContent;
+      pre.appendChild(code);
+      attachmentDisplayArea.appendChild(pre);
+      hljs.highlightElement(code); // Apply highlighting
+
+      const copyButton = createCopyButton(fileContent);
+      attachmentDisplayArea.appendChild(copyButton);
+
+      // Activate the content tab
+      const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+      contentTab.show();
+  } else {
+      console.error(`Function call or response for ReadFile with ID ${functionId} not found or has no output.`);
+  }
+}
+
+/**
+* Displays the content that was written by a WriteFile function call.
+* @param {string} functionId - The ID of the function call.
+*/
+function displayWriteFileContent(functionId) {
+  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msg = JSON.parse(msgDiv.dataset.msg);
+  const contentItemCall = msg.content.find(c => c.function_call && c.function_call.id === functionId);
+
+  if (contentItemCall && contentItemCall.function_call) {
+      const filename = contentItemCall.function_call.args.relative_path;
+      const fileContent = contentItemCall.function_call.args.content; // Get content from the call args
+
+      const rightPanel = document.querySelector('.right-panel');
+      const attachmentDisplayArea = document.getElementById('attachment-display-area');
+
+      if (rightPanel.classList.contains('d-none')) {
+          rightPanel.classList.remove('d-none');
+      }
+      attachmentDisplayArea.innerHTML = ''; // Clear previous content
+
+      const filePathHeader = document.createElement('h6');
+      filePathHeader.textContent = `File Path: ${filename}`;
+      attachmentDisplayArea.appendChild(filePathHeader);
+
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.classList.add('hljs');
+      code.textContent = fileContent;
+      pre.appendChild(code);
+      attachmentDisplayArea.appendChild(pre);
+      hljs.highlightElement(code); // Apply highlighting
+
+      const copyButton = createCopyButton(fileContent);
+      attachmentDisplayArea.appendChild(copyButton);
+
+      // Activate the content tab
+      const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+      contentTab.show();
+  } else {
+      console.error(`Function call for WriteFile with ID ${functionId} not found.`);
   }
 }
 

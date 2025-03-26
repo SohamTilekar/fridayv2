@@ -107,7 +107,7 @@ def get_todo_list_string() -> str:
         else:
             time_info = "[Not Planned]"
 
-        todo_list.append(f"- {status} Title: `{task.title}`{time_info}, ID: `{task.id}`")
+        todo_list.append(f"- {status} Title: `{task.title}` {time_info}, ID: `{task.id}`")
 
     return f"Todays Date: {datetime.now().strftime('%Y-%m-%d %a')}\nTasks:\n" + ("\n".join(todo_list) or "No Tasks in todo list")
 
