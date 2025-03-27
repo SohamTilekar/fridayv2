@@ -1,13 +1,21 @@
 # reminder.py
 import pickle
+import threading
 import time
 import schedule
 import config
-from typing import Literal, List
+from typing import Any, Literal
 import os
 import datetime
 
+from global_shares import global_shares
 from notification import Notification, Content, notifications
+
+def emit_reminders():
+    if global_shares["socketio"]:
+        global_shares["socketio"].emit("reminders_list_update", get_reminders_json())
+    else:
+        print(f"global_shares[\"socketio\"] is {global_shares["socketio"]}")
 
 class Reminder:
     message: str
@@ -31,7 +39,8 @@ class Reminder:
         # Create a Notification object
         notification = Notification(
             notification_type="Reminder",
-            snipit=Content(text=self.message[:100] + "..." if len(self.message) > 100 else self.message),
+            content=[Content("text", self.message)],
+            snipit=Content(text=self.message),
             time=datetime.datetime.now(),
             sevarity="Mid", # Or "Low" or "High" as appropriate
             reminder=True,
@@ -42,6 +51,7 @@ class Reminder:
         notifications.append(notification)
 
         if self.once:
+            threading.Timer(0.1, emit_reminders).start()
             return schedule.CancelJob
 
 # Function to save the schedule jobs to a file
@@ -129,6 +139,28 @@ def get_reminders() -> str:
         return "\n- No reminders set\n"
     return reminders
 
+def get_reminders_json() -> list[dict[str, None | int | str | bool]]:
+    reminders: list[dict[str, None | int | str | bool]] = []
+    for job in schedule.get_jobs():
+        reminders.append(
+            {
+                "message": job.job_func.func.message, # type: ignore
+                "once": "once" in job.tags,
+                "id": job.job_func.func.id, # type: ignore
+                "skip_next": job.job_func.func.skip_next, # type: ignore
+                "re_remind": job.job_func.func.re_remind, # type: ignore
+                "interval": job.interval,
+                "latest": job.latest,
+                "unit": job.unit,
+                "at_time": job.at_time.isoformat() if job.at_time else None,
+                "last_run": job.last_run.isoformat() if job.last_run else None,
+                "next_run": job.next_run.isoformat() if job.next_run else None,
+                "start_day": job.start_day,
+                "cancel_after": job.cancel_after.isoformat() if job.cancel_after else None,
+            }
+        )
+    return reminders
+
 def CreateReminder(
     message: str,
     interval_type: Literal["minute", "hour", "day", "week"],
@@ -175,6 +207,7 @@ def CreateReminder(
         raise ValueError("Invalid interval type or parameters.")
     
     job.job_func.func.id = reminder.id  # type: ignore
+    emit_reminders()
     return job.job_func.func.id  # type: ignore
 
 def CancelReminder(
@@ -193,13 +226,15 @@ def CancelReminder(
     - str: The status message after cancelling the reminder.
     ```
     """
-    for job in schedule.jobs:
+    for job in schedule.get_jobs():
         if job.job_func.func.id == reminder_id:  # type: ignore
             if forever_or_next == "forever":
                 schedule.cancel_job(job)
+                emit_reminders()
                 return f"Reminder with ID {reminder_id} has been cancelled forever."
             elif forever_or_next == "next":
                 job.job_func.func.skip_next = True  # type: ignore
+                emit_reminders()
                 return f"Next occurrence of reminder with ID {reminder_id} has been cancelled."
             else:
                 raise ValueError("Invalid value for 'forever_or_next'.")

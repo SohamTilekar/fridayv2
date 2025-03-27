@@ -40,7 +40,7 @@ let fridaySchedule = { tasks: [] };
 const notPlannedTasksList = document.getElementById('not-planned-tasks');
 const plannedTasksList = document.getElementById('planned-tasks');
 let calendar; // Declare calendar variable globally
-
+let reminders = [];
 
 // --- Socket.IO event handlers ---
 socket.on("schedule_update", (scheduleData) => {
@@ -56,7 +56,7 @@ socket.on("schedule_error", (error) => {
 
 // --- Helper function to convert schedule tasks to FullCalendar events ---
 function scheduleToEvents(schedule) {
-    return schedule.tasks.map(task => ({
+    const taskEvents = schedule.tasks.map(task => ({
         id: task.id,
         title: task.title,
         start: task.start,
@@ -65,7 +65,31 @@ function scheduleToEvents(schedule) {
         backgroundColor: task.backgroundColor,
         borderColor: task.borderColor,
     }));
+
+    // Add reminder events
+    const reminderEvents = [];
+    if (reminders) {
+        const color = getRandomColor();
+        console.log(reminders)
+        reminders.forEach(reminder => {
+            if (!reminder.skip_next)
+                reminderEvents.push({
+                    id: reminder.id,
+                    title: reminder.title,
+                    start: reminder.next_run,
+                    allDay: false,
+                    backgroundColor: color,
+                    borderColor: color,
+                    extendedProps: {
+                        isReminder: true,
+                    }
+                });
+        });
+    }
+
+    return taskEvents.concat(reminderEvents);
 }
+
 
 
 // --- Modified updateCalendar function ---
@@ -236,7 +260,7 @@ function addTask(section) {
 
         } else {
             notPlannedTasksList.appendChild(taskItem);
-             // --- Emit add_task event with the new task data ---
+            // --- Emit add_task event with the new task data ---
             const newTaskData = {
                 id: taskId,
                 title: taskText,
@@ -302,7 +326,7 @@ function handleTaskMove(evt) {
                 detailsContainer.classList.toggle('d-none');
                 event.stopPropagation(); // Prevent triggering taskItem click
             });
-            
+
             const detailsContainer = document.createElement('div');
             detailsContainer.classList.add('details-container', 'd-none'); // Initially hidden
 
@@ -320,7 +344,7 @@ function handleTaskMove(evt) {
             plannedDetails.appendChild(toggleButton);
             plannedDetails.appendChild(detailsContainer);
             item.appendChild(plannedDetails);
-            
+
             // --- Event listeners for input changes (moved here) ---
             function updateCalendarEvent() {
                 const taskData = extractTaskData().find(t => t.id === item.id); // Get updated data
@@ -498,6 +522,116 @@ function populateTaskLists() {
     });
 }
 
+const remindersListDiv = document.getElementById('reminders-list'); // Get the reminder list div
+
+// --- Function to render reminders from JSON data ---
+function renderReminders() {
+    if (!remindersListDiv) return;
+
+    remindersListDiv.innerHTML = ''; // Clear previous reminders
+
+    if (reminders.length === 0) {
+        const noReminderItem = document.createElement('p');
+        noReminderItem.textContent = "No reminders currently set.";
+        noReminderItem.classList.add('text-muted', 'fst-italic'); // Style for no reminders
+        remindersListDiv.appendChild(noReminderItem);
+    } else {
+        const reminderList = document.createElement('ul');
+        reminderList.classList.add('list-group'); // Use list-group for styling
+
+        reminders.forEach(reminder => {
+            const listItem = document.createElement('li');
+            listItem.classList.add('list-group-item', 'reminder-item'); // Add classes for styling
+
+            // Extract reminder properties
+            const message = reminder.message;
+            const once = reminder.once;
+            const reminderId = reminder.id;
+            const skip_next = reminder.skip_next;
+            const re_remind = reminder.re_remind;
+            const interval = reminder.interval;
+            const latest = reminder.latest;
+            const unit = reminder.unit;
+            const at_time = reminder.at_time;
+            const last_run = reminder.last_run;
+            const next_run = reminder.next_run;
+            const start_day = reminder.start_day;
+            const cancel_after = reminder.cancel_after;
+
+            listItem.dataset.reminderId = reminderId;
+
+            // Add cancel button (optional)
+            const cancelButton = document.createElement('button');
+            cancelButton.innerHTML = '<i class="bi bi-trash"></i>';
+            cancelButton.classList.add('btn', 'btn-sm', 'btn-outline-danger', 'float-end', 'cancel-reminder-btn'); // Style button
+            cancelButton.title = "Cancel Reminder Forever";
+            cancelButton.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent other clicks
+                const reminderIdToCancel = listItem.dataset.reminderId;
+                if (confirm(`Are you sure you want to cancel reminder ${reminderIdToCancel} forever?`)) {
+                    // Emit event to backend to cancel
+                    socket.emit('cancel_reminder_manual', { reminder_id: parseInt(reminderIdToCancel), forever_or_next: 'forever' });
+                }
+            });
+            listItem.appendChild(cancelButton);
+
+            // Construct reminder text
+            let reminderText = `Reminder: ${message}`;
+            if (once) {
+                reminderText += ", Once";
+            }
+            if (last_run) {
+                reminderText += `, Last Run: ${last_run}`;
+            }
+            if (skip_next) {
+                reminderText += `, Skip Next`;
+            }
+            if (re_remind) {
+                reminderText += `, Re-Remind`;
+            }
+            if (interval) {
+                reminderText += `, Interval: ${interval}`;
+            }
+            if (unit) {
+                reminderText += `, Unit: ${unit}`;
+            }
+            if (at_time) {
+                reminderText += `, At Time: ${at_time}`;
+            }
+            if (next_run) {
+                reminderText += `, Next Run: ${next_run}`;
+            }
+            if (start_day) {
+                reminderText += `, Start Day: ${start_day}`;
+            }
+            if (cancel_after) {
+                reminderText += `, Cancel After: ${cancel_after}`;
+            }
+
+            // Use pre for better formatting preservation of the reminder string
+            const preElement = document.createElement('pre');
+            preElement.textContent = reminderText;
+            listItem.appendChild(preElement); // Append pre to list item
+
+            reminderList.appendChild(listItem);
+        });
+        remindersListDiv.appendChild(reminderList);
+    }
+}
+
+socket.on("reminders_list_update", (remindersJson) => {
+    reminders = remindersJson;
+    renderReminders();
+    updateCalendar();
+});
+
+socket.on("reminders_error", (error) => {
+    console.error("Reminders error:", error);
+    if (remindersListDiv) {
+        remindersListDiv.innerHTML = `<p class="text-danger">Error loading reminders: ${error}</p>`;
+    }
+});
+
 // --- Initialization ---
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -563,4 +697,5 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initial call and window resize listener for scrollable content height
     updateScrollableContentHeight();
     window.addEventListener('resize', updateScrollableContentHeight);
+    socket.emit("get_reminders_list");
 });

@@ -79,7 +79,7 @@
                         <button class="nav-link" id="notification-tab" data-bs-toggle="tab"
                             data-bs-target="#notification-pane" type="button" role="tab"
                             aria-controls="notification-pane" aria-selected="false">
-                            Notifications <span class="notification-count">0</span>
+                            Notifications <span class="notification-count" style="display: none;"></span>
                         </button>
                     </li>
                     <!-- New Tab -->
@@ -133,6 +133,11 @@
                                         <!-- Done tasks will be added here -->
                                     </ul>
                                 </div>
+                            </div>
+                            <hr />
+                            <h3>Reminders</h3>
+                            <div id="reminders-list" class="mt-2">
+                                <!-- Reminders will be rendered here -->
                             </div>
                         </div>
                     </div>

@@ -2146,6 +2146,23 @@ def handle_delete_task(task_id):
         print(f"Error reopening task: {e}")
         socketio.emit("schedule_error", str(e))
 
+@socketio.on("get_reminders_list")
+def handle_get_reminders():
+    """Emits the current list of reminders."""
+    try:
+        reminders = tools.get_reminders_json()
+        socketio.emit("reminders_list_update", reminders)
+    except Exception as e:
+        print(f"Error getting reminders: {e}")
+        socketio.emit("reminders_error", str(e))
+
+@socketio.on("cancel_reminder_manual")
+def cancel_reminder_manual(data: dict[str, Any]):
+    try:
+        tools.CancelReminder(data["reminder_id"], data["forever_or_next"])
+    except Exception as e:
+        print(f"Error getting reminders: {e}")
+        socketio.emit("reminders_error", str(e))
 
 # endregion
 

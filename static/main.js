@@ -80,7 +80,7 @@ function renderNotification(notification) {
           iframeContainer.classList.add('resizable-iframe-container'); // Add class for styling
 
           const iframe = document.createElement('iframe');
-          iframe.sandbox = "allow-scripts allow-same-origin"; // Added allow-same-origin for potential script interactions if needed, be cautious
+          iframe.sandbox = "allow-scripts";
           iframe.style.border = "none";
           // iframe width/height will be controlled by the container via CSS
           iframe.srcdoc = content.html ? content.html : content.text;
@@ -832,7 +832,7 @@ function renderFunctionCall(functionCall) {
         const specificTime = args.specific_time;
         const once = args.once;
         displayText = `<span class="fn-name">CreateReminder</span> to <span class="fn-argv">\`${message}\`</span>`;
-        if (once) reminderText += ` <span class="fn-argk">once</span>`;
+        if (once) displayText += ` <span class="fn-argk">once</span>`;
         if (intervalType === "minute" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">minute(s)</span>`;
         else if (intervalType === "hour" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">hour(s)</span>`;
         else if (intervalType === "day") {
@@ -1005,6 +1005,7 @@ function renderFunctionResponse(functionResponse) {
   const functionId = functionResponse.id;
   const response = functionResponse.response;
   const isSuccess = response.output !== undefined;
+  var showArrow = true;
 
   const fnResponseSpan = document.querySelector(`#fn-call-${functionId} .fn-response`);
   const fnCallBox = document.getElementById(`fn-call-${functionId}`);
@@ -1017,6 +1018,7 @@ function renderFunctionResponse(functionResponse) {
           let successText = "";
           if (functionName === "CreateReminder") {
               successText = ` of ID \`${response.output}\``;
+              showArrow = false
           } else if (functionName === "RunCommandBackground") {
               successText = ` Process ID: \`${response.output}\``;
           } else if (functionName === "IsProcessRunning") {
@@ -1033,8 +1035,7 @@ function renderFunctionResponse(functionResponse) {
               const formattedContent = JSON.stringify(response.output, null, 2);
               successText = `<span><pre class="fn-inline-response-content">${formattedContent}</pre></span>`;
           }
-          fnResponseSpan.innerHTML = successText ? `<span class="fn-arrow">-></span>${successText}` : '';
-
+          fnResponseSpan.innerHTML = successText ? `${showArrow ? "<span class=\"fn-arrow\">-></span>" : ""}${successText}` : '';
       } else { // Handle Error
           fnCallBox.classList.add("fn-call-box-clickable"); // Make error box clickable
           fnCallBox.classList.add('fn-call-box-error');
