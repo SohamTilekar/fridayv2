@@ -74,22 +74,22 @@ function renderNotification(notification) {
   notificationDiv.dataset.notificationType = notification.type; // Store type for CSS targeting
 
   if (notification.type === "Mail") {
-      let bodyContent = "";
-      notification.body.forEach(content => {
-          const iframeContainer = document.createElement('div');
-          iframeContainer.classList.add('resizable-iframe-container'); // Add class for styling
+    let bodyContent = "";
+    notification.body.forEach(content => {
+      const iframeContainer = document.createElement('div');
+      iframeContainer.classList.add('resizable-iframe-container'); // Add class for styling
 
-          const iframe = document.createElement('iframe');
-          iframe.sandbox = "allow-scripts";
-          iframe.style.border = "none";
-          // iframe width/height will be controlled by the container via CSS
-          iframe.srcdoc = content.html ? content.html : content.text;
+      const iframe = document.createElement('iframe');
+      iframe.sandbox = "allow-scripts";
+      iframe.style.border = "none";
+      // iframe width/height will be controlled by the container via CSS
+      iframe.srcdoc = content.html ? content.html : content.text;
 
-          iframeContainer.appendChild(iframe);
-          bodyContent += iframeContainer.outerHTML;
-      });
+      iframeContainer.appendChild(iframe);
+      bodyContent += iframeContainer.outerHTML;
+    });
 
-      notificationDiv.innerHTML = `
+    notificationDiv.innerHTML = `
           <div class="notification-header">
               <span class="notification-subject">${notification.subject}</span>
               <span class="notification-sender">From: ${notification.sender}</span>
@@ -102,7 +102,7 @@ function renderNotification(notification) {
           </div>
       `;
   } else if (notification.type === "Reminder") {
-      notificationDiv.innerHTML = `
+    notificationDiv.innerHTML = `
           <div class="notification-header">
               <span class="notification-subject">Reminder</span>
           </div>
@@ -114,7 +114,7 @@ function renderNotification(notification) {
           </div>
       `;
   } else {
-      notificationDiv.innerHTML = `
+    notificationDiv.innerHTML = `
           <div class="notification-header">
               <span class="notification-subject">General Notification</span>
           </div>
@@ -153,8 +153,8 @@ function updateNotificationCount() {
   const notificationCount = notificationDisplayArea.querySelectorAll('.notification').length; // Count existing notifications
 
   if (notificationCountSpan) {
-      notificationCountSpan.textContent = notificationCount;
-      notificationCountSpan.style.display = notificationCount ? 'inline' : 'none'; // Show/hide based on count
+    notificationCountSpan.textContent = notificationCount;
+    notificationCountSpan.style.display = notificationCount ? 'inline' : 'none'; // Show/hide based on count
   }
 }
 
@@ -165,8 +165,8 @@ function updateNotificationDisplayAll(notifications) {
   const notificationDisplayArea = document.getElementById("notification-display-area");
   notificationDisplayArea.innerHTML = ""; // Clear existing notifications
   notifications.forEach(notification => {
-      const notificationElement = renderNotification(notification);
-      notificationDisplayArea.appendChild(notificationElement);
+    const notificationElement = renderNotification(notification);
+    notificationDisplayArea.appendChild(notificationElement);
   });
   updateNotificationCount(); // Update the count after rendering
 }
@@ -187,7 +187,7 @@ function updateNotificationDisplay(notification) {
 function deleteNotification(notificationId) {
   const notificationElement = document.querySelector(`.notification[data-notification-id="${notificationId}"]`);
   if (notificationElement) {
-      notificationElement.remove();
+    notificationElement.remove();
   }
   updateNotificationCount(); // Update the count after deleting
 }
@@ -807,159 +807,159 @@ function createAttachmentElement(file) {
  * @returns {string} HTML string for function call display
  */
 function renderFunctionCall(functionCall) {
-    const name = functionCall.name;
-    const args = functionCall.args || {};
-    const functionId = functionCall.id;
-    const iconClass = getFunctionIconClass(name);
-    let isClickable = false; // Flag to determine if the box should be clickable
-    let displayText = `<span class="fn-name">${name}</span>`; // Default display text
+  const name = functionCall.name;
+  const args = functionCall.args || {};
+  const functionId = functionCall.id;
+  const iconClass = getFunctionIconClass(name);
+  let isClickable = false; // Flag to determine if the box should be clickable
+  let displayText = `<span class="fn-name">${name}</span>`; // Default display text
 
-    // --- Specific Function Handling ---
+  // --- Specific Function Handling ---
 
-    if (name === "CreateFile") {
-        const filename = args.relative_path;
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${filename}</span>`;
-        isClickable = true;
-    } else if (name === "RunCommand") {
-        const command = args.command;
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${command}</span>`;
-        isClickable = true;
-    } else if (name === "CreateReminder") {
-        const message = args.message;
-        const intervalType = args.interval_type;
-        const intervalInt = args.interval_int;
-        const intervalList = args.interval_list;
-        const specificTime = args.specific_time;
-        const once = args.once;
-        displayText = `<span class="fn-name">CreateReminder</span> to <span class="fn-argv">\`${message}\`</span>`;
-        if (once) displayText += ` <span class="fn-argk">once</span>`;
-        if (intervalType === "minute" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">minute(s)</span>`;
-        else if (intervalType === "hour" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">hour(s)</span>`;
-        else if (intervalType === "day") {
-            if (specificTime) displayText += ` every day at <span class="fn-argv">${specificTime}</span>`;
-            else if (intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">day(s)</span>`;
-        } else if (intervalType === "week" && intervalList && intervalList.length > 0) {
-            const days = intervalList.join(", ");
-            displayText += ` every <span class="fn-argv">${days}</span> at <span class="fn-argv">${specificTime}</span>`;
-        }
-        // No response needed inline for CreateReminder
-    } else if (name === "CancelReminder") {
-        const reminderId = args.reminder_id;
-        const foreverOrNext = args.forever_or_next;
-        displayText = `<span class="fn-name">CancelReminder</span>`;
-        if (foreverOrNext === "forever") displayText += ` of ID <span class="fn-argv">${reminderId}</span> <span class="fn-argk">forever</span>`;
-        else if (foreverOrNext === "next") displayText += ` Next Run of ID <span class="fn-argv">${reminderId}</span>`;
-        // No response needed inline for CancelReminder
-    } else if (name === "CreateTask") {
-        const title = args.title;
-        const startDate = args.start_date;
-        const startTime = args.start_time;
-        const endDate = args.end_date;
-        const endTime = args.end_time;
-        const allDay = args.allDay;
-        const completed = args.completed;
-        displayText = `<span class="fn-name">CreateTask</span> to <span class="fn-argv">\`${title}\`</span>`;
-        if (startDate) {
-            if (startDate === endDate) {
-                displayText += ` on <span class="fn-argv">${startDate}</span>`;
-                if (startTime && endTime) displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
-                else if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
-            } else {
-                displayText += ` from <span class="fn-argv">${startDate}</span>`;
-                if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
-                if (endDate) {
-                    displayText += ` to <span class="fn-argv">${endDate}</span>`;
-                    if (endTime) displayText += ` until <span class="fn-argv">${endTime}</span>`;
-                }
-            }
-        }
-        if (allDay) displayText += ` <span class="fn-argk">allDay</span>`;
-        if (completed) displayText += ` <span class="fn-argk">completed</span>`;
-        // No response needed inline for CreateTask
-    } else if (name === "UpdateTask") {
-        const taskId = args.task_id;
-        const title = args.title;
-        const startDate = args.start_date;
-        const startTime = args.start_time;
-        const endDate = args.end_date;
-        const endTime = args.end_time;
-        const allDay = args.allDay;
-        const completed = args.completed;
-        displayText = `<span class="fn-name">UpdateTask</span> <span class="fn-argk">ID</span> <span class="fn-argv">\`${taskId}\`</span>`;
-        if (title) displayText += `, <span class="fn-argk">title</span> to <span class="fn-argv">\`${title}\`</span>`;
-        if (startDate) {
-            if (startDate === endDate) {
-                displayText += ` on <span class="fn-argv">${startDate}</span>`;
-                if (startTime && endTime) displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
-                else if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
-            } else {
-                displayText += ` from <span class="fn-argv">${startDate}</span>`;
-                if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
-                if (endDate) {
-                    displayText += ` to <span class="fn-argv">${endDate}</span>`;
-                    if (endTime) displayText += ` until <span class="fn-argv">${endTime}</span>`;
-                }
-            }
-        }
-        if (allDay !== undefined) displayText += ` <span class="fn-argk">allDay</span> to <span class="fn-argv">${allDay}</span>`;
-        if (completed !== undefined) displayText += ` <span class="fn-argk">completed</span> to <span class="fn-argv">${completed}</span>`;
-        // No response needed inline for UpdateTask
-    } else if (name === "FetchWebsite") {
-        displayText = `<span class="fn-name">${name}</span> from <span class="fn-argv">${args.url}</span>`;
-        isClickable = true; // Make clickable to show content
-    } else if (name === "RunCommandBackground") {
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.command}</span>`;
-        // Response will show process ID
-    } else if (name === "SendSTDIn") {
-        displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>: <span class="fn-argv">\`${args.input_str}\`</span>`;
-        // No response needed inline
-    } else if (name === "GetSTDOut") {
-        displayText = `<span class="fn-name">${name}</span> from <span class="fn-argv">${args.process_id}</span>`;
-        isClickable = true; // Make clickable to show output
-    } else if (name === "CreateFolder") {
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
-        // No response needed inline
-    } else if (name === "DeleteFile") {
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
-        // No response needed inline
-    } else if (name === "DeleteFolder") {
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
-        // No response needed inline
-    } else if (name === "IsProcessRunning") {
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.process_id}</span>?`;
-        // Response will show True/False
-    } else if (name === "KillProcess") {
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.process_id}</span>`;
-        // No response needed inline
-    } else if (name === "ReadFile") {
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
-        isClickable = true; // Make clickable to show content
-    } else if (name === "WriteFile") {
-        displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
-        isClickable = true; // Make clickable to show content
-    } else if (name === "SendControlC") {
-        displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>`;
-        // No response needed inline
-    } else if (name === "LinkAttachment") {
-        return ""; // Don't render LinkAttachment
+  if (name === "CreateFile") {
+    const filename = args.relative_path;
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${filename}</span>`;
+    isClickable = true;
+  } else if (name === "RunCommand") {
+    const command = args.command;
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${command}</span>`;
+    isClickable = true;
+  } else if (name === "CreateReminder") {
+    const message = args.message;
+    const intervalType = args.interval_type;
+    const intervalInt = args.interval_int;
+    const intervalList = args.interval_list;
+    const specificTime = args.specific_time;
+    const once = args.once;
+    displayText = `<span class="fn-name">CreateReminder</span> to <span class="fn-argv">\`${message}\`</span>`;
+    if (once) displayText += ` <span class="fn-argk">once</span>`;
+    if (intervalType === "minute" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">minute(s)</span>`;
+    else if (intervalType === "hour" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">hour(s)</span>`;
+    else if (intervalType === "day") {
+      if (specificTime) displayText += ` every day at <span class="fn-argv">${specificTime}</span>`;
+      else if (intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">day(s)</span>`;
+    } else if (intervalType === "week" && intervalList && intervalList.length > 0) {
+      const days = intervalList.join(", ");
+      displayText += ` every <span class="fn-argv">${days}</span> at <span class="fn-argv">${specificTime}</span>`;
     }
-    // --- Default Rendering (Fallback) ---
-    else {
-        const formattedArgs = Object.entries(args)
-            .filter(([key, value]) => value !== null && value !== undefined && value !== "")
-            .map(([key, value]) => {
-                let displayValue;
-                try { displayValue = JSON.stringify(value); }
-                catch (e) { displayValue = String(value); }
-                return `<span class="fn-arg"><span class="fn-argk">${key}</span>=<span class="fn-argv">${displayValue}</span></span>`;
-            })
-            .join(', ');
-        displayText += formattedArgs ? ` <span class="fn-args"> ${formattedArgs}</span>` : '';
+    // No response needed inline for CreateReminder
+  } else if (name === "CancelReminder") {
+    const reminderId = args.reminder_id;
+    const foreverOrNext = args.forever_or_next;
+    displayText = `<span class="fn-name">CancelReminder</span>`;
+    if (foreverOrNext === "forever") displayText += ` of ID <span class="fn-argv">${reminderId}</span> <span class="fn-argk">forever</span>`;
+    else if (foreverOrNext === "next") displayText += ` Next Run of ID <span class="fn-argv">${reminderId}</span>`;
+    // No response needed inline for CancelReminder
+  } else if (name === "CreateTask") {
+    const title = args.title;
+    const startDate = args.start_date;
+    const startTime = args.start_time;
+    const endDate = args.end_date;
+    const endTime = args.end_time;
+    const allDay = args.allDay;
+    const completed = args.completed;
+    displayText = `<span class="fn-name">CreateTask</span> to <span class="fn-argv">\`${title}\`</span>`;
+    if (startDate) {
+      if (startDate === endDate) {
+        displayText += ` on <span class="fn-argv">${startDate}</span>`;
+        if (startTime && endTime) displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
+        else if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+      } else {
+        displayText += ` from <span class="fn-argv">${startDate}</span>`;
+        if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+        if (endDate) {
+          displayText += ` to <span class="fn-argv">${endDate}</span>`;
+          if (endTime) displayText += ` until <span class="fn-argv">${endTime}</span>`;
+        }
+      }
     }
+    if (allDay) displayText += ` <span class="fn-argk">allDay</span>`;
+    if (completed) displayText += ` <span class="fn-argk">completed</span>`;
+    // No response needed inline for CreateTask
+  } else if (name === "UpdateTask") {
+    const taskId = args.task_id;
+    const title = args.title;
+    const startDate = args.start_date;
+    const startTime = args.start_time;
+    const endDate = args.end_date;
+    const endTime = args.end_time;
+    const allDay = args.allDay;
+    const completed = args.completed;
+    displayText = `<span class="fn-name">UpdateTask</span> <span class="fn-argk">ID</span> <span class="fn-argv">\`${taskId}\`</span>`;
+    if (title) displayText += `, <span class="fn-argk">title</span> to <span class="fn-argv">\`${title}\`</span>`;
+    if (startDate) {
+      if (startDate === endDate) {
+        displayText += ` on <span class="fn-argv">${startDate}</span>`;
+        if (startTime && endTime) displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
+        else if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+      } else {
+        displayText += ` from <span class="fn-argv">${startDate}</span>`;
+        if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+        if (endDate) {
+          displayText += ` to <span class="fn-argv">${endDate}</span>`;
+          if (endTime) displayText += ` until <span class="fn-argv">${endTime}</span>`;
+        }
+      }
+    }
+    if (allDay !== undefined) displayText += ` <span class="fn-argk">allDay</span> to <span class="fn-argv">${allDay}</span>`;
+    if (completed !== undefined) displayText += ` <span class="fn-argk">completed</span> to <span class="fn-argv">${completed}</span>`;
+    // No response needed inline for UpdateTask
+  } else if (name === "FetchWebsite") {
+    displayText = `<span class="fn-name">${name}</span> from <span class="fn-argv">${args.url}</span>`;
+    isClickable = true; // Make clickable to show content
+  } else if (name === "RunCommandBackground") {
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.command}</span>`;
+    // Response will show process ID
+  } else if (name === "SendSTDIn") {
+    displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>: <span class="fn-argv">\`${args.input_str}\`</span>`;
+    // No response needed inline
+  } else if (name === "GetSTDOut") {
+    displayText = `<span class="fn-name">${name}</span> from <span class="fn-argv">${args.process_id}</span>`;
+    isClickable = true; // Make clickable to show output
+  } else if (name === "CreateFolder") {
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+    // No response needed inline
+  } else if (name === "DeleteFile") {
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+    // No response needed inline
+  } else if (name === "DeleteFolder") {
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+    // No response needed inline
+  } else if (name === "IsProcessRunning") {
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.process_id}</span>?`;
+    // Response will show True/False
+  } else if (name === "KillProcess") {
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.process_id}</span>`;
+    // No response needed inline
+  } else if (name === "ReadFile") {
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+    isClickable = true; // Make clickable to show content
+  } else if (name === "WriteFile") {
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${args.relative_path}</span>`;
+    isClickable = true; // Make clickable to show content
+  } else if (name === "SendControlC") {
+    displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>`;
+    // No response needed inline
+  } else if (name === "LinkAttachment") {
+    return ""; // Don't render LinkAttachment
+  }
+  // --- Default Rendering (Fallback) ---
+  else {
+    const formattedArgs = Object.entries(args)
+      .filter(([key, value]) => value !== null && value !== undefined && value !== "")
+      .map(([key, value]) => {
+        let displayValue;
+        try { displayValue = JSON.stringify(value); }
+        catch (e) { displayValue = String(value); }
+        return `<span class="fn-arg"><span class="fn-argk">${key}</span>=<span class="fn-argv">${displayValue}</span></span>`;
+      })
+      .join(', ');
+    displayText += formattedArgs ? ` <span class="fn-args"> ${formattedArgs}</span>` : '';
+  }
 
-    // --- Construct Final HTML ---
-    const clickableClass = isClickable ? " fn-call-box-clickable" : "";
-    return `
+  // --- Construct Final HTML ---
+  const clickableClass = isClickable ? " fn-call-box-clickable" : "";
+  return `
       <div class="fn-call-box${clickableClass}" id="fn-call-${functionId}" data-function-name="${name}" data-function-id="${functionId}">
           <span class="fn-icon"><i class="${iconClass}"></i></span>
           <span class="fn-text">
@@ -1011,38 +1011,38 @@ function renderFunctionResponse(functionResponse) {
   const fnCallBox = document.getElementById(`fn-call-${functionId}`);
 
   if (fnResponseSpan && fnCallBox) {
-      const functionName = fnCallBox.dataset.functionName;
-      fnCallBox.classList.remove('fn-call-box-error'); // Remove error class initially
+    const functionName = fnCallBox.dataset.functionName;
+    fnCallBox.classList.remove('fn-call-box-error'); // Remove error class initially
 
-      if (isSuccess) {
-          let successText = "";
-          if (functionName === "CreateReminder") {
-              successText = ` of ID \`${response.output}\``;
-              showArrow = false
-          } else if (functionName === "RunCommandBackground") {
-              successText = ` Process ID: \`${response.output}\``;
-          } else if (functionName === "IsProcessRunning") {
-              successText = ` Running: <span class="fn-argv">${response.output}</span>`;
-          } else if (["FetchWebsite", "GetSTDOut", "ReadFile"].includes(functionName)) {
-              // For functions where output might be large, just show success
-              // Click handler will display full content
-              successText = ` Success`;
-          } else if (["CreateTask", "UpdateTask", "CancelReminder", "CreateFile", "RunCommand", "SendSTDIn", "CreateFolder", "DeleteFile", "DeleteFolder", "KillProcess", "WriteFile", "SendControlC"].includes(functionName)) {
-              // For simple actions, show success message
-              successText = ` Success`;
-          } else {
-              // Default success display (e.g., for functions not explicitly handled)
-              const formattedContent = JSON.stringify(response.output, null, 2);
-              successText = `<span><pre class="fn-inline-response-content">${formattedContent}</pre></span>`;
-          }
-          fnResponseSpan.innerHTML = successText ? `${showArrow ? "<span class=\"fn-arrow\">-></span>" : ""}${successText}` : '';
-      } else { // Handle Error
-          fnCallBox.classList.add("fn-call-box-clickable"); // Make error box clickable
-          fnCallBox.classList.add('fn-call-box-error');
-          fnResponseSpan.innerHTML = ''; // Clear response area on error
+    if (isSuccess) {
+      let successText = "";
+      if (functionName === "CreateReminder") {
+        successText = ` of ID \`${response.output}\``;
+        showArrow = false
+      } else if (functionName === "RunCommandBackground") {
+        successText = ` Process ID: \`${response.output}\``;
+      } else if (functionName === "IsProcessRunning") {
+        successText = ` Running: <span class="fn-argv">${response.output}</span>`;
+      } else if (["FetchWebsite", "GetSTDOut", "ReadFile"].includes(functionName)) {
+        // For functions where output might be large, just show success
+        // Click handler will display full content
+        successText = ` Success`;
+      } else if (["CreateTask", "UpdateTask", "CancelReminder", "CreateFile", "RunCommand", "SendSTDIn", "CreateFolder", "DeleteFile", "DeleteFolder", "KillProcess", "WriteFile", "SendControlC"].includes(functionName)) {
+        // For simple actions, show success message
+        successText = ` Success`;
+      } else {
+        // Default success display (e.g., for functions not explicitly handled)
+        const formattedContent = JSON.stringify(response.output, null, 2);
+        successText = `<span><pre class="fn-inline-response-content">${formattedContent}</pre></span>`;
       }
+      fnResponseSpan.innerHTML = successText ? `${showArrow ? "<span class=\"fn-arrow\">-></span>" : ""}${successText}` : '';
+    } else { // Handle Error
+      fnCallBox.classList.add("fn-call-box-clickable"); // Make error box clickable
+      fnCallBox.classList.add('fn-call-box-error');
+      fnResponseSpan.innerHTML = ''; // Clear response area on error
+    }
   } else {
-      console.error(`Function call element with ID ${functionId} not found for response update.`);
+    console.error(`Function call element with ID ${functionId} not found for response update.`);
   }
 }
 
@@ -1052,27 +1052,27 @@ document.getElementById("chat-box").addEventListener("click", function (event) {
   const errorTarget = event.target.closest(".fn-call-box-error");
 
   if (clickableTarget && !errorTarget) { // Handle non-error clicks first
-      const functionName = clickableTarget.dataset.functionName;
-      const functionId = clickableTarget.dataset.functionId;
+    const functionName = clickableTarget.dataset.functionName;
+    const functionId = clickableTarget.dataset.functionId;
 
-      if (functionName === "CreateFile") {
-          displayCreateFileContent(functionId);
-      } else if (functionName === "RunCommand") {
-          displayRunCommandOutput(functionId);
-      } else if (functionName === "FetchWebsite") {
-          displayFetchWebsiteOutput(functionId); // New handler
-      } else if (functionName === "GetSTDOut") {
-          displayGetSTDOutOutput(functionId); // New handler
-      } else if (functionName === "ReadFile") {
-          displayReadFileContent(functionId); // New handler
-      } else if (functionName === "WriteFile") {
-          displayWriteFileContent(functionId); // New handler
-      }
-      // Add other non-error clickable handlers here if needed
+    if (functionName === "CreateFile") {
+      displayCreateFileContent(functionId);
+    } else if (functionName === "RunCommand") {
+      displayRunCommandOutput(functionId);
+    } else if (functionName === "FetchWebsite") {
+      displayFetchWebsiteOutput(functionId); // New handler
+    } else if (functionName === "GetSTDOut") {
+      displayGetSTDOutOutput(functionId); // New handler
+    } else if (functionName === "ReadFile") {
+      displayReadFileContent(functionId); // New handler
+    } else if (functionName === "WriteFile") {
+      displayWriteFileContent(functionId); // New handler
+    }
+    // Add other non-error clickable handlers here if needed
 
   } else if (errorTarget) { // Handle error clicks
-      const functionId = errorTarget.dataset.functionId;
-      displayFunctionError(functionId);
+    const functionId = errorTarget.dataset.functionId;
+    displayFunctionError(functionId);
   }
 });
 
@@ -1238,29 +1238,29 @@ function displayFetchWebsiteOutput(functionId) {
   const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
 
   if (contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
-      const output = contentItemResponce.function_response.response.output;
+    const output = contentItemResponce.function_response.response.output;
 
-      const rightPanel = document.querySelector('.right-panel');
-      const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector('.right-panel');
+    const attachmentDisplayArea = document.getElementById('attachment-display-area');
 
-      if (rightPanel.classList.contains('d-none')) {
-          rightPanel.classList.remove('d-none');
-      }
-      attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    if (rightPanel.classList.contains('d-none')) {
+      rightPanel.classList.remove('d-none');
+    }
+    attachmentDisplayArea.innerHTML = ''; // Clear previous content
 
-      const outputContainer = document.createElement('div');
-      outputContainer.classList.add('text-attachment-panel'); // Use existing style
-      outputContainer.textContent = output;
-      attachmentDisplayArea.appendChild(outputContainer);
+    const outputContainer = document.createElement('div');
+    outputContainer.classList.add('text-attachment-panel'); // Use existing style
+    outputContainer.textContent = output;
+    attachmentDisplayArea.appendChild(outputContainer);
 
-      const copyButton = createCopyButton(output);
-      attachmentDisplayArea.appendChild(copyButton);
+    const copyButton = createCopyButton(output);
+    attachmentDisplayArea.appendChild(copyButton);
 
-      // Activate the content tab
-      const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
-      contentTab.show();
+    // Activate the content tab
+    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    contentTab.show();
   } else {
-      console.error(`Function response for FetchWebsite with ID ${functionId} not found or has no output.`);
+    console.error(`Function response for FetchWebsite with ID ${functionId} not found or has no output.`);
   }
 }
 
@@ -1274,30 +1274,30 @@ function displayGetSTDOutOutput(functionId) {
   const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
 
   if (contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
-      const outputLines = contentItemResponce.function_response.response.output;
-      const output = outputLines.join('\n'); // Join lines into a single string
+    const outputLines = contentItemResponce.function_response.response.output;
+    const output = outputLines.join('\n'); // Join lines into a single string
 
-      const rightPanel = document.querySelector('.right-panel');
-      const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector('.right-panel');
+    const attachmentDisplayArea = document.getElementById('attachment-display-area');
 
-      if (rightPanel.classList.contains('d-none')) {
-          rightPanel.classList.remove('d-none');
-      }
-      attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    if (rightPanel.classList.contains('d-none')) {
+      rightPanel.classList.remove('d-none');
+    }
+    attachmentDisplayArea.innerHTML = ''; // Clear previous content
 
-      const outputContainer = document.createElement('div');
-      outputContainer.classList.add('terminal-output'); // Use terminal style
-      outputContainer.textContent = output;
-      attachmentDisplayArea.appendChild(outputContainer);
+    const outputContainer = document.createElement('div');
+    outputContainer.classList.add('terminal-output'); // Use terminal style
+    outputContainer.textContent = output;
+    attachmentDisplayArea.appendChild(outputContainer);
 
-      const copyButton = createCopyButton(output);
-      attachmentDisplayArea.appendChild(copyButton);
+    const copyButton = createCopyButton(output);
+    attachmentDisplayArea.appendChild(copyButton);
 
-      // Activate the content tab
-      const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
-      contentTab.show();
+    // Activate the content tab
+    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    contentTab.show();
   } else {
-      console.error(`Function response for GetSTDOut with ID ${functionId} not found or has no output.`);
+    console.error(`Function response for GetSTDOut with ID ${functionId} not found or has no output.`);
   }
 }
 
@@ -1312,37 +1312,37 @@ function displayReadFileContent(functionId) {
   const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
 
   if (contentItemCall && contentItemCall.function_call && contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
-      const filename = contentItemCall.function_call.args.relative_path;
-      const fileContent = contentItemResponce.function_response.response.output;
+    const filename = contentItemCall.function_call.args.relative_path;
+    const fileContent = contentItemResponce.function_response.response.output;
 
-      const rightPanel = document.querySelector('.right-panel');
-      const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector('.right-panel');
+    const attachmentDisplayArea = document.getElementById('attachment-display-area');
 
-      if (rightPanel.classList.contains('d-none')) {
-          rightPanel.classList.remove('d-none');
-      }
-      attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    if (rightPanel.classList.contains('d-none')) {
+      rightPanel.classList.remove('d-none');
+    }
+    attachmentDisplayArea.innerHTML = ''; // Clear previous content
 
-      const filePathHeader = document.createElement('h6');
-      filePathHeader.textContent = `File Path: ${filename}`;
-      attachmentDisplayArea.appendChild(filePathHeader);
+    const filePathHeader = document.createElement('h6');
+    filePathHeader.textContent = `File Path: ${filename}`;
+    attachmentDisplayArea.appendChild(filePathHeader);
 
-      const pre = document.createElement('pre');
-      const code = document.createElement('code');
-      code.classList.add('hljs');
-      code.textContent = fileContent;
-      pre.appendChild(code);
-      attachmentDisplayArea.appendChild(pre);
-      hljs.highlightElement(code); // Apply highlighting
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    code.classList.add('hljs');
+    code.textContent = fileContent;
+    pre.appendChild(code);
+    attachmentDisplayArea.appendChild(pre);
+    hljs.highlightElement(code); // Apply highlighting
 
-      const copyButton = createCopyButton(fileContent);
-      attachmentDisplayArea.appendChild(copyButton);
+    const copyButton = createCopyButton(fileContent);
+    attachmentDisplayArea.appendChild(copyButton);
 
-      // Activate the content tab
-      const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
-      contentTab.show();
+    // Activate the content tab
+    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    contentTab.show();
   } else {
-      console.error(`Function call or response for ReadFile with ID ${functionId} not found or has no output.`);
+    console.error(`Function call or response for ReadFile with ID ${functionId} not found or has no output.`);
   }
 }
 
@@ -1356,37 +1356,37 @@ function displayWriteFileContent(functionId) {
   const contentItemCall = msg.content.find(c => c.function_call && c.function_call.id === functionId);
 
   if (contentItemCall && contentItemCall.function_call) {
-      const filename = contentItemCall.function_call.args.relative_path;
-      const fileContent = contentItemCall.function_call.args.content; // Get content from the call args
+    const filename = contentItemCall.function_call.args.relative_path;
+    const fileContent = contentItemCall.function_call.args.content; // Get content from the call args
 
-      const rightPanel = document.querySelector('.right-panel');
-      const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector('.right-panel');
+    const attachmentDisplayArea = document.getElementById('attachment-display-area');
 
-      if (rightPanel.classList.contains('d-none')) {
-          rightPanel.classList.remove('d-none');
-      }
-      attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    if (rightPanel.classList.contains('d-none')) {
+      rightPanel.classList.remove('d-none');
+    }
+    attachmentDisplayArea.innerHTML = ''; // Clear previous content
 
-      const filePathHeader = document.createElement('h6');
-      filePathHeader.textContent = `File Path: ${filename}`;
-      attachmentDisplayArea.appendChild(filePathHeader);
+    const filePathHeader = document.createElement('h6');
+    filePathHeader.textContent = `File Path: ${filename}`;
+    attachmentDisplayArea.appendChild(filePathHeader);
 
-      const pre = document.createElement('pre');
-      const code = document.createElement('code');
-      code.classList.add('hljs');
-      code.textContent = fileContent;
-      pre.appendChild(code);
-      attachmentDisplayArea.appendChild(pre);
-      hljs.highlightElement(code); // Apply highlighting
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    code.classList.add('hljs');
+    code.textContent = fileContent;
+    pre.appendChild(code);
+    attachmentDisplayArea.appendChild(pre);
+    hljs.highlightElement(code); // Apply highlighting
 
-      const copyButton = createCopyButton(fileContent);
-      attachmentDisplayArea.appendChild(copyButton);
+    const copyButton = createCopyButton(fileContent);
+    attachmentDisplayArea.appendChild(copyButton);
 
-      // Activate the content tab
-      const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
-      contentTab.show();
+    // Activate the content tab
+    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    contentTab.show();
   } else {
-      console.error(`Function call for WriteFile with ID ${functionId} not found.`);
+    console.error(`Function call for WriteFile with ID ${functionId} not found.`);
   }
 }
 
@@ -1449,12 +1449,9 @@ function updateTextareaRows() {
 
 // Constants and element references
 const modelSelect = document.getElementById('model-select');
-const toggleButtons = document.querySelectorAll('.toggle-button');
+// const toggleButtons = document.querySelectorAll('.toggle-button');
 const autoSelectButton = document.getElementById('autoselect-tool');
 const googleSearchButton = document.getElementById('google-search-tool');
-const reminderButton = document.getElementById('reminder-tool');
-const fetchWebsiteButton = document.getElementById('fetch-website-tool');
-const computerToolButton = document.getElementById('computer-tool'); // Add ComputerTool button
 
 // Global variables to store model compatibility information
 let toolSupportedModels = [];
@@ -2238,3 +2235,223 @@ document.addEventListener('DOMContentLoaded', function () {
   // Request existing notifications on page load
   socket.emit("get_notifications");
 });
+
+// --- Key State Object ---
+const keyState = {};
+
+document.addEventListener('keydown', function (event) {
+  // --- Check if the focus is on a textarea or input type="text" ---
+  const activeElement = document.activeElement;
+  if (activeElement && (activeElement.tagName === 'TEXTAREA' || (activeElement.tagName === 'INPUT' && activeElement.type === 'text'))) {
+    return; // Ignore the key press if focus is on a textarea or text input
+  }
+
+  // --- Update Key State ---
+  keyState[event.code] = true;
+
+  // --- Right Panel Resize Shortcuts (R + number) ---
+  if (keyState['KeyR']) {
+    if (keyState['Digit1']) {
+      resizeRightPanel(10);
+    } else if (keyState['Digit2']) {
+      resizeRightPanel(20);
+    } else if (keyState['Digit3']) {
+      resizeRightPanel(30);
+    } else if (keyState['Digit4']) {
+      resizeRightPanel(40);
+    } else if (keyState['Digit5']) {
+      resizeRightPanel(50);
+    } else if (keyState['Digit6']) {
+      resizeRightPanel(60);
+    } else if (keyState['Digit7']) {
+      resizeRightPanel(70);
+    } else if (keyState['Digit8']) {
+      resizeRightPanel(80);
+    } else if (keyState['Digit9']) {
+      resizeRightPanel(90);
+    } else if (keyState['Digit0']) {
+      resizeRightPanel(0.1);
+    }
+    return
+  }
+
+  // --- Toggle Tools Shortcuts (t + number) ---
+  if (keyState['KeyT'] && !event.ctrlKey) {
+    if (event.code === 'Digit1') {
+      googleSearchButton.click();
+    }
+    else if (event.code === 'Digit2') {
+      const scheduleButton = document.getElementById('reminder-tool');
+      scheduleButton.click();
+    }
+    else if (event.code === 'Digit3') {
+      const fetchWebsiteButton = document.getElementById('fetch-website-tool');
+      fetchWebsiteButton.click();
+    }
+    else if (event.code === 'Digit4') {
+      const computerToolButton = document.getElementById('computer-tool');
+      computerToolButton.click();
+    }
+    return
+  }
+  if (keyState['KeyA'] && !event.ctrlKey) {
+    autoSelectButton.click();
+    return
+  }
+
+  // --- Toggle Tabs Shortcuts (c, N, S) ---
+  if (keyState['KeyC'] && !event.ctrlKey) {
+    // Toggle Content tab
+    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    contentTab.show();
+    return
+  } else if (keyState['KeyN'] && !event.ctrlKey) {
+    // Toggle Notification tab
+    const notificationTab = new bootstrap.Tab(document.getElementById('notification-tab'));
+    notificationTab.show();
+    return
+  } else if (event.ctrlKey && event.key === 's' && event.code === 'KeyS') {
+    showShortcutsPopup();
+    event.preventDefault(); // Prevent the browser from saving the page
+    return
+  } else if (keyState['KeyS']) {
+    // Toggle Schedule tab
+    const scheduleTab = new bootstrap.Tab(document.getElementById('schedule-tab'));
+    scheduleTab.show();
+    return
+  }
+
+  // --- Enter Prompt Shortcut (/) ---
+  if (event.key === '/' && event.code === 'Slash') {
+    // Focus on the message input
+    document.getElementById('message-input').focus();
+    event.preventDefault(); // Prevent the slash from being entered in the input
+    return
+  }
+  if (event.key === 'd' && event.code === 'KeyD') {
+    // Focus on the message input
+    document.getElementById('new-task').focus();
+    event.preventDefault(); // Prevent the D from being entered in the input
+    return
+  }
+  // --- Select Model Shortcuts (m + number) ---
+  if (keyState['KeyM']) {
+    const modelSelect = document.getElementById("model-select");
+    if (modelSelect) {
+      if (keyState['Digit1']) {
+        selectModelByIndex(modelSelect, 0);
+      } else if (keyState['Digit2']) {
+        selectModelByIndex(modelSelect, 1);
+      } else if (keyState['Digit3']) {
+        selectModelByIndex(modelSelect, 2);
+      } else if (keyState['Digit4']) {
+        selectModelByIndex(modelSelect, 3);
+      } else if (keyState['Digit5']) {
+        selectModelByIndex(modelSelect, 4);
+      } else if (keyState['Digit6']) {
+        selectModelByIndex(modelSelect, 5);
+      } else if (keyState['Digit7']) {
+        selectModelByIndex(modelSelect, 6);
+      } else if (keyState['Digit8']) {
+        selectModelByIndex(modelSelect, 7);
+      }
+    }
+    return
+  }
+  // --- Close Shortcuts Popup (Esc) ---
+  if (event.key === 'Escape' || event.code === 'Escape') {
+    const popup = document.querySelector('.shortcuts-popup');
+    if (popup) {
+      popup.remove();
+      document.body.style.overflow = 'auto'; // Restore scrolling
+    }
+    return
+  }
+});
+
+document.addEventListener('keyup', function (event) {
+  // --- Update Key State ---
+  keyState[event.code] = false;
+});
+
+/**
+ * Resizes the right panel to the specified percentage.
+ * @param {number} percentage - The percentage to resize the right panel to.
+ */
+function resizeRightPanel(percentage) {
+  const rightPanel = document.querySelector('.right-panel');
+  const chatContainer = document.querySelector('.chat-container');
+  const containerWidth = document.querySelector('.container-fluid').offsetWidth;
+
+  const rightPanelWidth = (percentage / 100) * containerWidth;
+  const chatContainerWidth = containerWidth - rightPanelWidth;
+
+  rightPanel.style.width = `${percentage}%`;
+  chatContainer.style.width = `${100 - percentage}%`;
+
+  // Save the right panel width to local storage
+  localStorage.setItem('rightPanelWidth', percentage.toString());
+}
+
+/**
+ * Selects the option at the specified index in the select element.
+ * @param {HTMLSelectElement} selectElement - The select element.
+ * @param {number} index - The index of the option to select.
+ */
+function selectModelByIndex(selectElement, index) {
+  if (selectElement && selectElement.options && index >= 0 && index < selectElement.options.length) {
+    selectElement.selectedIndex = index;
+    // Dispatch a change event to trigger any associated actions
+    selectElement.dispatchEvent(new Event('change'));
+  }
+}
+
+
+/**
+ * Shows a popup window with a list of available shortcuts.
+ */
+function showShortcutsPopup() {
+  // Create the popup content
+  const shortcuts = [
+    "`r + [1-9]`: Resize right panel (10%-90%)",
+    "`t + [1-4]`: Toggle tools (Auto, Search, Schedule, Fetch, Computer)",
+    "`c`: Toggle Content tab",
+    "`n`: Toggle Notification tab",
+    "`s`: Toggle Schedule tab",
+    "`/`: Focus on message input",
+    "`m + [1-8]`: Select model by index",
+    "`Ctrl + S`: Show shortcuts popup"
+  ];
+
+  const popupContent = shortcuts.map(shortcut => marked.parse(shortcut)).join('');
+
+  // Create the popup element
+  const popup = document.createElement('div');
+  popup.classList.add('shortcuts-popup');
+  popup.innerHTML = `
+        <div class="shortcuts-popup-content">
+            <h3>Keyboard Shortcuts</h3>
+            ${popupContent}
+            <button class="close-popup-button">X</button>
+        </div>
+    `;
+
+  // Add the popup to the document body
+  document.body.appendChild(popup);
+
+  // Add event listener to the close button
+  const closeButton = popup.querySelector('.close-popup-button');
+  closeButton.addEventListener('click', function () {
+    popup.remove();
+  });
+
+  // Prevent scrolling of the main page when the popup is open
+  document.body.style.overflow = 'hidden';
+
+  // Restore scrolling when the popup is closed
+  popup.addEventListener('transitionend', function () {
+    if (!document.body.contains(popup)) {
+      document.body.style.overflow = 'auto';
+    }
+  });
+}
