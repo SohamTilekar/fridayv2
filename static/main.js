@@ -1607,6 +1607,7 @@ function updateToolAvailability(selectedModel) {
   const otherToolButtons = [
     document.getElementById('reminder-tool'),
     document.getElementById('fetch-website-tool'),
+    document.getElementById('imagen-tool'),
     document.getElementById('computer-tool')
   ];
 
@@ -1672,7 +1673,7 @@ function updateToggleButtonStates(selectedTool) {
       }
     } else if (selectedTool === 'google') {
       // If Google Search is selected, disable Reminder and Fetch
-      if (button.id === 'reminder-tool' || button.id === 'fetch-website-tool' || button.id === 'computer-tool') {
+      if (button.id === 'reminder-tool' || button.id === 'fetch-website-tool' || button.id === 'imagen-tool' || button.id === 'computer-tool') {
         button.dataset.state = 'disabled';
       } else if (button.id !== 'autoselect-tool' && button.id !== 'google-search-tool') {
         // For any other buttons besides Auto and Google, set to unselected if they were disabled
@@ -1794,7 +1795,7 @@ function initializeButtonListeners() {
       // If Auto is selected or Google is selected, clicking other buttons should do nothing
       if (autoSelectButton.dataset.state === 'selected' ||
         (googleSearchButton.dataset.state === 'selected' &&
-          (this.id === 'reminder-tool' || this.id === 'fetch-website-tool' || this.id === 'computer-tool'))) {
+          (this.id === 'reminder-tool' || this.id === 'fetch-website-tool' || this.id === 'imagen-tool' || this.id === 'computer-tool'))) {
         return;
       }
 
@@ -2289,6 +2290,10 @@ document.addEventListener('keydown', function (event) {
       fetchWebsiteButton.click();
     }
     else if (event.code === 'Digit4') {
+      const fetchWebsiteButton = document.getElementById('imagen-tool');
+      fetchWebsiteButton.click();
+    }
+    else if (event.code === 'Digit5') {
       const computerToolButton = document.getElementById('computer-tool');
       computerToolButton.click();
     }

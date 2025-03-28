@@ -35,6 +35,7 @@ socketio = SocketIO(app)
 global_shares["socketio"] = socketio
 
 client = genai.Client(api_key=config.GOOGLE_API)
+global_shares["client"] = client
 
 model: Optional[str] = None  # None for Auto
 selected_tools: Optional[list[tools.ToolLiteral]] = None  # None for Auto
@@ -116,8 +117,6 @@ class File:
         elif msg is None:
             raise TypeError("msg Paramiter of is not provided")
 
-        # if self.type.startswith("text/"):
-        #     return types.Part.from_text(text=f"\nFile Name: {self.filename}\nFile Content: {self.content.decode('utf-8')}") # type: ignore
         elif self.type.startswith("text/") or self.type.startswith(
             ("image/", "video/") or self.type == "application/pdf"
         ):
@@ -144,9 +143,7 @@ class File:
                     # Check whether the file is ready to be used.
                     while self.cloud_uri.state.name == "PROCESSING":  # type: ignore
                         time.sleep(1)
-                        self.cloud_uri = client.files.get(
-                            name=self.cloud_uri.name
-                        )  # type: ignore
+                        self.cloud_uri = client.files.get(name=self.cloud_uri.name)  # type: ignore
                     if self.cloud_uri.state.name == "FAILED":  # type: ignore
                         raise ValueError(self.cloud_uri.state.name)  # type: ignore
                     return self.cloud_uri
@@ -173,8 +170,8 @@ class File:
             for attempt in range(config.MAX_RETRIES):
                 try:
                     self.cloud_uri = client.files.upload(
-                        file=BytesIO(self.content),
-                        config={  # type: ignore
+                        file=BytesIO(self.content),  # type: ignore
+                        config={
                             "display_name": self.filename,
                             "mime_type": self.type,
                         },
@@ -183,8 +180,8 @@ class File:
                     while self.cloud_uri.state.name == "PROCESSING":  # type: ignore
                         time.sleep(1)
                         self.cloud_uri = client.files.get(
-                            name=self.cloud_uri.name
-                        )  # type: ignore
+                            name=self.cloud_uri.name  # type: ignore
+                        )
                     if self.cloud_uri.state.name == "FAILED":  # type: ignore
                         raise ValueError(self.cloud_uri.state.name)  # type: ignore
                     return [types.Part.from_text(text=f"\nFileID: {self.id}"), self.cloud_uri]  # type: ignore
@@ -549,20 +546,7 @@ class Message:
                     ai_contents.append(
                         types.Content(parts=parts_buffer, role=self.role)
                     )
-                    parts_buffer = []
-                if (
-                    (part := item.for_ai(suport_tools, msg))
-                    and msg
-                    and self.id == msg.id
-                ):
-                    ai_contents.append(types.Content(parts=[part], role="user"))  # type: ignore
-                    ai_contents.append(
-                        types.Content(
-                            parts=[types.Part(text=self.time_stamp.strftime("%H:%M"))],
-                            role="model",
-                        )
-                    )
-                elif part := item.for_ai(suport_tools, msg):
+                if part := item.for_ai(suport_tools, msg):
                     ai_contents.append(types.Content(parts=[part], role="user"))  # type: ignore
             elif part := item.for_ai(suport_tools, msg):
                 if isinstance(part, types.Part):
@@ -577,7 +561,15 @@ class Message:
 
         if parts_buffer:
             ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
-
+        if (
+            ai_contents and getattr(ai_contents[-1], "role", None) != "model"
+        ):  # Can be File
+            ai_contents.append(
+                types.Content(
+                    parts=[types.Part(text=self.time_stamp.strftime("%H:%M"))],
+                    role="model",
+                )
+            )
         return ai_contents
 
     def for_summarizer(self) -> list[types.Content]:
@@ -880,7 +872,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                 )
             )
         )
-        id = msg.content[-1].function_call.id # type: ignore
+        id = msg.content[-1].function_call.id  # type: ignore
         update_chat_message(msg)
 
         try:
@@ -893,6 +885,18 @@ def generate_content_with_retry(msg: Message) -> Message:
                 func_response = getattr(tools, func_call.name)(**func_call.args)
             else:
                 func_response = getattr(tools, func_call.name)()
+            if func_call.name == "Imagen":
+                msg.content.append(
+                    Content(
+                        function_response=FunctionResponce(
+                            id=id,  # type: ignore
+                            name=func_call.name,
+                            response={"output": "Success"},
+                        )
+                    )
+                )
+                msg.content.extend(func_response)
+                return
 
             # Add successful function response
             msg.content.append(
@@ -907,7 +911,9 @@ def generate_content_with_retry(msg: Message) -> Message:
             if func_call.name == "LinkAttachment" and func_call.args:
                 relative_paths = func_call.args["relative_paths"]
                 for relative_path in relative_paths:
-                    full_path = tools.space.space_path / relative_path  # Construct the full path
+                    full_path = (
+                        tools.space.space_path / relative_path
+                    )  # Construct the full path
 
                     mime_type, _ = mimetypes.guess_type(full_path)
 
@@ -920,9 +926,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                     msg.content.append(
                         Content(
                             attachment=File(
-                                content,
-                                mime_type, # type: ignore
-                                filename
+                                content, mime_type, filename  # type: ignore
                             )
                         )
                     )
@@ -1254,6 +1258,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                     ):
 
                         for part in content.candidates[0].content.parts:
+                            print(part)
                             handle_part(part)
                             if part.function_call:
                                 function_call_occurred = True
@@ -2146,6 +2151,7 @@ def handle_delete_task(task_id):
         print(f"Error reopening task: {e}")
         socketio.emit("schedule_error", str(e))
 
+
 @socketio.on("get_reminders_list")
 def handle_get_reminders():
     """Emits the current list of reminders."""
@@ -2156,6 +2162,7 @@ def handle_get_reminders():
         print(f"Error getting reminders: {e}")
         socketio.emit("reminders_error", str(e))
 
+
 @socketio.on("cancel_reminder_manual")
 def cancel_reminder_manual(data: dict[str, Any]):
     try:
@@ -2163,6 +2170,7 @@ def cancel_reminder_manual(data: dict[str, Any]):
     except Exception as e:
         print(f"Error getting reminders: {e}")
         socketio.emit("reminders_error", str(e))
+
 
 # endregion
 

@@ -6,6 +6,7 @@ import config
 from .reminder import CreateReminder, save_jobs, run_reminders, get_reminders, get_reminders_json, CancelReminder
 from .webfetch import FetchWebsite
 from .space import CodeExecutionEnvironment
+from .imagen import Imagen
 from lschedule import CreateTask, UpdateTask
 
 RunCommand = CodeExecutionEnvironment.RunCommand
@@ -24,6 +25,7 @@ SendControlC = CodeExecutionEnvironment.SendControlC
 LinkAttachment = CodeExecutionEnvironment.LinkAttachment
 
 FetchTool = types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=FetchWebsite)])
+ImagenTool = types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=Imagen)])
 ReminderTool = types.Tool(function_declarations=[
     types.FunctionDeclaration.from_callable_with_api_option(callable=CreateReminder),
     types.FunctionDeclaration.from_callable_with_api_option(callable=CancelReminder),
@@ -50,20 +52,21 @@ ComputerTool = types.Tool(
     ]
 )
 
-type ToolLiteral = Literal["FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
+type ToolLiteral = Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
 
 class Tools(enum.Enum):
+    Imagen = ImagenTool
     FetchWebsite = FetchTool
     Reminder = ReminderTool
-    SearchGrounding = SearchGrounding
     ComputerTool = ComputerTool
+    SearchGrounding = SearchGrounding
     @staticmethod
-    def tool_names() -> list[Literal["FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]:
-        return ["FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
+    def tool_names() -> list[Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]:
+        return ["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
 
 def ModelAndToolSelector(
         model: Literal["Large25", "Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
-        tools: list[Literal["FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]
+        tools: list[Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]
     ) -> tuple[str, bool, list[types.Tool]]:
     f"""\
 Use this tool to choose the best AI model with tools to respond to the user's request, considering the model capabilities, rate limits, latency, benchmark scores, and tool requirements.
@@ -143,7 +146,7 @@ For each model, consider its rate limit (RPM = requests per minute, req/day = re
 """
     return config.Models[model].value
 
-def ToolSelector(tools: list[Literal["FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]) -> list[types.Tool]:
+def ToolSelector(tools: list[Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]) -> list[types.Tool]:
     f"""\
 Use this tool to choose which tools to should AI get accessed too.
 
