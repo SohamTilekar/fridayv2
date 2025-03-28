@@ -1128,13 +1128,9 @@ pre {
     border-collapse: collapse;
     border-radius: var(--border-radius);
     overflow: hidden;
-    /* Ensure rounded corners are applied */
     background-color: var(--gray-800);
-    /* Table background */
     color: var(--gray-300);
-    /* Lighter text for table content */
     border: none;
-    /* Remove default table border */
 }
 
 .message-content th,
@@ -1142,17 +1138,13 @@ pre {
     padding: 0.6rem;
     text-align: left;
     border-bottom: 1px solid var(--gray-700);
-    /* Separator for rows */
     border-right: 1px solid var(--gray-700);
-    /* Separator for columns */
 }
 
 .message-content th {
-    background-color: var(--gray-700);
-    /* Header background */
+    background-color: var(--gray-900);
     font-weight: 500;
     color: var(--gray-200);
-    /* Lighter header text */
 }
 
 /* Remove border from the last column and row for cleaner look */

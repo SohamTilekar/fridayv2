@@ -62,7 +62,7 @@ class Tools(enum.Enum):
         return ["FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
 
 def ModelAndToolSelector(
-        model: Literal["Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
+        model: Literal["Large25", "Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
         tools: list[Literal["FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]
     ) -> tuple[str, bool, list[types.Tool]]:
     f"""\
@@ -117,7 +117,7 @@ only {config.SearchGroundingSuportedModels} suports SearchGrounding.
     return (config.Models[model].value, model in config.ToolSuportedModels and SearchGrounding not in ftools, ftools)
 
 def ModelSelector(
-        model: Literal["Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
+        model: Literal["Large25", "Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
     ) -> str:
     f"""\
 Use this tool to choose the best AI model to respond to the user's request, considering the model capabilities, rate limits, latency, benchmark scores, and tool requirements.

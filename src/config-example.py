@@ -23,6 +23,7 @@ RETRY_DELAY: int | float = 1  # seconds
 MODEL_TOOL_SELECTOR = "gemini-2.0-flash-lite"
 
 class Models(enum.Enum):
+    Large25 = "gemini-2.5-pro-exp-03-25"
     Large20 = "gemini-2.0-pro-exp-02-05"
     Medium20 = "gemini-2.0-flash-001"
     MediumThinking20 = "gemini-2.0-flash-thinking-exp-01-21"
@@ -31,13 +32,28 @@ class Models(enum.Enum):
     Medium15 = "gemini-1.5-flash-002"
     Small15 = "gemini-1.5-flash-8b-001"
 
-type ModelsLiteral = Literal["Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"]
+model_RPM_map = {
+"gemini-2.0-pro-exp-02-05": 2,
+"gemini-2.0-flash-001": 15,
+"gemini-2.0-flash-thinking-exp-01-21": 10,
+"gemini-2.0-flash-lite-001": 30,
+"gemini-1.5-pro-002": 2,
+"gemini-1.5-flash-002": 15,
+"gemini-1.5-flash-8b-001": 15,
+}
 
-SearchGroundingSuportedModels: list[str] = [Models.Large20.name, Models.Large15.name, Models.Medium20.name, Models.Medium15.name]
-ToolSuportedModels: list[str] = [Models.Large20.name, Models.Medium20.name, Models.Small20.name, Models.Large15.name, Models.Medium15.name, Models.Small15.name]
-ModelsSet: list[str] = [Models.Large20.name, Models.Medium20.name, Models.MediumThinking20.name, Models.Small20.name, Models.Large15.name, Models.Medium15.name, Models.Small15.name]
+type ModelsLiteral = Literal["Large25", "Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"]
+
+SearchGroundingSuportedModels: list[str] = [Models.Large25.name, Models.Large20.name, Models.Large15.name, Models.Medium20.name, Models.Medium15.name]
+ToolSuportedModels: list[str] = [Models.Large25.name, Models.Large20.name, Models.Medium20.name, Models.Small20.name, Models.Large15.name, Models.Medium15.name, Models.Small15.name]
+ModelsSet: list[str] = [Models.Large25.name, Models.Large20.name, Models.Medium20.name, Models.MediumThinking20.name, Models.Small20.name, Models.Large15.name, Models.Medium15.name, Models.Small15.name]
 
 ABOUT_MODELS = """\
+*   **Large25:**
+    *   Rate Limit: 2 RPM, 50 req/day
+    *   Latency: High
+    *   Best For: Coding, Reasoning, Multimodal understanding, Native tool use
+    *   Use Cases: Reason over complex problems, Tackle difficult code, math and STEM problems, Use the long context for analyzing large datasets, codebases or documents.
 *   **Large20:**
     *   Rate Limit: 2 RPM, 50 req/day
     *   Latency: High

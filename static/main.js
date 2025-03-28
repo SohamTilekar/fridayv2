@@ -1508,8 +1508,8 @@ async function fetchModelCompatibility() {
   } catch (error) {
     console.error('Error fetching model compatibility:', error);
     // Fallback to hardcoded values if fetch fails
-    toolSupportedModels = ['Large20', 'Medium20', 'Small20', 'Large15', 'Medium15', 'Small15'];
-    searchGroundingSupportedModels = ['Large20', 'Large15', 'Medium20', 'Medium15'];
+    toolSupportedModels = ['Large25', 'Large20', 'Medium20', 'Small20', 'Large15', 'Medium15', 'Small15'];
+    searchGroundingSupportedModels = ['Large20', 'Large20', 'Large15', 'Medium20', 'Medium15'];
     updateToolAvailability(modelSelect.value);
   }
 }
