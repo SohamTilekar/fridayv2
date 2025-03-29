@@ -1,11 +1,14 @@
 # imagen.py
 import base64
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from google.genai import types
 from global_shares import global_shares
 
-def Imagen(prompt: str, references: Optional[list[str]] = None):
+if TYPE_CHECKING:
+    from main import Content
+
+def Imagen(prompt: str, references: Optional[list[str]] = None) -> list["Content"]:
     """
     Generates an image (or multiple images) based on a text prompt, optionally using reference images for guidance.
 
@@ -17,10 +20,11 @@ def Imagen(prompt: str, references: Optional[list[str]] = None):
                                  guide the image generation process.  They can be used for tasks such as
                                  style transfer, content merging, general inspiration, etc.s
     """
-    from main import chat_history, Content, File
+    if not global_shares["chat_history"] or not global_shares["content"] or not global_shares["file"]:
+        raise ValueError("chat_history or content or file not set yet")
     images: list[types.File] = []
     for ref in references or ():
-        images.append(chat_history.getImage(ref))
+        images.append(global_shares["chat_history"].getImage(ref))
     while not global_shares['client']:
         time.sleep(0.1)
     contents = global_shares['client'].models.generate_content(
@@ -52,10 +56,10 @@ def Imagen(prompt: str, references: Optional[list[str]] = None):
         if candidate.content and candidate.content.parts:
             for part in candidate.content.parts:
                 if part.text:
-                    parts.append(Content(text=part.text))
+                    parts.append(global_shares["content"](text=part.text))
                 elif part.inline_data and part.inline_data.data and part.inline_data.mime_type:
                     parts.append(
-                        Content(attachment=File(
+                        global_shares["content"](attachment=global_shares["file"](
                                 base64.b64decode(part.inline_data.data),
                                 part.inline_data.mime_type,
                                 filename="image"

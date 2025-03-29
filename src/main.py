@@ -109,7 +109,7 @@ class File:
 
         return expiration_time >= ten_minutes_from_now
 
-    def for_ai(self, imagen_selected: bool, msg: Optional["Message"] = None) -> types.Part | types.File | tuple[types.Part, types.File]:
+    def for_ai(self, imagen_selected: bool, msg: Optional["Message"] = None) -> types.Part | tuple[types.Part, types.Part]:
         if self.is_summary:
             return types.Part.from_text(
                 text=f"\nFile Name: {self.filename}\nFile Type: {self.type.split('/')[0]}\nFile Summary: {self.content}"
@@ -122,9 +122,11 @@ class File:
             if self.cloud_uri and self.is_expiration_valid(
                 self.cloud_uri.expiration_time
             ):
-                if imagen_selected and self.type.startswith("image/"):
-                    return (types.Part(text=f"Image ID: {self.id}"), self.cloud_uri)
-                return self.cloud_uri
+                if self.cloud_uri.uri and self.cloud_uri.mime_type:
+                    if imagen_selected and self.type.startswith("image/"):
+                        return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
+                    return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
+                raise Exception("file uri & mime type not available")
             if self.type.startswith("image/"):
                 prefix = "Processing Image:"
             if self.type.startswith("text/"):
@@ -222,6 +224,7 @@ class File:
             data.get("is_summary", False),
         )
 
+global_shares["file"] = File
 
 class GroundingSupport:
     grounding_chunk_indices: list[int] = []
@@ -392,7 +395,7 @@ class Content:
 
     def for_ai(
         self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
-    ) -> types.Part | types.File | tuple[types.Part, types.File] | None:
+    ) -> types.Part | tuple[types.Part, types.Part]:
         if self.function_call and suport_tools:
             return types.Part(function_call=self.function_call.for_ai())
         elif self.function_response and suport_tools:
@@ -401,6 +404,7 @@ class Content:
             return types.Part(text=self.text)
         elif self.attachment is not None:
             return self.attachment.for_ai(imagen_selected, msg)
+        raise Exception("Empty Part")
 
     def for_sumarizer(self) -> list[types.Part]:
         if self.function_call:
@@ -456,6 +460,7 @@ class Content:
             ),
         )
 
+global_shares["content"] = Content
 
 class Message:
     role: Literal["model", "user"]
@@ -552,24 +557,16 @@ class Message:
                     )
                     parts_buffer = []
                 if part := item.for_ai(suport_tools, imagen_selected, msg):
-                    ai_contents.append(types.Content(parts=[part], role="user"))  # type: ignore
+                    ai_contents.append(types.Content(parts=[part], role="user"))
             elif part := item.for_ai(suport_tools, imagen_selected, msg):
                 if isinstance(part, types.Part):
                     parts_buffer.append(part)
                 elif isinstance(part, tuple):
-                    parts_buffer.append(part[0])
+                    parts_buffer.extend(part)
                     ai_contents.append(
                         types.Content(parts=parts_buffer, role=self.role)
                     )
                     parts_buffer = []
-                    ai_contents.append(part[1])
-                else:
-                    if parts_buffer:
-                        ai_contents.append(
-                            types.Content(parts=parts_buffer, role=self.role)
-                        )
-                        parts_buffer = []
-                    ai_contents.append(part)
 
         if parts_buffer:
             ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
@@ -761,6 +758,7 @@ class ChatHistory:
 
 chat_history: ChatHistory = ChatHistory()
 
+global_shares["chat_history"] = chat_history
 
 def complete_chat(message: str, files: Optional[list[File]] = None):
     """
@@ -1361,6 +1359,7 @@ def generate_content_with_retry(msg: Message) -> Message:
 
     # Set timestamp and return message
     msg.time_stamp = datetime.datetime.now()
+    print("Done")
     return msg
 
 
