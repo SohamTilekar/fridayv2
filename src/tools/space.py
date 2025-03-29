@@ -8,11 +8,13 @@ import queue
 import uuid
 import signal
 import shutil
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from global_shares import global_shares
 
 space_path: pathlib.Path = AI_DIR / "friday_space"
 
+if TYPE_CHECKING:
+    from main import Content
 
 class PermisionError(Exception):
     """
@@ -302,7 +304,7 @@ class CodeExecutionEnvironment:
             f.write(content)
 
     @staticmethod
-    def LinkAttachment(relative_paths: list[str]) -> str:
+    def LinkAttachment(relative_paths: list[str]) -> list["Content"]:
         """
         Links the given attachments to the message for display to the user.
 
@@ -314,17 +316,12 @@ class CodeExecutionEnvironment:
 
         **Parameters:**
         - `relative_paths` (list[str]): A list of relative file paths to be linked.
-
-        **Returns:**
-        - `str`: A message confirming the successful attachment of the files.
-
-        **Raises:**
-        - `ValueError`: If a file does not exist.
-        - `ValueError`: If a file type is unsupported or its MIME type cannot be determined.
         """
         supported_image_types = ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]
         supported_video_types = ["video/mp4", "video/mpeg", "video/quicktime", "video/x-msvideo", "video/x-flv", "video/mpeg", "video/webm", "video/x-ms-wmv", "video/3gpp"]
-
+        attachments: list["Content"] = []
+        if not global_shares["content"] or not global_shares["file"]:
+            raise ValueError("content or file not set yet")
         for relative_path in relative_paths:
             file_path = space_path / relative_path
             if not os.path.exists(file_path):
@@ -332,21 +329,15 @@ class CodeExecutionEnvironment:
 
             mime_type, _ = mimetypes.guess_type(file_path)
 
-            if mime_type is None:
+            if not mime_type:
                 raise ValueError(f"Could not determine MIME type for file `{relative_path}`")
 
-            if mime_type.startswith("text/"):
-                continue
-            elif mime_type in supported_image_types:
-                continue
-            elif mime_type in supported_video_types:
-                continue
-            elif mime_type == "application/pdf":
-                continue
-            else:
+            if not mime_type.startswith("text/") or not mime_type in supported_image_types or not mime_type in supported_video_types or not mime_type == "application/pdf":
                 raise ValueError(f"File type `{mime_type}` for file `{relative_path}` is not supported")
-
-        return f"{"File is" if len(relative_paths) is 1 else "Files are"} attached below."
+            with open(file_path, "rb") as f:
+                content: bytes = f.read()
+            attachments.append(global_shares["content"](attachment=global_shares["file"](content, mime_type, filename=os.path.basename(file_path))))
+        return attachments
 
     @staticmethod
     def dir_tree() -> str:

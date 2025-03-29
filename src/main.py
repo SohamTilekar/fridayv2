@@ -932,13 +932,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                     with open(full_path, mode="rb") as f:
                         content = f.read()
 
-                    msg.content.append(
-                        Content(
-                            attachment=File(
-                                content, mime_type, filename  # type: ignore
-                            )
-                        )
-                    )
+                    msg.content.append(Content(attachment=File(content, mime_type or "", filename)))
 
         except Exception as e:
             traceback.print_exc()
@@ -1233,8 +1227,6 @@ def generate_content_with_retry(msg: Message) -> Message:
         # Main content generation loop
         while True:
             try:
-                print(chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list))
-                print("------------------------------------------------------")
                 start_time = time.time()  # Record start time before request
                 # Generate streaming content
                 response = client.models.generate_content_stream(
@@ -1279,10 +1271,6 @@ def generate_content_with_retry(msg: Message) -> Message:
                 if msg.content:
                     msg.content[-1].processing = False
                     update_chat_message(msg)
-
-                print(chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list))
-                print("------------------------------------------------------")
-
                 # sleep for some time if needed
                 end_time = time.time()  # Record end time after response processing
                 elapsed_time = end_time - start_time  # Calculate elapsed time

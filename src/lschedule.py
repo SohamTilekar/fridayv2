@@ -109,7 +109,7 @@ def get_todo_list_string() -> str:
 
         todo_list.append(f"- {status} Title: `{task.title}` {time_info}, ID: `{task.id}`")
 
-    return f"Todays Date: {datetime.now().strftime('%Y-%m-%d %a')}\nTasks:\n" + ("\n".join(todo_list) or "No Tasks in todo list")
+    return f"Todays Date & Current Time: {datetime.now().strftime('%Y-%m-%d %a, %H:%M')}\nTasks:\n" + ("\n".join(todo_list) or "No Tasks in todo list")
 
 import random
 
