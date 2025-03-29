@@ -2379,6 +2379,17 @@ document.addEventListener('keyup', function (event) {
   keyState[event.code] = false;
 });
 
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden) {
+    // Reset keyState when the page becomes hidden
+    for (const key in keyState) {
+      if (keyState.hasOwnProperty(key)) {
+        keyState[key] = false;
+      }
+    }
+  }
+});
+
 /**
  * Resizes the right panel to the specified percentage.
  * @param {number} percentage - The percentage to resize the right panel to.
