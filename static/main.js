@@ -940,8 +940,8 @@ function renderFunctionCall(functionCall) {
   } else if (name === "SendControlC") {
     displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>`;
     // No response needed inline
-  } else if (name === "LinkAttachment") {
-    return ""; // Don't render LinkAttachment
+  } else if (name === "LinkAttachment" || name === "Imagen") {
+    return "";
   }
   // --- Default Rendering (Fallback) ---
   else {

@@ -109,13 +109,11 @@ class File:
 
         return expiration_time >= ten_minutes_from_now
 
-    def for_ai(self, msg: Optional["Message"] = None) -> types.Part | types.File:
+    def for_ai(self, imagen_selected: bool, msg: Optional["Message"] = None) -> types.Part | types.File | tuple[types.Part, types.File]:
         if self.is_summary:
             return types.Part.from_text(
                 text=f"\nFile Name: {self.filename}\nFile Type: {self.type.split('/')[0]}\nFile Summary: {self.content}"
             )
-        elif msg is None:
-            raise TypeError("msg Paramiter of is not provided")
 
         elif self.type.startswith("text/") or self.type.startswith(
             ("image/", "video/") or self.type == "application/pdf"
@@ -124,7 +122,9 @@ class File:
             if self.cloud_uri and self.is_expiration_valid(
                 self.cloud_uri.expiration_time
             ):
-                return self.cloud_uri  # type: ignore
+                if imagen_selected and self.type.startswith("image/"):
+                    return (types.Part(text=f"Image ID: {self.id}"), self.cloud_uri)
+                return self.cloud_uri
             if self.type.startswith("image/"):
                 prefix = "Processing Image:"
             if self.type.startswith("text/"):
@@ -134,10 +134,11 @@ class File:
             else:
                 prefix = "Processing PDF:"
             for attempt in range(config.MAX_RETRIES):
-                msg.content.append(
-                    Content(text=f"{prefix} {self.filename}", processing=True)
-                )
-                update_chat_message(msg)
+                if msg:
+                    msg.content.append(
+                        Content(text=f"{prefix} {self.filename}", processing=True)
+                    )
+                    update_chat_message(msg)
                 try:
                     self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type=self.type))  # type: ignore
                     # Check whether the file is ready to be used.
@@ -146,6 +147,8 @@ class File:
                         self.cloud_uri = client.files.get(name=self.cloud_uri.name)  # type: ignore
                     if self.cloud_uri.state.name == "FAILED":  # type: ignore
                         raise ValueError(self.cloud_uri.state.name)  # type: ignore
+                    if imagen_selected and self.type.startswith("image/"):
+                        return (types.Part(text=f"Image ID: {self.id}"), self.cloud_uri)
                     return self.cloud_uri
                 except Exception:
                     if attempt < config.MAX_RETRIES - 1:
@@ -153,8 +156,9 @@ class File:
                     else:
                         raise  # Re-raise the exception to be caught in completeChat
                 finally:
-                    msg.content.pop()
-                    update_chat_message(msg)
+                    if msg:
+                        msg.content.pop()
+                        update_chat_message(msg)
         raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
 
     def for_summarizer(self) -> list[types.Part]:
@@ -387,8 +391,8 @@ class Content:
         self.function_response = function_response
 
     def for_ai(
-        self, suport_tools: bool, msg: Optional["Message"] = None
-    ) -> types.Part | types.File | None:
+        self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
+    ) -> types.Part | types.File | tuple[types.Part, types.File] | None:
         if self.function_call and suport_tools:
             return types.Part(function_call=self.function_call.for_ai())
         elif self.function_response and suport_tools:
@@ -396,7 +400,7 @@ class Content:
         elif self.text:
             return types.Part(text=self.text)
         elif self.attachment is not None:
-            return self.attachment.for_ai(msg)
+            return self.attachment.for_ai(imagen_selected, msg)
 
     def for_sumarizer(self) -> list[types.Part]:
         if self.function_call:
@@ -530,15 +534,15 @@ class Message:
                     return
 
     def for_ai(
-        self, suport_tools: bool, msg: Optional["Message"] = None
-    ) -> list[types.Content]:
+        self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
+    ) -> list[types.Content | types.File]:
         if self.is_summary:
             return [types.Content(parts=[content.for_ai(msg) for content in self.content], role=self.role)]  # type: ignore
         if msg is None:
             raise ValueError("msg parameter is required.")
 
-        ai_contents: list[types.Content] = []
-        parts_buffer = [types.Part(text=self.time_stamp.strftime("%H:%M"))]
+        ai_contents: list[types.Content | types.File] = []
+        parts_buffer = []
 
         for item in self.content:
             if item.function_response:
@@ -546,30 +550,29 @@ class Message:
                     ai_contents.append(
                         types.Content(parts=parts_buffer, role=self.role)
                     )
-                if part := item.for_ai(suport_tools, msg):
+                    parts_buffer = []
+                if part := item.for_ai(suport_tools, imagen_selected, msg):
                     ai_contents.append(types.Content(parts=[part], role="user"))  # type: ignore
-            elif part := item.for_ai(suport_tools, msg):
+            elif part := item.for_ai(suport_tools, imagen_selected, msg):
                 if isinstance(part, types.Part):
                     parts_buffer.append(part)
+                elif isinstance(part, tuple):
+                    parts_buffer.append(part[0])
+                    ai_contents.append(
+                        types.Content(parts=parts_buffer, role=self.role)
+                    )
+                    parts_buffer = []
+                    ai_contents.append(part[1])
                 else:
                     if parts_buffer:
                         ai_contents.append(
                             types.Content(parts=parts_buffer, role=self.role)
                         )
                         parts_buffer = []
-                    ai_contents.append(part)  # type: ignore
+                    ai_contents.append(part)
 
         if parts_buffer:
             ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
-        if (
-            ai_contents and getattr(ai_contents[-1], "role", None) != "model"
-        ):  # Can be File
-            ai_contents.append(
-                types.Content(
-                    parts=[types.Part(text=self.time_stamp.strftime("%H:%M"))],
-                    role="model",
-                )
-            )
         return ai_contents
 
     def for_summarizer(self) -> list[types.Content]:
@@ -635,6 +638,14 @@ class ChatHistory:
 
     def __getitem__(self, idx: int):
         return self._chat[idx]
+    
+    def getImage(self, ID: str) -> types.File:
+        for msg in self._chat:
+            for content in msg.content:
+                if content.attachment:
+                    if content.attachment.id == ID:
+                        return content.attachment.for_ai(True) # type: ignore
+        raise ValueError(f"Image with ID: `{ID}` not found")
 
     def getMsg(self, ID: str) -> Message:
         for msg in self._chat:
@@ -708,10 +719,10 @@ class ChatHistory:
             delete_chat_message(self._chat[i].id)
         self._chat = self._chat[: idx + 1]
 
-    def for_ai(self, ai_msg: Message, suport_tools: bool) -> list[types.Content]:
-        result: list[types.Content] = []
+    def for_ai(self, ai_msg: Message, suport_tools: bool, imagen_selected: bool) -> list[types.Content | types.File]:
+        result: list[types.Content | types.File] = []
         for msg in self._chat:
-            result.extend(msg.for_ai(suport_tools, ai_msg))
+            result.extend(msg.for_ai(suport_tools, imagen_selected, ai_msg))
         return result
 
     def for_summarizer(self) -> list[types.Content]:
@@ -971,7 +982,7 @@ def generate_content_with_retry(msg: Message) -> Message:
         Raises:
             Exception: If selection fails after multiple attempts
         """
-        chat = chat_history.for_ai(msg, True)
+        chat = chat_history.for_ai(msg, True, False)
         global model
         allowed_function_names: Optional[list[str]] = None
         # Case 1: Both model and tools are already selected
@@ -1224,19 +1235,17 @@ def generate_content_with_retry(msg: Message) -> Message:
         # Main content generation loop
         while True:
             try:
+                print(chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list))
+                print("------------------------------------------------------")
                 start_time = time.time()  # Record start time before request
                 # Generate streaming content
                 response = client.models.generate_content_stream(
                     model=selected_model,
-                    contents=chat_history.for_ai(msg, suports_tools),  # type: ignore
+                    contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list),
                     config=types.GenerateContentConfig(
                         system_instruction=f"""{prompt.SYSTEM_INSTUNCTION}
-{
-    tools.get_reminders() + lschedule.get_todo_list_string() if tools.ReminderTool in selected_tools_list else ""
-}
-{
-    tools.space.CodeExecutionEnvironment.dir_tree() if tools.ComputerTool in selected_tools_list else ""
-}
+{tools.get_reminders() + lschedule.get_todo_list_string() if tools.ReminderTool in selected_tools_list else ""}
+{tools.space.CodeExecutionEnvironment.dir_tree() if tools.ComputerTool in selected_tools_list else ""}
 """,
                         temperature=config.CHAT_AI_TEMP,
                         tools=selected_tools_list,  # type: ignore
@@ -1258,7 +1267,6 @@ def generate_content_with_retry(msg: Message) -> Message:
                     ):
 
                         for part in content.candidates[0].content.parts:
-                            print(part)
                             handle_part(part)
                             if part.function_call:
                                 function_call_occurred = True
@@ -1273,6 +1281,9 @@ def generate_content_with_retry(msg: Message) -> Message:
                 if msg.content:
                     msg.content[-1].processing = False
                     update_chat_message(msg)
+
+                print(chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list))
+                print("------------------------------------------------------")
 
                 # sleep for some time if needed
                 end_time = time.time()  # Record end time after response processing

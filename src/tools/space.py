@@ -38,13 +38,13 @@ class CodeExecutionEnvironment:
         return cls._instance
 
     @staticmethod
-    def RunCommand(command: str, timeout: int | None) -> tuple[str, str, int]:
+    def RunCommand(command: str, timeout: Optional[int] = None) -> tuple[str, str, int]:
         """
         Runs a command in the sandbox and returns its output.
 
         Args:
             command (str): The command to run.
-            timeout (int | None): The timeout in seconds, None for no time out.
+            timeout (Optional[int]): The timeout in seconds, None for no time out.
 
         Returns:
             tuple[str, str, int]: A tuple containing stdout, stderr, and the return code.
@@ -57,19 +57,19 @@ class CodeExecutionEnvironment:
         return result.stdout, result.stderr, result.returncode
 
     @staticmethod
-    def CreateFile(relative_path: str, content: str):
+    def CreateFile(relative_path: str, content: Optional[str] = None):
         """
         Creates a file in the sandbox with the given content.
 
         Args:
             relative_path (str): The relative path to the file.
-            content (str): The content to write to the file.
+            content (Optional[str]): The content to write to the file.
         """
         if not global_shares["take_permision"](f"Permission for Creating file: `{relative_path}`"):
             raise PermisionError("User Declined Permission to create file.")
         full_path: pathlib.Path = space_path / relative_path
         with open(full_path, "w") as f:
-            f.write(content)
+            f.write(content or "")
 
     @staticmethod
     def CreateFolder(relative_path: str):

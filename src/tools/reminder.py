@@ -4,7 +4,7 @@ import threading
 import time
 import schedule
 import config
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 import os
 import datetime
 
@@ -164,10 +164,10 @@ def get_reminders_json() -> list[dict[str, None | int | str | bool]]:
 def CreateReminder(
     message: str,
     interval_type: Literal["minute", "hour", "day", "week"],
-    interval_int: int,
-    interval_list: list[Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]],
-    specific_time: str,
-    once: bool,
+    interval_int: Optional[int] = None,
+    interval_list: Optional[list[Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]]] = None,
+    specific_time: Optional[str] = None,
+    once: Optional[bool] = None,
 ) -> int:
     """
     Use this function to create reminders.
@@ -177,27 +177,25 @@ def CreateReminder(
     - interval_type (Literal): Defines the interval type ('minute', 'hour', 'day', 'week').
     - interval_int (int):
       - Used for 'minute' (e.g., `5` for every 5 minutes), 'hour' (e.g., `2` for every 2 hours), and 'day' (e.g., `3` for every 3 days).
-      - Pass `0` if using `interval_list` for 'week'.
     - interval_list (List[str]):
       - Used for 'week' type (e.g., ['monday', 'wednesday']).
-      - Pass an empty list if using `interval_int` for 'minute', 'hour', or 'day'.
     - specific_time (str): The time in "HH:MM" format for 'day' or 'week' types (e.g., "08:30").
     - once (bool): If True, the reminder triggers only once.
 
     Returns:
     - int: The ID of the scheduled reminder.
     """
-    reminder = Reminder(message, once)
+    reminder = Reminder(message, once or False)
     
-    if interval_type == "minute" and interval_int > 0:
-        job = schedule.every(interval_int).minutes.do(reminder).tag("once" if once else "")
-    elif interval_type == "hour" and interval_int > 0:
-        job = schedule.every(interval_int).hours.do(reminder).tag("once" if once else "")
+    if interval_type == "minute" and interval_int or 0 > 0:
+        job = schedule.every(interval_int or 0).minutes.do(reminder).tag("once" if once else "")
+    elif interval_type == "hour" and interval_int or 0 > 0:
+        job = schedule.every(interval_int or 0).hours.do(reminder).tag("once" if once else "")
     elif interval_type == "day":
         if specific_time:
             job = schedule.every().day.at(specific_time).do(reminder).tag("once" if once else "")
-        elif interval_int > 0:
-            job = schedule.every(interval_int).days.do(reminder).tag("once" if once else "")
+        elif interval_int or 0 > 0:
+            job = schedule.every(interval_int or 0).days.do(reminder).tag("once" if once else "")
         else:
             raise ValueError("Invalid interval for 'day'.")
     elif interval_type == "week" and interval_list:
@@ -211,7 +209,7 @@ def CreateReminder(
     return job.job_func.func.id  # type: ignore
 
 def CancelReminder(
-    reminder_id: int, forever_or_next: Literal["forever", "next"]
+    reminder_id: int, forever_or_next: Optional[Literal["forever", "next"]] = None
 ) -> str:
     """
     Use this function to cancel a scheduled reminder by its ID.
@@ -228,7 +226,7 @@ def CancelReminder(
     """
     for job in schedule.get_jobs():
         if job.job_func.func.id == reminder_id:  # type: ignore
-            if forever_or_next == "forever":
+            if forever_or_next or "forever" == "forever":
                 schedule.cancel_job(job)
                 emit_reminders()
                 return f"Reminder with ID {reminder_id} has been cancelled forever."
