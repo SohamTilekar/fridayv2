@@ -90,8 +90,8 @@ class File:
         self.is_summary = is_summary
 
     def delete(self):
-        if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time):
-            client.files.delete(name=self.cloud_uri.name)  # type: ignore
+        if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time) and self.cloud_uri.name:
+            client.files.delete(name=self.cloud_uri.name)
 
     @staticmethod
     def _generate_valid_video_file_id():
@@ -122,14 +122,14 @@ class File:
             if self.cloud_uri and self.is_expiration_valid(
                 self.cloud_uri.expiration_time
             ):
-                if self.cloud_uri.uri and self.cloud_uri.mime_type:
-                    if imagen_selected and self.type.startswith("image/"):
-                        return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
-                    return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
-                raise Exception("file uri & mime type not available")
+                if not self.cloud_uri.uri or not self.cloud_uri.mime_type:
+                    raise Exception("file uri & mime type not available")
+                if imagen_selected and self.type.startswith("image/"):
+                    return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
+                return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
             if self.type.startswith("image/"):
                 prefix = "Processing Image:"
-            if self.type.startswith("text/"):
+            elif self.type.startswith("text/"):
                 prefix = "Processing Text File:"
             elif self.type.startswith("video/"):
                 prefix = "Processing Video:"
@@ -138,20 +138,25 @@ class File:
             for attempt in range(config.MAX_RETRIES):
                 if msg:
                     msg.content.append(
-                        Content(text=f"{prefix} {self.filename}", processing=True)
+                        Content(text=f"{prefix} {self.filename}")
                     )
                     update_chat_message(msg)
                 try:
-                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type=self.type))  # type: ignore
+                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type=self.type))
                     # Check whether the file is ready to be used.
-                    while self.cloud_uri.state.name == "PROCESSING":  # type: ignore
+                    while self.cloud_uri.state and self.cloud_uri.state.name == "PROCESSING":
                         time.sleep(1)
-                        self.cloud_uri = client.files.get(name=self.cloud_uri.name)  # type: ignore
-                    if self.cloud_uri.state.name == "FAILED":  # type: ignore
-                        raise ValueError(self.cloud_uri.state.name)  # type: ignore
+                        if self.cloud_uri.name:
+                            self.cloud_uri = client.files.get(name=self.cloud_uri.name)
+                        else:
+                            raise Exception("Failed to Upload File")
+                    if self.cloud_uri.state and self.cloud_uri.state.name == "FAILED":
+                        raise ValueError(self.cloud_uri.state.name)
+                    if not self.cloud_uri.uri or not self.cloud_uri.mime_type:
+                        raise Exception("file uri & mime type not available")
                     if imagen_selected and self.type.startswith("image/"):
-                        return (types.Part(text=f"Image ID: {self.id}"), self.cloud_uri)
-                    return self.cloud_uri
+                        return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
+                    return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
                 except Exception:
                     if attempt < config.MAX_RETRIES - 1:
                         time.sleep(config.RETRY_DELAY)
@@ -163,46 +168,11 @@ class File:
                         update_chat_message(msg)
         raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
 
-    def for_summarizer(self) -> list[types.Part]:
-        if self.is_summary:
-            return [self.for_ai()]  # type: ignore
-        if self.type.startswith("text/"):
-            return [types.Part.from_text(text=f"\nname: {self.filename}\nid: {self.id}\nFile_Content: {self.content.decode('utf-8')}")]  # type: ignore
-        elif self.type.startswith(("image/", "video/", "application/pdf")):
-            if self.cloud_uri and self.is_expiration_valid(
-                self.cloud_uri.expiration_time
-            ):
-                return [types.Part.from_text(text=f"\nFileID: {self.id}"), self.cloud_uri]  # type: ignore
-            for attempt in range(config.MAX_RETRIES):
-                try:
-                    self.cloud_uri = client.files.upload(
-                        file=BytesIO(self.content),  # type: ignore
-                        config={
-                            "display_name": self.filename,
-                            "mime_type": self.type,
-                        },
-                    )
-                    # Check whether the file is ready to be used.
-                    while self.cloud_uri.state.name == "PROCESSING":  # type: ignore
-                        time.sleep(1)
-                        self.cloud_uri = client.files.get(
-                            name=self.cloud_uri.name  # type: ignore
-                        )
-                    if self.cloud_uri.state.name == "FAILED":  # type: ignore
-                        raise ValueError(self.cloud_uri.state.name)  # type: ignore
-                    return [types.Part.from_text(text=f"\nFileID: {self.id}"), self.cloud_uri]  # type: ignore
-                except Exception:
-                    if attempt < config.MAX_RETRIES - 1:
-                        time.sleep(config.RETRY_DELAY)
-                    else:
-                        raise  # Re-raise the exception to be caught in completeChat
-        raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
-
     def jsonify(self) -> dict:
         return {
             "type": self.type,
             "filename": self.filename,
-            "content": base64.b64encode(self.content).decode("utf-8", errors="ignore"),  # type: ignore
+            "content": base64.b64encode(self.content).decode("utf-8", errors="ignore"),
             "id": self.id,
             "is_summary": self.is_summary,
             "cloud_uri": self.cloud_uri.to_json_dict() if self.cloud_uri else None,
@@ -311,16 +281,6 @@ class FunctionCall:
     def for_ai(self) -> types.FunctionCall:
         return types.FunctionCall(id=self.id, name=self.name, args=self.args)
 
-    def for_summarizer(self) -> list[types.Part]:
-        return [
-            types.Part(text=f"CallID: {self.id}"),
-            types.Part(
-                function_call=types.FunctionCall(
-                    id=self.id, name=self.name, args=self.args
-                )
-            ),
-        ]
-
     def jsonify(self) -> dict[str, Any]:
         return {"id": self.id, "name": self.name, "args": self.args}
 
@@ -346,18 +306,8 @@ class FunctionResponce:
 
     def for_ai(self) -> types.FunctionResponse:
         return types.FunctionResponse(
-            id=self.id, name=self.name, response=self.response  # type: ignore
+            id=self.id, name=self.name, response=self.response
         )
-
-    def for_summarizer(self) -> list[types.Part]:
-        return [
-            types.Part(text=f"ResponceID: {self.id}"),
-            types.Part(
-                function_response=types.FunctionResponse(
-                    id=self.id, name=self.name, response=self.response
-                )
-            ),
-        ]
 
     def jsonify(self) -> dict[str, Any]:
         return {"id": self.id, "name": self.name, "response": self.response}
@@ -371,7 +321,6 @@ class FunctionResponce:
 
 class Content:
     text: Optional[str] = None
-    processing: bool = False
     attachment: Optional[File] = None
     grounding_metadata: Optional[GroundingMetaData] = None
     function_call: Optional[FunctionCall] = None
@@ -382,14 +331,12 @@ class Content:
         text: Optional[str] = None,
         attachment: Optional[File] = None,
         grounding_metadata: Optional[GroundingMetaData] = None,
-        processing: bool = False,
         function_call: Optional[FunctionCall] = None,
         function_response: Optional[FunctionResponce] = None,
     ):
         self.text = text
         self.attachment = attachment
         self.grounding_metadata = grounding_metadata
-        self.processing = processing
         self.function_call = function_call
         self.function_response = function_response
 
@@ -406,18 +353,6 @@ class Content:
             return self.attachment.for_ai(imagen_selected, msg)
         raise Exception("Empty Part")
 
-    def for_sumarizer(self) -> list[types.Part]:
-        if self.function_call:
-            return self.function_call.for_summarizer()
-        elif self.function_response:
-            return self.function_response.for_summarizer()
-        elif self.text:
-            return [types.Part(text=self.text)]
-        elif self.attachment is not None:
-            return self.attachment.for_summarizer()
-        else:
-            return []
-
     def jsonify(self) -> dict[str, Any]:
         return {
             "text": self.text,
@@ -425,7 +360,6 @@ class Content:
             "grounding_metadata": (
                 self.grounding_metadata.jsonify() if self.grounding_metadata else None
             ),
-            "processing": self.processing,
             "function_call": (
                 self.function_call.jsonify() if self.function_call else None
             ),
@@ -469,6 +403,7 @@ class Message:
     time_stamp: datetime.datetime
     id: str
     is_summary: bool
+    processing: bool
 
     def __init__(
         self,
@@ -478,6 +413,7 @@ class Message:
         is_summary: bool = False,
         id: Optional[str] = None,
         thought: str = "",
+        processing: bool = False
     ):
         self.time_stamp = time_stamp if time_stamp else datetime.datetime.now()
         self.content = content
@@ -485,6 +421,7 @@ class Message:
         self.id = str(uuid.uuid4()) if id is None else id
         self.is_summary = is_summary
         self.thought = thought
+        self.processing = processing
 
     def delete(self) -> None:
         for item in self.content:
@@ -540,13 +477,13 @@ class Message:
 
     def for_ai(
         self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
-    ) -> list[types.Content | types.File]:
+    ) -> list[types.Content]:
         if self.is_summary:
-            return [types.Content(parts=[content.for_ai(msg) for content in self.content], role=self.role)]  # type: ignore
+            return [types.Content(parts=[content.for_ai(msg) for content in self.content], role=self.role)]
         if msg is None:
             raise ValueError("msg parameter is required.")
 
-        ai_contents: list[types.Content | types.File] = []
+        ai_contents: list[types.Content] = []
         parts_buffer = []
 
         for item in self.content:
@@ -572,31 +509,6 @@ class Message:
             ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
         return ai_contents
 
-    def for_summarizer(self) -> list[types.Content]:
-        ai_contents: list[types.Content] = []
-        parts_buffer: list[types.Part] = [
-            types.Part.from_text(text=f"MessageID: {self.id}"),
-            types.Part.from_text(text=self.time_stamp.strftime("on %d-%m-%Y at %H")),
-        ]
-
-        for item in self.content:
-            if item.function_response:
-                if parts_buffer:
-                    ai_contents.append(
-                        types.Content(parts=parts_buffer, role=self.role)
-                    )
-                    parts_buffer = []
-                ai_contents.append(
-                    types.Content(parts=item.for_sumarizer(), role="user")
-                )
-            else:
-                parts_buffer.extend(item.for_sumarizer())
-
-        if parts_buffer:
-            ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
-
-        return ai_contents
-
     def jsonify(self) -> dict[str, Any]:
         return {
             "role": self.role,
@@ -605,6 +517,7 @@ class Message:
             "time_stamp": self.time_stamp.isoformat(),
             "is_summary": self.is_summary,
             "thought": self.thought,
+            "processing": self.processing
         }
 
     @staticmethod
@@ -716,16 +629,10 @@ class ChatHistory:
             delete_chat_message(self._chat[i].id)
         self._chat = self._chat[: idx + 1]
 
-    def for_ai(self, ai_msg: Message, suport_tools: bool, imagen_selected: bool) -> list[types.Content | types.File]:
-        result: list[types.Content | types.File] = []
-        for msg in self._chat:
-            result.extend(msg.for_ai(suport_tools, imagen_selected, ai_msg))
-        return result
-
-    def for_summarizer(self) -> list[types.Content]:
+    def for_ai(self, ai_msg: Message, suport_tools: bool, imagen_selected: bool) -> list[types.Content]:
         result: list[types.Content] = []
         for msg in self._chat:
-            result.extend(msg.for_summarizer())
+            result.extend(msg.for_ai(suport_tools, imagen_selected, ai_msg))
         return result
 
     def jsonify(self) -> list[dict[str, str | Literal["model", "user"] | list]]:
@@ -847,10 +754,6 @@ def generate_content_with_retry(msg: Message) -> Message:
 
     # Helper function to handle streaming content parts
     def handle_part(part: types.Part):
-        # Mark previous content as no longer processing if exists
-        if msg.content and msg.content[-1].text is not None:
-            msg.content[-1].processing = False
-
         # Handle thought content
         if part.thought and part.text:
             msg.thought += part.text
@@ -859,7 +762,7 @@ def generate_content_with_retry(msg: Message) -> Message:
         elif part.text:
             # Create initial content if none exists
             if not msg.content:
-                msg.content.append(Content(text="", processing=True))
+                msg.content.append(Content(text=""))
 
             # Add new content or append to existing
             if msg.content[-1].text is None:
@@ -881,7 +784,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                 )
             )
         )
-        id = msg.content[-1].function_call.id  # type: ignore
+        id = msg.content[-1].function_call.id
         update_chat_message(msg)
 
         try:
@@ -898,7 +801,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                 msg.content.append(
                     Content(
                         function_response=FunctionResponce(
-                            id=id,  # type: ignore
+                            id=id,
                             name=func_call.name,
                             response={"output": "Success"},
                         )
@@ -911,7 +814,7 @@ def generate_content_with_retry(msg: Message) -> Message:
             msg.content.append(
                 Content(
                     function_response=FunctionResponce(
-                        id=id,  # type: ignore
+                        id=id,
                         name=func_call.name,
                         response={"output": func_response},
                     )
@@ -1105,11 +1008,11 @@ def generate_content_with_retry(msg: Message) -> Message:
                 # Make selection request to tool selector model
                 selector_response = client.models.generate_content(
                     model=config.MODEL_TOOL_SELECTOR,
-                    contents=chat,  # type: ignore
+                    contents=chat,
                     config=types.GenerateContentConfig(
                         system_instruction=prompt.ModelAndToolSelectorSYSTEM_INSTUNCTION,
                         temperature=0.1,
-                        tools=tools_list,  # type: ignore
+                        tools=tools_list,
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(
                             disable=True, maximum_remote_calls=None
                         ),
@@ -1220,6 +1123,8 @@ def generate_content_with_retry(msg: Message) -> Message:
 
     # Main execution flow
     try:
+        msg.processing = True
+        update_chat_message(msg)
         # Get model and tools
         selected_model, suports_tools, selected_tools_list = get_model_and_tools()
         print(f"Using model: {selected_model} with tools: {selected_tools_list}")
@@ -1227,6 +1132,7 @@ def generate_content_with_retry(msg: Message) -> Message:
         # Main content generation loop
         while True:
             try:
+                print(chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list))
                 start_time = time.time()  # Record start time before request
                 # Generate streaming content
                 response = client.models.generate_content_stream(
@@ -1238,7 +1144,7 @@ def generate_content_with_retry(msg: Message) -> Message:
 {tools.space.CodeExecutionEnvironment.dir_tree() if tools.ComputerTool in selected_tools_list else ""}
 """,
                         temperature=config.CHAT_AI_TEMP,
-                        tools=selected_tools_list,  # type: ignore
+                        tools=selected_tools_list,
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(
                             disable=True, maximum_remote_calls=None
                         ),
@@ -1267,10 +1173,6 @@ def generate_content_with_retry(msg: Message) -> Message:
                     process_grounding_metadata(msg, content)
                     update_chat_message(msg)
 
-                # Mark processing as complete
-                if msg.content:
-                    msg.content[-1].processing = False
-                    update_chat_message(msg)
                 # sleep for some time if needed
                 end_time = time.time()  # Record end time after response processing
                 elapsed_time = end_time - start_time  # Calculate elapsed time
@@ -1307,10 +1209,6 @@ def generate_content_with_retry(msg: Message) -> Message:
                     msg.content.append(Content(text=f"An error occurred: {str(e)}"))
                 else:
                     msg.content[-1].text += f"\n\nAn error occurred: {str(e)}"
-                # Mark as not processing and update
-                if msg.content:
-                    msg.content[-1].processing = False
-                    update_chat_message(msg)
 
                 # Decide whether to retry based on error type
                 if isinstance(
@@ -1338,16 +1236,11 @@ def generate_content_with_retry(msg: Message) -> Message:
         error_msg = f"Fatal error in content generation: {str(e)}"
         print(error_msg)
 
-        if not msg.content:
-            msg.content.append(Content(text=f"Failed to generate content: {str(e)}"))
-
-        if msg.content and msg.content[-1].processing:
-            msg.content[-1].processing = False
-            update_chat_message(msg)
+        msg.content.append(Content(text=f"Failed to generate content: {str(e)}"))
 
     # Set timestamp and return message
     msg.time_stamp = datetime.datetime.now()
-    print("Done")
+    msg.processing = False
     return msg
 
 
@@ -1389,7 +1282,7 @@ def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata):
     if msg.content[-1].grounding_metadata is None:
         msg.content[-1].grounding_metadata = GroundingMetaData([], [])
     first = True
-    for support in metadata.grounding_supports:  # type: ignore
+    for support in metadata.grounding_supports or ():
         if support.segment and support.segment.text and support.grounding_chunk_indices:
             start_index = msg.content[-1].text.find(support.segment.text)
             if start_index == -1:
@@ -1398,27 +1291,25 @@ def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata):
                 # Allow any amount of whitespace between chars
                 # cz Gemini Grounding Suks
                 pattern = r"\s*".join(list(escaped_target))
-                match = re.search(pattern, support.segment.text or "")  # type: ignore
+                match = re.search(pattern, support.segment.text or "")
                 if match:
                     return match.start()
                 else:
                     continue
 
             if first:
-                msg.content[-1].grounding_metadata.first_offset = (
-                    start_index - support.segment.start_index
-                )  # type: ignore
+                msg.content[-1].grounding_metadata.first_offset = start_index - (support.segment.start_index or 0)
                 first = False
 
             msg.content[-1].grounding_metadata.grounding_supports.append(
                 GroundingSupport(
                     support.grounding_chunk_indices,
-                    {  # type: ignore
-                        "text": support.segment.text,  # type: ignore
+                    {
+                        "text": support.segment.text,
                         "start_index": start_index,
-                        "end_index": start_index + len(support.segment.text),  # type: ignore
+                        "end_index": start_index + len(support.segment.text),
                     },
-                )  # type: ignore
+                )
             )
     update_chat_message(msg)
 
@@ -1439,491 +1330,6 @@ def handle_generation_failure(msg: Message, error: Exception):
 
 # endregion
 
-# region Token Reduction (Summarization/Removal)
-
-
-@utils.retry(
-    exceptions=(
-        ConnectionError,
-        TimeoutError,
-        ssl.SSLEOFError,
-        ssl.SSLError,
-        httplib2.error.ServerNotFoundError,
-        google.auth.exceptions.TransportError,
-        http.client.RemoteDisconnected,
-        urllib3.connection.HTTPSConnection,
-        urllib3.HTTPSConnectionPool,
-    )
-)
-def SummarizeAttachment(AttachmentID: str, MessageID: str):
-    """
-    Summarizes the content of a specific attachment, linking the summary to the original attachment and message.
-
-    Use this for attachments that are no longer actively referenced but might contain valuable background information.
-
-    Args:
-        AttachmentID: The ID of the attachment to summarize
-        MessageID: The ID of the message containing the attachment
-
-    Returns:
-        str: Status message indicating success or failure
-    """
-    try:
-        # Prepare the chat content for summarization
-        chat: list[types.Content] = [
-            types.Content(
-                role="user",
-                parts=[
-                    *chat_history.getMsg(MessageID)
-                    .get_attachment(AttachmentID)
-                    .for_summarizer(),
-                    types.Part.from_text(
-                        text="Summarize the above file attachment while preserving the details and facts"
-                    ),
-                ],
-            ),
-            types.Content(
-                role="model", parts=[types.Part.from_text(text="Attachment summary:\n")]
-            ),
-        ]
-
-        # Generate the summary content
-        response = client.models.generate_content(
-            model=config.SUMMARIZER_AI,
-            contents=chat,  # type: ignore
-            config=types.GenerateContentConfig(
-                system_instruction=prompt.ATTACHMENT_SUMMARIZER_SYSTEM_INSTUNCTION,
-                temperature=0,
-            ),
-        )
-
-        # Update the attachment with the summary
-        msg = chat_history.getMsg(MessageID)
-        file = msg.get_attachment(AttachmentID)
-        file.is_summary = True
-
-        if response.text:
-            file.content = response.text
-            update_chat_message(msg)
-            return f"Successfully summarized attachment: {AttachmentID=}, {MessageID=}"
-        else:
-            return f"Failed to summarize attachment (empty response): {AttachmentID=}, {MessageID=}"
-
-    except Exception as e:
-        return f"Error summarizing attachment: {AttachmentID=}, {MessageID=}. Error: {str(e)}"
-
-
-@utils.retry(
-    exceptions=(
-        ConnectionError,
-        TimeoutError,
-        ssl.SSLEOFError,
-        ssl.SSLError,
-        httplib2.error.ServerNotFoundError,
-        google.auth.exceptions.TransportError,
-        http.client.RemoteDisconnected,
-        urllib3.connection.HTTPSConnection,
-        urllib3.HTTPSConnectionPool,
-    )
-)
-def SummarizeMessage(MessageID: str):
-    """
-    Summarizes the content of a specific message with its attachments.
-
-    Use this for verbose or lengthy messages that contain information that can be condensed
-    without losing critical meaning.
-
-    Args:
-        MessageID: The ID of the message to summarize
-
-    Returns:
-        str: Status message indicating success or failure
-    """
-    try:
-        # Prepare the chat content for summarization
-        chat: list[types.Content] = [
-            *chat_history.getMsg(MessageID).for_summarizer(),
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(
-                        text="Summarize the above message with its attachments while preserving the details and facts"
-                    )
-                ],
-            ),
-            types.Content(
-                role="model",
-                parts=[
-                    types.Part.from_text(text="Message with its attachment summary:\n")
-                ],
-            ),
-        ]
-
-        # Generate the summary content
-        response = client.models.generate_content(
-            model=config.SUMMARIZER_AI,
-            contents=chat,  # type: ignore
-            config=types.GenerateContentConfig(
-                system_instruction=prompt.MESSAGE_SUMMARIZER_SYSTEM_INSTUNCTION,
-                temperature=0,
-            ),
-        )
-
-        # Update the message with the summary
-        msg = chat_history.getMsg(MessageID)
-        msg.is_summary = True
-
-        if response.text:
-            if not msg.content or msg.content[-1].text is None:
-                msg.content.append(Content(text=response.text))
-            else:
-                msg.content[-1].text += response.text
-
-            update_chat_message(msg)
-            return f"Successfully summarized message: {MessageID}"
-        else:
-            return f"Failed to summarize message (empty response): {MessageID}"
-
-    except Exception as e:
-        return f"Error summarizing message: {MessageID}. Error: {str(e)}"
-
-
-@utils.retry(
-    exceptions=(
-        ConnectionError,
-        TimeoutError,
-        ssl.SSLEOFError,
-        ssl.SSLError,
-        httplib2.error.ServerNotFoundError,
-        google.auth.exceptions.TransportError,
-        http.client.RemoteDisconnected,
-        urllib3.connection.HTTPSConnection,
-        urllib3.HTTPSConnectionPool,
-    )
-)
-def SummarizeHistory(StartMessageID: str, EndMessageID: str):
-    """
-    Summarizes a range of messages within StartMessageID & EndMessageID (inclusive).
-
-    Use this for older conversations that are no longer directly relevant but provide useful context.
-
-    Args:
-        StartMessageID: The ID of the first message in the range to summarize
-        EndMessageID: The ID of the last message in the range to summarize
-
-    Returns:
-        str: Status message indicating success or failure
-    """
-    try:
-        # Get messages for summarization
-        messages = []
-        for msg in chat_history.getMsgRange(StartMessageID, EndMessageID):
-            messages.extend(msg.for_summarizer())
-
-        # Prepare the chat content for summarization
-        chat: list[types.Content] = [
-            *messages,
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(
-                        text="Summarize the above messages with their attachments while preserving the details and facts"
-                    )
-                ],
-            ),
-            types.Content(
-                role="model",
-                parts=[
-                    types.Part.from_text(
-                        text="Message & its attachment history summary:\n"
-                    )
-                ],
-            ),
-        ]
-
-        # Generate the summary content
-        response = client.models.generate_content(
-            model=config.SUMMARIZER_AI,
-            contents=chat,  # type: ignore
-            config=types.GenerateContentConfig(
-                system_instruction=prompt.MESSAGE_HISTORY_SUMMARIZER_SYSTEM_INSTUNCTION,
-                temperature=0,
-            ),
-        )
-
-        if response.text:
-            # Replace the range of messages with a summary
-            chat_history.replaceMsgRange(
-                StartMessageID,
-                EndMessageID,
-                Message([Content(text=response.text)], "user"),
-            )
-            return f"Successfully summarized messages from {StartMessageID} to {EndMessageID}"
-        else:
-            return f"Failed to summarize messages (empty response) from {StartMessageID} to {EndMessageID}"
-
-    except Exception as e:
-        return f"Error summarizing message history: {StartMessageID} to {EndMessageID}. Error: {str(e)}"
-
-
-def RemoveAttachment(AttachmentID: str, MessageID: str):
-    """
-    Removes a specific attachment from a message.
-
-    Use this for attachments that are clearly irrelevant to the current conversation or have become obsolete.
-
-    Args:
-        AttachmentID: The ID of the attachment to remove
-        MessageID: The ID of the message containing the attachment
-
-    Returns:
-        str: Status message indicating success
-    """
-    try:
-        msg = chat_history.getMsg(MessageID)
-        msg.delete_attachment(AttachmentID)
-        update_chat_message(msg)
-        return f"Successfully removed attachment: {AttachmentID=}, {MessageID=}"
-    except Exception as e:
-        return (
-            f"Error removing attachment: {AttachmentID=}, {MessageID=}. Error: {str(e)}"
-        )
-
-
-def RemoveFunctionCall(FunctionCallID: str, MessageID: str):
-    """
-    Removes a specific function call from a message.
-
-    Use this for function calls that are no longer relevant.
-
-    Args:
-        FunctionCallID: The ID of the function call to remove
-        MessageID: The ID of the message containing the function call
-
-    Returns:
-        str: Status message indicating success
-    """
-    try:
-        msg = chat_history.getMsg(MessageID)
-        msg.delete_func_call(
-            FunctionCallID
-        )  # Assumes this method exists, corrected from delete_attachment
-        update_chat_message(msg)
-        return f"Successfully removed function call: {FunctionCallID=}, {MessageID=}"
-    except Exception as e:
-        return f"Error removing function call: {FunctionCallID=}, {MessageID=}. Error: {str(e)}"
-
-
-def RemoveFunctionResponse(FunctionCallID: str, MessageID: str):
-    """
-    Removes a specific function response from a message.
-
-    Use this for function responses that are no longer relevant.
-
-    Args:
-        FunctionCallID: The ID of the function response to remove
-        MessageID: The ID of the message containing the function response
-
-    Returns:
-        str: Status message indicating success
-    """
-    try:
-        msg = chat_history.getMsg(MessageID)
-        msg.delete_func_responce(
-            FunctionCallID
-        )  # Assumes this method exists, corrected from delete_attachment
-        update_chat_message(msg)
-        return (
-            f"Successfully removed function response: {FunctionCallID=}, {MessageID=}"
-        )
-    except Exception as e:
-        return f"Error removing function response: {FunctionCallID=}, {MessageID=}. Error: {str(e)}"
-
-
-def RemoveMessage(MessageID: str):
-    """
-    Removes an entire message from the chat history & its attachments.
-
-    Use this sparingly and only for messages that are demonstrably irrelevant and contribute
-    little to the overall context. If user asks AI about something & the current chat is
-    irrelevant to it, then use this function.
-
-    Args:
-        MessageID: The ID of the message to remove
-
-    Returns:
-        str: Status message indicating success
-    """
-    try:
-        chat_history.delete_message(MessageID)
-        return f"Successfully removed message: {MessageID=}"
-    except Exception as e:
-        return f"Error removing message: {MessageID=}. Error: {str(e)}"
-
-
-def RemoveMessageHistory(StartMessageID: str, EndMessageID: str):
-    """
-    Removes a range of messages within and including StartMessageID & EndMessageID.
-
-    Use this for older conversations that are demonstrably irrelevant and contribute
-    little to the overall context.
-
-    Args:
-        StartMessageID: The ID of the first message in the range to remove
-        EndMessageID: The ID of the last message in the range to remove
-
-    Returns:
-        str: Status message indicating success
-    """
-    try:
-        chat_history.delMsgRange(StartMessageID, EndMessageID)
-        return (
-            f"Successfully removed message range: {StartMessageID=} to {EndMessageID=}"
-        )
-    except Exception as e:
-        return f"Error removing message range: {StartMessageID=} to {EndMessageID=}. Error: {str(e)}"
-
-
-@socketio.on("shrink_chat")
-def reduceTokensUsage():
-    """
-    Reduces token usage of the chat history by summarizing or removing content.
-
-    Uses a model to determine which parts of the chat history to summarize or remove
-    to reduce token usage while preserving important information.
-
-    Returns:
-        bool: True on success, False on failure.
-    """
-    # Map function names to their implementations
-    function_map = {
-        "SummarizeAttachment": SummarizeAttachment,
-        "SummarizeMessage": SummarizeMessage,
-        "SummarizeHistory": SummarizeHistory,
-        "RemoveAttachment": RemoveAttachment,
-        "RemoveMessage": RemoveMessage,
-        "RemoveMessageHistory": RemoveMessageHistory,
-        "RemoveFunctionCall": RemoveFunctionCall,
-        "RemoveFunctionResponse": RemoveFunctionResponse,  # Fixed typo in function name
-    }
-
-    # Create initial chat history for token reduction planning
-    chat = chat_history.for_summarizer()
-    chat.append(
-        types.Content(
-            parts=[types.Part(text=prompt.TOKEN_REDUCER_USER_INSTUNCTION)], role="user"
-        )
-    )
-
-    # Retry loop
-    for attempt in range(config.MAX_RETRIES):
-        try:
-            # Main processing loop
-            while True:
-                # Generate plan for token reduction
-                response = client.models.generate_content(
-                    model=config.TOKEN_REDUCER_PLANER,
-                    contents=chat,  # type: ignore
-                    config=types.GenerateContentConfig(
-                        system_instruction=prompt.TOKEN_REDUCER_SYSTEM_INSTUNCTION,
-                        temperature=0,
-                        tools=list(function_map.values()),
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                            disable=True, maximum_remote_calls=None
-                        ),
-                    ),
-                )
-
-                # Process response
-                content = types.Content(role="user", parts=[])
-                execution_occurred = False
-
-                # Handle each part of the response
-                for part in response.candidates[0].content.parts:  # type: ignore
-                    # Handle function calls
-                    if part.function_call:
-                        execution_occurred = True
-                        function_name = part.function_call.name
-                        function = function_map.get(function_name or "")
-
-                        if function and part.function_call.args:
-                            try:
-                                # Execute the function with its arguments
-                                output = function(**part.function_call.args)
-
-                                # Add successful response
-                                content.parts.append(  # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name=function_name,
-                                            response={"output": output},
-                                        )
-                                    )
-                                )
-                            except Exception as e:
-                                # Add error response
-                                error_msg = f"Error executing {function_name}: {str(e)}"
-                                content.parts.append(  # type: ignore
-                                    types.Part(
-                                        function_response=types.FunctionResponse(
-                                            id=part.function_call.id,
-                                            name=function_name,
-                                            response={"error": error_msg},
-                                        )
-                                    )
-                                )
-                                print(error_msg)
-                        else:
-                            # Handle unknown or invalid function
-                            error_msg = f"Unknown or invalid function: {function_name}"
-                            content.parts.append(  # type: ignore
-                                types.Part(
-                                    function_response=types.FunctionResponse(
-                                        id=part.function_call.id,
-                                        name=function_name or "unknown_function",
-                                        response={"error": error_msg},
-                                    )
-                                )
-                            )
-                            print(error_msg)
-
-                    # Handle text responses
-                    if part.text:
-                        execution_occurred = True
-
-                # Update chat with response and function execution results
-                chat = chat_history.for_summarizer()
-                chat.append(response.candidates[0].content)  # type: ignore
-                chat.append(content)  # type: ignore
-
-                # If no execution occurred, we're done
-                if not execution_occurred:
-                    break
-
-            # Successfully completed
-            return True
-
-        except Exception as e:
-            # Handle retry logic
-            error_msg = f"Attempt {attempt + 1} failed: {str(e)}"
-            print(error_msg)
-
-            if attempt < config.MAX_RETRIES - 1:
-                # Calculate backoff time
-                backoff_time = (2**attempt) * config.RETRY_DELAY
-                print(f"Waiting {backoff_time:.2f} seconds before next attempt...")
-                time.sleep(backoff_time)
-            else:
-                print(
-                    f"Max retries ({config.MAX_RETRIES}) reached. Failed to reduce token usage."
-                )
-                return False
-
-    # This line should not be reached if the retry logic is working correctly
-    return False
-
-
 # ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
 files: dict[str, tuple[dict[int, str], bool]] = {}
 
@@ -1934,10 +1340,10 @@ def start_upload_file(id: str):
 
 
 @socketio.on("upload_file_chunck")
-def upload_file_chunck(data: dict[str, str | int]):
-    id: str = data["id"]  # type: ignore
-    chunck: str = data["chunck"]  # type: ignore
-    idx: int = data["idx"]  # type: ignore
+def upload_file_chunck(data: dict):
+    id: str = data["id"]
+    chunck: str = data["chunck"]
+    idx: int = data["idx"]
     files[id][0][idx] = chunck
 
 

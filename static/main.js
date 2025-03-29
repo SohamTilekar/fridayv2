@@ -276,15 +276,7 @@ const uploadFileInChunks = async (base64File, filename, fileId) => {
  * Renders a message in the chat box.  Handles both adding and updating messages.
  */
 function renderMessageContent(msgDiv, msg) {
-  // Clear previous content (important for updates)
-  msgDiv.innerHTML = msg.content.length
-    ? ""
-    : `<div class="thinking-loader">
-         <div class="dot"></div>
-         <div class="dot"></div>
-         <div class="dot"></div>
-     </div>`;
-
+  msgDiv.innerHTML = ""
   // Render each Content item separately
   msg.content.forEach((contentItem) => {
     const contentDiv = document.createElement("div");
@@ -298,15 +290,6 @@ function renderMessageContent(msgDiv, msg) {
         );
       }
       contentDiv.innerHTML = marked.parse(textContent);
-      if (contentItem.processing) {
-        contentDiv.innerHTML += `
-                  <div class="thinking-loader">
-                  <div class="dot"></div>
-                  <div class="dot"></div>
-                  <div class="dot"></div>
-                  </div>
-              `;
-      }
       msgDiv.appendChild(contentDiv);
       // Enhance code blocks/inlines
       enhanceCodeBlocks(contentDiv);
@@ -318,19 +301,18 @@ function renderMessageContent(msgDiv, msg) {
       msgDiv.appendChild(contentDiv);
     } else if (contentItem.function_response) {
       renderFunctionResponse(contentItem.function_response);
-    } else if (contentItem.text) {
-      contentDiv.innerHTML = `
-      <div class="thinking-loader">
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
-      </div>
-      `;
-      msgDiv.appendChild(contentDiv);
     } else if (contentItem.attachment) {
       msgDiv.appendChild(createAttachmentElement(contentItem.attachment));
     }
   });
+  if (msg.processing)
+    msgDiv.innerHTML += `
+              <div class="thinking-loader">
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+              </div>
+    `
 }
 
 /**

@@ -55,9 +55,7 @@ def Imagen(prompt: str, references: Optional[list[str]] = None) -> list["Content
     for candidate in contents.candidates:
         if candidate.content and candidate.content.parts:
             for part in candidate.content.parts:
-                if part.text:
-                    parts.append(global_shares["content"](text=part.text))
-                elif part.inline_data and part.inline_data.data and part.inline_data.mime_type:
+                if part.inline_data and part.inline_data.data and part.inline_data.mime_type:
                     parts.append(
                         global_shares["content"](attachment=global_shares["file"](
                                 base64.b64decode(part.inline_data.data),
@@ -66,4 +64,6 @@ def Imagen(prompt: str, references: Optional[list[str]] = None) -> list["Content
                             )
                         )
                     )
+                # elif part.text:
+                #     parts.append(global_shares["content"](text=part.text))
     return parts

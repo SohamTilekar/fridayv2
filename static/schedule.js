@@ -70,7 +70,6 @@ function scheduleToEvents(schedule) {
     const reminderEvents = [];
     if (reminders) {
         const color = getRandomColor();
-        console.log(reminders)
         reminders.forEach(reminder => {
             if (!reminder.skip_next)
                 reminderEvents.push({

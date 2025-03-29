@@ -28,21 +28,37 @@ from notification import EmailNotification, Content, notifications
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
 
-@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, http.client.RemoteDisconnected), max_retries=float("inf"))
+
+@utils.retry(exceptions=(HttpError, TimeoutError, ssl.SSLEOFError, ssl.SSLError, 
+                         httplib2.error.ServerNotFoundError, google.auth.exceptions.TransportError, 
+                         http.client.RemoteDisconnected), max_retries=float("inf"))
 def get_gmail_service():
     """Authenticates and returns the Gmail API service."""
     creds = None
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+
+    if creds:
+        if creds.valid:
+            print("Token is valid.")
+        elif creds.expired and creds.refresh_token:
+            print("Token expired, attempting to refresh...")
+            try:
+                creds.refresh(Request())
+                print("Token refreshed successfully.")
+            except google.auth.exceptions.RefreshError:
+                print("Token refresh failed. It might be revoked or invalid. Re-authentication required.")
+                creds = None
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
+            print("Token is invalid or revoked. Re-authentication required.")
+            creds = None
+
+    if creds is None:
+        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+        creds = flow.run_local_server(port=0)
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
+        print("New authentication completed and token saved.")
 
     service = build('gmail', 'v1', credentials=creds)
     return service
