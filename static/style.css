@@ -343,28 +343,38 @@ body {
     border-radius: var(--border-radius);
     padding: var(--padding-md);
     background-color: var(--gray-800);
-    /* Darker background for the box */
     color: var(--foreground);
-    /* Text color */
     font-family: 'Roboto', sans-serif;
-    /* Use your main font or a suitable font */
     font-size: 0.9rem;
     border: 1px solid var(--gray-700);
-    /* Subtle border */
     display: flex;
-    /* Flexbox for icon and text alignment */
     align-items: center;
-    /* Vertically center icon and text */
     gap: 0.75rem;
-    /* Spacing between icon and text */
     width: fit-content;
-    /* Fit content width */
     margin-bottom: var(--margin);
-    /* Spacing below each box */
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    /* Subtle shadow for depth */
     word-break: break-word;
-    /* Prevent text overflow */
+}
+
+/* Placeholder text effect */
+.fn-call-box .placeholder-text {
+    display: inline-block;
+    background: linear-gradient(90deg, var(--gray-600) 25%, var(--gray-500) 50%, var(--gray-600) 75%);
+    background-size: 200% 100%;
+    animation: shimmer-text 1.5s infinite linear;
+    color: transparent;
+    background-clip: text;
+    -webkit-background-clip: text;
+}
+
+/* Shimmer animation for text */
+@keyframes shimmer-text {
+    from {
+        background-position: 200% 0;
+    }
+    to {
+        background-position: -200% 0;
+    }
 }
 
 .fn-icon {
@@ -467,11 +477,6 @@ body {
     border-color: var(--danger);
     color: var(--danger);
     /* Red text for error response */
-}
-
-/* Hide the thinking loader when response is present */
-.fn-response .thinking-loader {
-    display: none;
 }
 
 .fn-arrow {

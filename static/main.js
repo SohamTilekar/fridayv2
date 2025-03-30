@@ -923,7 +923,16 @@ function renderFunctionCall(functionCall) {
     displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>`;
     // No response needed inline
   } else if (name === "LinkAttachment" || name === "Imagen") {
-    return "";
+    var placeholder;
+    if (name === "LinkAttachment")
+      placeholder = args.relative_paths;
+    else
+      placeholder = args.prompt;
+    return `
+        <div class="fn-call-box" id="fn-call-${functionId}" data-function-name="${name}" data-function-id="${functionId}">
+            <span class="placeholder-text">${placeholder}</span>
+        </div>
+    `;
   }
   // --- Default Rendering (Fallback) ---
   else {
@@ -992,39 +1001,49 @@ function renderFunctionResponse(functionResponse) {
   const fnResponseSpan = document.querySelector(`#fn-call-${functionId} .fn-response`);
   const fnCallBox = document.getElementById(`fn-call-${functionId}`);
 
-  if (fnResponseSpan && fnCallBox) {
-    const functionName = fnCallBox.dataset.functionName;
-    fnCallBox.classList.remove('fn-call-box-error'); // Remove error class initially
+  const functionName = fnCallBox.dataset.functionName;
 
-    if (isSuccess) {
-      let successText = "";
-      if (functionName === "CreateReminder") {
-        successText = ` of ID \`${response.output}\``;
-        showArrow = false
-      } else if (functionName === "RunCommandBackground") {
-        successText = ` Process ID: \`${response.output}\``;
-      } else if (functionName === "IsProcessRunning") {
-        successText = ` Running: <span class="fn-argv">${response.output}</span>`;
-      } else if (["FetchWebsite", "GetSTDOut", "ReadFile"].includes(functionName)) {
-        // For functions where output might be large, just show success
-        // Click handler will display full content
-        successText = ` Success`;
-      } else if (["CreateTask", "UpdateTask", "CancelReminder", "CreateFile", "RunCommand", "SendSTDIn", "CreateFolder", "DeleteFile", "DeleteFolder", "KillProcess", "WriteFile", "SendControlC"].includes(functionName)) {
-        // For simple actions, show success message
-        successText = ` Success`;
-      } else {
-        // Default success display (e.g., for functions not explicitly handled)
-        const formattedContent = JSON.stringify(response.output, null, 2);
-        successText = `<span><pre class="fn-inline-response-content">${formattedContent}</pre></span>`;
-      }
-      fnResponseSpan.innerHTML = successText ? `${showArrow ? "<span class=\"fn-arrow\">-></span>" : ""}${successText}` : '';
-    } else { // Handle Error
-      fnCallBox.classList.add("fn-call-box-clickable"); // Make error box clickable
-      fnCallBox.classList.add('fn-call-box-error');
-      fnResponseSpan.innerHTML = ''; // Clear response area on error
+  if (isSuccess) {
+    let successText = "";
+    if (functionName === "CreateReminder") {
+      successText = ` of ID \`${response.output}\``;
+      showArrow = false
+    } else if (functionName === "RunCommandBackground") {
+      successText = ` Process ID: \`${response.output}\``;
+    } else if (functionName === "IsProcessRunning") {
+      successText = ` Running: <span class="fn-argv">${response.output}</span>`;
+    } else if (["FetchWebsite", "GetSTDOut", "ReadFile"].includes(functionName)) {
+      // For functions where output might be large, just show success
+      // Click handler will display full content
+      successText = ` Success`;
+    } else if (["CreateTask", "UpdateTask", "CancelReminder", "CreateFile", "RunCommand", "SendSTDIn", "CreateFolder", "DeleteFile", "DeleteFolder", "KillProcess", "WriteFile", "SendControlC"].includes(functionName)) {
+      // For simple actions, show success message
+      successText = ` Success`;
+    } else if (functionName === "LinkAttachment" || functionName === "Imagen") {
+      fnCallBox.classList = []
+      fnCallBox.innerHTML = "";
+      functionResponse.inline_data.forEach(
+        (content) => {
+          if (content.attachment)
+            fnCallBox.appendChild(createAttachmentElement(content.attachment))
+          else if (content.text) {
+            const contentDiv = document.createElement("div");
+            contentDiv.innerHTML = marked.parse(content.text);
+            fnCallBox.appendChild(contentDiv);
+          }
+        }
+      )
+      return;
+    } else {
+      // Default success display (e.g., for functions not explicitly handled)
+      const formattedContent = JSON.stringify(response.output, null, 2);
+      successText = `<span><pre class="fn-inline-response-content">${formattedContent}</pre></span>`;
     }
-  } else {
-    console.error(`Function call element with ID ${functionId} not found for response update.`);
+    fnResponseSpan.innerHTML = successText ? `${showArrow ? "<span class=\"fn-arrow\">-></span>" : ""}${successText}` : '';
+  } else { // Handle Error
+    fnCallBox.classList.add("fn-call-box-clickable"); // Make error box clickable
+    fnCallBox.classList.add('fn-call-box-error');
+    fnResponseSpan.innerHTML = ''; // Clear response area on error
   }
 }
 

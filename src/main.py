@@ -293,16 +293,19 @@ class FunctionResponce:
     id: str = ""
     name: Optional[str] = None
     response: dict[str, Any]
+    inline_data: list["Content"]
 
     def __init__(
         self,
         id: Optional[str] = None,
         name: Optional[str] = None,
         response: Optional[dict[str, Any]] = None,
+        inline_data: Optional[list["Content"]] = None
     ):
         self.id = id if id else str(uuid.uuid4())
         self.name = name
         self.response = response if response else {}
+        self.inline_data = inline_data if inline_data else []
 
     def for_ai(self) -> types.FunctionResponse:
         return types.FunctionResponse(
@@ -310,13 +313,11 @@ class FunctionResponce:
         )
 
     def jsonify(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name, "response": self.response}
+        return {"id": self.id, "name": self.name, "response": self.response, "inline_data": [_.jsonify() for _ in self.inline_data]}
 
     @staticmethod
     def from_jsonify(data: dict[str, Any]) -> "FunctionResponce":
-        return FunctionResponce(
-            data.get("id"), data.get("name", ""), data.get("response")
-        )
+        return FunctionResponce(data.get("id"), data.get("name", ""), data.get("response"), [Content.from_jsonify(_) for _ in data.get("inline_data", [])])
 
 
 class Content:
@@ -342,11 +343,21 @@ class Content:
 
     def for_ai(
         self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
-    ) -> types.Part | tuple[types.Part, types.Part]:
+    ) -> types.Part | tuple[types.Part, types.Part] | list[types.Part]:
         if self.function_call and suport_tools:
             return types.Part(function_call=self.function_call.for_ai())
         elif self.function_response and suport_tools:
-            return types.Part(function_response=self.function_response.for_ai())
+            parts = [types.Part(function_response=self.function_response.for_ai())]
+            for content in self.function_response.inline_data:
+                if content.text:
+                    parts.append(content.for_ai(suport_tools, imagen_selected, msg)) # type: ignore
+                elif content.attachment:
+                    fai = content.for_ai(suport_tools, imagen_selected, msg)
+                    if isinstance(fai, types.Part):
+                        parts.append(fai)
+                    else:
+                        parts.extend(fai)
+            return parts
         elif self.text:
             return types.Part(text=self.text)
         elif self.attachment is not None:
@@ -479,7 +490,7 @@ class Message:
         self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
     ) -> list[types.Content]:
         if self.is_summary:
-            return [types.Content(parts=[content.for_ai(msg) for content in self.content], role=self.role)]
+            return [types.Content(parts=[content.for_ai(suport_tools, imagen_selected, msg) for content in self.content], role=self.role)]
         if msg is None:
             raise ValueError("msg parameter is required.")
 
@@ -494,16 +505,17 @@ class Message:
                     )
                     parts_buffer = []
                 if part := item.for_ai(suport_tools, imagen_selected, msg):
-                    ai_contents.append(types.Content(parts=[part], role="user"))
+                    ai_contents.append(types.Content(parts=part, role="user"))
             elif part := item.for_ai(suport_tools, imagen_selected, msg):
                 if isinstance(part, types.Part):
                     parts_buffer.append(part)
-                elif isinstance(part, tuple):
+                elif isinstance(part, (tuple, list)):
                     parts_buffer.extend(part)
                     ai_contents.append(
                         types.Content(parts=parts_buffer, role=self.role)
                     )
                     parts_buffer = []
+                    
 
         if parts_buffer:
             ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
@@ -552,9 +564,12 @@ class ChatHistory:
     def getImage(self, ID: str) -> types.File:
         for msg in self._chat:
             for content in msg.content:
-                if content.attachment:
-                    if content.attachment.id == ID:
-                        return content.attachment.for_ai(True) # type: ignore
+                if content.attachment and content.attachment.id == ID:
+                    return content.attachment.for_ai(True, Message([], "model")) # type: ignore
+                elif content.function_response and content.function_response.inline_data:
+                    for content in content.function_response.inline_data:
+                        if content.attachment and content.attachment.id == ID:
+                            return content.attachment.for_ai(True, Message([], "model")) # type: ignore
         raise ValueError(f"Image with ID: `{ID}` not found")
 
     def getMsg(self, ID: str) -> Message:
@@ -803,11 +818,23 @@ def generate_content_with_retry(msg: Message) -> Message:
                         function_response=FunctionResponce(
                             id=id,
                             name=func_call.name,
-                            response={"output": "Success"},
+                            response={"output": "Images are Linked Below"},
+                            inline_data=func_response
                         )
                     )
                 )
-                msg.content.extend(func_response)
+                return
+            elif func_call.name == "LinkAttachment":
+                msg.content.append(
+                    Content(
+                        function_response=FunctionResponce(
+                            id=id,
+                            name=func_call.name,
+                            response={"output": "Files are Linked Below"},
+                            inline_data=func_response
+                        )
+                    )
+                )
                 return
 
             # Add successful function response
@@ -820,22 +847,6 @@ def generate_content_with_retry(msg: Message) -> Message:
                     )
                 )
             )
-            if func_call.name == "LinkAttachment" and func_call.args:
-                relative_paths = func_call.args["relative_paths"]
-                for relative_path in relative_paths:
-                    full_path = (
-                        tools.space.space_path / relative_path
-                    )  # Construct the full path
-
-                    mime_type, _ = mimetypes.guess_type(full_path)
-
-                    # Extract the filename from the full path
-                    filename = os.path.basename(full_path)
-
-                    with open(full_path, mode="rb") as f:
-                        content = f.read()
-
-                    msg.content.append(Content(attachment=File(content, mime_type or "", filename)))
 
         except Exception as e:
             traceback.print_exc()
@@ -1132,7 +1143,6 @@ def generate_content_with_retry(msg: Message) -> Message:
         # Main content generation loop
         while True:
             try:
-                print(chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list))
                 start_time = time.time()  # Record start time before request
                 # Generate streaming content
                 response = client.models.generate_content_stream(
