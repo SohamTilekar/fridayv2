@@ -66,28 +66,25 @@ global_shares["take_permision"] = take_permission
 
 class File:
     type: str  # mime types = ""
-    content: bytes | str = b""
+    content: bytes = b""
     filename: str = ""
     # whether the current attachment is the summary
-    is_summary: bool = False
     id: str = ""
     cloud_uri: Optional[types.File] = None  # URI of the file in the cloud
 
     def __init__(
         self,
-        content: bytes | str,
+        content: bytes,
         type: str,
         filename: str,
         cloud_uri: Optional[types.File] = None,
         id: Optional[str] = None,
-        is_summary: bool = False,
     ):
         self.content = content
         self.type = type
         self.filename = filename
         self.id = str(uuid.uuid4()) if id is None else id
         self.cloud_uri = cloud_uri
-        self.is_summary = is_summary
 
     def delete(self):
         if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time) and self.cloud_uri.name:
@@ -110,12 +107,7 @@ class File:
         return expiration_time >= ten_minutes_from_now
 
     def for_ai(self, imagen_selected: bool, msg: Optional["Message"] = None) -> types.Part | tuple[types.Part, types.Part]:
-        if self.is_summary:
-            return types.Part.from_text(
-                text=f"\nFile Name: {self.filename}\nFile Type: {self.type.split('/')[0]}\nFile Summary: {self.content}"
-            )
-
-        elif self.type.startswith("text/") or self.type.startswith(
+        if self.type.startswith("text/") or self.type.startswith(
             ("image/", "video/") or self.type == "application/pdf"
         ):
             # Use cloud URI if available, otherwise upload
@@ -140,7 +132,7 @@ class File:
                     msg.content.append(
                         Content(text=f"{prefix} {self.filename}")
                     )
-                    update_chat_message(msg)
+                    emit_msg_update(msg)
                 try:
                     self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type=self.type))
                     # Check whether the file is ready to be used.
@@ -165,7 +157,7 @@ class File:
                 finally:
                     if msg:
                         msg.content.pop()
-                        update_chat_message(msg)
+                        emit_msg_update(msg)
         raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
 
     def jsonify(self) -> dict:
@@ -174,7 +166,6 @@ class File:
             "filename": self.filename,
             "content": base64.b64encode(self.content).decode("utf-8", errors="ignore"),
             "id": self.id,
-            "is_summary": self.is_summary,
             "cloud_uri": self.cloud_uri.to_json_dict() if self.cloud_uri else None,
         }
 
@@ -191,7 +182,6 @@ class File:
                 else None
             ),
             data.get("id", ""),
-            data.get("is_summary", False),
         )
 
 global_shares["file"] = File
@@ -407,21 +397,47 @@ class Content:
 
 global_shares["content"] = Content
 
+class Chat:
+    name: str
+    id: str
+    parent_id: Optional[str]
+
+    def __init__(self, name: str, id: Optional[str] = None, parent_id: Optional[str] = None):
+        self.name = name
+        self.id = id if id else str(uuid.uuid4())
+        self.parent_id = parent_id
+
+    def jsonify(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "id": self.id,
+            "parent_id": self.parent_id
+        }
+
+    @staticmethod
+    def from_json(data: dict[str, Any]) -> "Chat":
+        return Chat(
+            name=data["name"],
+            id=data["id"],
+            parent_id=data.get("parent_id")
+        )
+
+
 class Message:
     role: Literal["model", "user"]
     content: list[Content]
     thought: str
     time_stamp: datetime.datetime
     id: str
-    is_summary: bool
     processing: bool
+    chat_id: str
 
     def __init__(
         self,
         content: list[Content],
         role: Literal["model", "user"],
+        chat_id: str,
         time_stamp: Optional[datetime.datetime] = None,
-        is_summary: bool = False,
         id: Optional[str] = None,
         thought: str = "",
         processing: bool = False
@@ -430,9 +446,20 @@ class Message:
         self.content = content
         self.role = role
         self.id = str(uuid.uuid4()) if id is None else id
-        self.is_summary = is_summary
         self.thought = thought
         self.processing = processing
+        self.chat_id = chat_id
+
+    def is_member(self, chat: Chat, chats: dict[str, Chat]) -> bool:
+        if self.chat_id == chat.id:
+            return True
+
+        # Check if the message belongs to any child chat
+        for child in chats.values():
+            if child.parent_id == chat.id and self.is_member(child, chats):
+                return True
+
+        return False
 
     def delete(self) -> None:
         for item in self.content:
@@ -489,8 +516,6 @@ class Message:
     def for_ai(
         self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
     ) -> list[types.Content]:
-        if self.is_summary:
-            return [types.Content(parts=[content.for_ai(suport_tools, imagen_selected, msg) for content in self.content], role=self.role)]
         if msg is None:
             raise ValueError("msg parameter is required.")
 
@@ -526,8 +551,8 @@ class Message:
             "role": self.role,
             "content": [item.jsonify() for item in self.content],
             "id": self.id,
+            "chat_id": self.chat_id,
             "time_stamp": self.time_stamp.isoformat(),
-            "is_summary": self.is_summary,
             "thought": self.thought,
             "processing": self.processing
         }
@@ -537,32 +562,47 @@ class Message:
         return Message(
             content=[Content.from_jsonify(item) for item in data.get("content", [])],
             role=data["role"],
+            chat_id=data.get("chat_id", "main"),
             time_stamp=datetime.datetime.fromisoformat(data["time_stamp"]),
-            is_summary=data.get("is_summary", False),
             id=data.get("id", ""),
             thought=data.get("thought", ""),
         )
 
 
 class ChatHistory:
-    _chat: list[Message] = []
+    _messages: list[Message] = []
+    _chats: dict[str, Chat] = {}
+
+    def add_chat(self, chat: Chat):
+        """Adds a new chat definition."""
+        if chat.id in self._chats:
+            print(f"Warning: Chat with ID {chat.id} already exists. Overwriting.")
+        if chat.parent_id and chat.parent_id not in self._chats:
+            raise ValueError(f"Parent chat with ID {chat.parent_id} does not exist.")
+        self._chats[chat.id] = chat
+
+    def get_chat(self, chat_id: str) -> Chat:
+        """Gets chat metadata."""
+        if chat_id not in self._chats:
+            raise ValueError(f"Chat with ID {chat_id} not found.")
+        return self._chats[chat_id]
 
     def append(self, msg: Message):
-        self._chat.append(msg)
+        self._messages.append(msg)
         socketio.emit("add_message", msg.jsonify())
 
     def delete_message(self, msg_id):
-        self._chat = [msg for msg in self._chat if msg.id != msg_id]
-        delete_chat_message(msg_id)
+        self._messages = [msg for msg in self._messages if msg.id != msg_id]
+        emit_msg_del(msg_id)
 
     def __len__(self):
-        return len(self._chat)
+        return len(self._messages)
 
     def __getitem__(self, idx: int):
-        return self._chat[idx]
+        return self._messages[idx]
     
     def getImage(self, ID: str) -> types.File:
-        for msg in self._chat:
+        for msg in self._messages:
             for content in msg.content:
                 if content.attachment and content.attachment.id == ID:
                     return content.attachment.for_ai(True, Message([], "model")) # type: ignore
@@ -573,106 +613,152 @@ class ChatHistory:
         raise ValueError(f"Image with ID: `{ID}` not found")
 
     def getMsg(self, ID: str) -> Message:
-        for msg in self._chat:
+        for msg in self._messages:
             if msg.id == ID:
                 return msg
         raise ValueError(f"Message of ID: `{ID}` not found")
 
     def setMsg(self, ID: str, new_msg: Message):
-        for msg in self._chat:
+        for msg in self._messages:
             if msg.id == ID:
                 msg = new_msg
-                update_chat_message(msg)
+                emit_msg_update(msg)
                 return
         raise ValueError(f"Message of ID: `{ID}` not found")
 
-    def getMsgRange(self, Start_ID: str, End_ID: str) -> Iterator[Message]:
-        idx = 0
-        while idx < len(self._chat):
-            if self._chat[idx].id == Start_ID:
-                while idx < len(self._chat):
-                    if self._chat[idx].id == End_ID:
-                        return self._chat[idx]
-                    else:
-                        yield self._chat[idx]
-                        idx += 1
-                raise ValueError(f"Message of ID: `{End_ID}` not found")
-            idx += 1
-        raise ValueError(f"Message of ID: `{Start_ID}` not found")
+    def trip_after(self, msg_id: str, chat_id: str) -> None:
+        chat = self._chats[chat_id]
+        
+        # Use dictionary lookup for faster index retrieval
+        msg_index = {msg.id: i for i, msg in enumerate(self._messages)}
+        idx = msg_index.get(msg_id, -1)
+        if idx == -1:
+            return  # Message not found, exit early
 
-    def delMsgRange(self, Start_ID: str, End_ID: str) -> None:
-        """Ignore Start_ID msg, delete from Start_ID+1..End_ID"""
-        idx = 0
-        while idx < len(self._chat):
-            if self._chat[idx].id == Start_ID:
-                while idx < len(self._chat):
-                    delete_chat_message(self._chat[idx].id)
-                    del self._chat[idx]
-                    if self._chat[idx].id == End_ID:
-                        return
-                    else:
-                        idx += 1
-                raise ValueError(f"Message of ID: `{End_ID}` not found")
-            idx += 1
-        raise ValueError(f"Message of ID: `{Start_ID}` not found")
+        # Collect messages to delete using a set
+        ids_to_del = {msg.id for msg in self._messages[idx + 1:] if msg.is_member(chat, self._chats)}
+        
+        # Emit deletion events
+        for msg_id in ids_to_del:
+            emit_msg_del(msg_id)
+        
+        # Use filter for in-place removal
+        self._messages = list(filter(lambda msg: msg.id not in ids_to_del, self._messages))
 
-    def replaceMsgRange(self, Start_ID: str, End_ID: str, msg: Message) -> None:
-        idx = 0
-        while idx < len(self._chat):
-            if self._chat[idx].id == Start_ID:
-                self._chat[idx] = msg
-                update_chat_message(msg)
-                idx += 1
-                while idx < len(self._chat):
-                    del self._chat[idx]
-                    delete_chat_message(self._chat[idx].id)
-                    if self._chat[idx].id == End_ID:
-                        return
-                    else:
-                        idx += 1
-                raise ValueError(f"Message of ID: `{End_ID}` not found")
-            idx += 1
-        raise ValueError(f"Message of ID: `{Start_ID}` not found")
-
-    def tripAfter(self, msg_ID: str) -> None:
-        idx: int = 0
-        for i, msg in enumerate(self._chat):
-            if msg.id == msg_ID:
-                idx = i
-                break
-        for i in range(idx + 1, len(self._chat)):
-            delete_chat_message(self._chat[i].id)
-        self._chat = self._chat[: idx + 1]
-
-    def for_ai(self, ai_msg: Message, suport_tools: bool, imagen_selected: bool) -> list[types.Content]:
+    def for_ai(self, ai_msg: Message, suport_tools: bool, imagen_selected: bool, chat_id: str) -> list[types.Content]:
         result: list[types.Content] = []
-        for msg in self._chat:
-            result.extend(msg.for_ai(suport_tools, imagen_selected, ai_msg))
+        for msg in self._messages: 
+            if msg.is_member(self._chats[chat_id], self._chats):
+                result.extend(msg.for_ai(suport_tools, imagen_selected, ai_msg))
         return result
 
-    def jsonify(self) -> list[dict[str, str | Literal["model", "user"] | list]]:
-        return [msg.jsonify() for msg in self._chat]
+    def jsonify(self):
+        data = [msg.jsonify() for msg in self._messages]
+        return {"messages": data, "chats": [_.jsonify() for _ in self._chats.values()]}
 
     def save_to_json(self, filepath: str):
         """Saves the chat history to a JSON file."""
-        data = [msg.jsonify() for msg in self._chat]
         with open(filepath, "w") as f:
-            json.dump(data, f, indent=4)
+            json.dump(self.jsonify(), f, indent=4)
 
     def load_from_json(self, filepath: str):
         """Loads the chat history from a JSON file."""
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
-                self._chat = []
-                for msg_data in data:
+                self._messages = []
+                for msg_data in data.get("messages", ()):
                     msg = Message.from_jsonify(msg_data)
-                    self._chat.append(msg)
+                    self._messages.append(msg)
+                for chat in data.get("chats", ()):
+                    self._chats[chat["id"]] = Chat.from_json(chat)
+                if 'main' not in self._chats.keys():
+                    print("Creating default 'main' chat as it was not found in the loaded data.")
+                    self._chats['main'] = Chat(name="Main Chat", id="main")
         except FileNotFoundError:
             print("Chat history file not found. Starting with an empty chat.")
         except json.JSONDecodeError:
             print("Error decoding chat history. Starting with an empty chat.")
 
+    def _is_descendant(self, potential_child_id: str, potential_parent_id: str) -> bool:
+        """Checks if potential_child_id is a descendant of potential_parent_id."""
+        if not potential_parent_id or potential_child_id == potential_parent_id:
+            return False # Cannot be a descendant of null or itself
+
+        current_id = potential_child_id
+        while current_id:
+            chat = self._chats.get(current_id)
+            if not chat:
+                return False # Should not happen if data is consistent
+            if chat.parent_id == potential_parent_id:
+                return True # Found the potential parent in the ancestry
+            current_id = chat.parent_id # Move up the chain
+        return False # Reached the root without finding the parent
+
+    def update_chat_parent(self, chat_id: str, new_parent_id: Optional[str]) -> bool:
+        """Updates the parent of a chat, preventing circular dependencies."""
+        if chat_id == 'main':
+             print("Error: Cannot change the parent of the 'main' chat.")
+             return False # Prevent moving the main chat
+
+        if chat_id not in self._chats:
+            print(f"Error: Chat with ID {chat_id} not found for parent update.")
+            return False
+
+        if new_parent_id and new_parent_id not in self._chats:
+            print(f"Error: New parent chat with ID {new_parent_id} not found.")
+            return False
+
+        # --- Circular Dependency Check ---
+        if new_parent_id and self._is_descendant(new_parent_id, chat_id):
+             print(f"Error: Cannot move chat '{chat_id}' under its descendant '{new_parent_id}'.")
+             return False
+        # Also check if trying to move to itself
+        if chat_id == new_parent_id:
+             print(f"Error: Cannot move chat '{chat_id}' under itself.")
+             return False
+
+
+        # Update the parent ID
+        chat_to_update = self._chats[chat_id]
+        old_parent_id = chat_to_update.parent_id
+        chat_to_update.parent_id = new_parent_id
+        print(f"Updated parent of chat '{chat_id}' from '{old_parent_id}' to '{new_parent_id}'")
+        return True
+
+    def delete_chat(self, chat_id_to_delete: str) -> bool:
+        """Deletes a chat and reparents its children."""
+        if chat_id_to_delete == 'main':
+            print("Error: Cannot delete the 'main' chat.")
+            return False
+
+        if chat_id_to_delete not in self._chats:
+            print(f"Error: Chat with ID {chat_id_to_delete} not found for deletion.")
+            return False
+
+        chat_to_delete = self._chats[chat_id_to_delete]
+        parent_id_for_children = chat_to_delete.parent_id # Parent to assign to orphaned children
+
+        # Reparent children
+        children_reparented = []
+        # Iterate over a copy of keys because we might modify the dict size implicitly if we delete the chat first
+        for chat_id in list(self._chats.keys()):
+             # Check if the chat exists (might have been deleted in a recursive call if we change strategy later)
+            chat = self._chats.get(chat_id)
+            if chat and chat.parent_id == chat_id_to_delete:
+                chat.parent_id = parent_id_for_children
+                children_reparented.append(chat.id)
+
+        # Delete the chat
+        del self._chats[chat_id_to_delete]
+
+        print(f"Deleted chat '{chat_id_to_delete}'. Reparented children {children_reparented} to parent '{parent_id_for_children}'.")
+
+        # Note: Messages associated with the deleted chat_id remain but won't be
+        # directly reachable unless the user navigates to a parent that includes them.
+        # Consider adding message cleanup later if needed.
+
+        return True
 
 # endregion
 
@@ -682,7 +768,7 @@ chat_history: ChatHistory = ChatHistory()
 
 global_shares["chat_history"] = chat_history
 
-def complete_chat(message: str, files: Optional[list[File]] = None):
+def complete_chat(message: str, chat_id: str, files: Optional[list[File]] = None):
     """
     Appends user message to chat history, gets AI response, and handles grounding metadata.
     """
@@ -691,48 +777,49 @@ def complete_chat(message: str, files: Optional[list[File]] = None):
 
     # Append user message if there's content
     if message or files:
-        append_user_message(message, files)
+        append_user_message(message, chat_id, files)
 
     # Get AI response and update chat history
-    ai_response = get_ai_response()
+    ai_response = get_ai_response(chat_id)
 
     if ai_response:
-        update_chat_message(ai_response)
+        emit_msg_update(ai_response)
 
 
-def append_user_message(message: str, files: list[File]):
+def append_user_message(message: str, chat_id: str, files: list[File]):
     """Appends the user's message and files to the chat history."""
     chat_history.append(
         Message(
             [*(Content(attachment=file) for file in files), Content(message)],
             "user",
+            chat_id,
             datetime.datetime.now(),
         )
     )
 
 
-def get_ai_response() -> Message:
+def get_ai_response(chat_id: str) -> Message:
     """
     Gets the AI's response from the Gemini model, handling retries and token limits.
     """
     # Append a placeholder for the AI reply
-    chat_history.append(Message([], "model"))
+    chat_history.append(Message([], "model", chat_id))
     msg = chat_history[len(chat_history) - 1]
     try:
-        return generate_content_with_retry(msg)
+        return generate_content_with_retry(msg, chat_id)
     except Exception as e:
         handle_generation_failure(msg, e)
         return msg
 
 
-def update_chat_message(msg: Message):
+def emit_msg_update(msg: Message):
     """
     emits the updated message.
     """
     socketio.emit("updated_msg", msg.jsonify())
 
 
-def delete_chat_message(msg_id: str):
+def emit_msg_del(msg_id: str):
     """
     emits the delete message.
     """
@@ -756,7 +843,7 @@ def delete_chat_message(msg_id: str):
         urllib3.HTTPSConnectionPool,
     )
 )
-def generate_content_with_retry(msg: Message) -> Message:
+def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
     """
     Generates content from Gemini, retrying on token limits or other errors.
 
@@ -800,7 +887,7 @@ def generate_content_with_retry(msg: Message) -> Message:
             )
         )
         id = msg.content[-1].function_call.id
-        update_chat_message(msg)
+        emit_msg_update(msg)
 
         try:
             # Validate function name
@@ -862,7 +949,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                 )
             )
             print(error_msg)
-        update_chat_message(msg)
+        emit_msg_update(msg)
 
     @utils.retry(
         exceptions=(
@@ -888,7 +975,7 @@ def generate_content_with_retry(msg: Message) -> Message:
         Raises:
             Exception: If selection fails after multiple attempts
         """
-        chat = chat_history.for_ai(msg, True, False)
+        chat = chat_history.for_ai(msg, True, False, chat_id)
         global model
         allowed_function_names: Optional[list[str]] = None
         # Case 1: Both model and tools are already selected
@@ -931,8 +1018,8 @@ def generate_content_with_retry(msg: Message) -> Message:
                     types.Content(
                         parts=[
                             types.Part(
-                                text=f"Select which tools to use to reply to the user message. "
-                                f"Important: Don't use `Search` tool as it's not supported by the current model."
+                                text="Select which tools to use to reply to the user message. "
+                                "Important: Don't use `Search` tool as it's not supported by the current model."
                             )
                         ],
                         role="user",
@@ -1135,7 +1222,7 @@ def generate_content_with_retry(msg: Message) -> Message:
     # Main execution flow
     try:
         msg.processing = True
-        update_chat_message(msg)
+        emit_msg_update(msg)
         # Get model and tools
         selected_model, suports_tools, selected_tools_list = get_model_and_tools()
         print(f"Using model: {selected_model} with tools: {selected_tools_list}")
@@ -1147,7 +1234,7 @@ def generate_content_with_retry(msg: Message) -> Message:
                 # Generate streaming content
                 response = client.models.generate_content_stream(
                     model=selected_model,
-                    contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list),
+                    contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list, chat_id),
                     config=types.GenerateContentConfig(
                         system_instruction=f"""{prompt.SYSTEM_INSTUNCTION}
 {tools.get_reminders() + lschedule.get_todo_list_string() if tools.ReminderTool in selected_tools_list else ""}
@@ -1181,7 +1268,7 @@ def generate_content_with_retry(msg: Message) -> Message:
 
                     # Process additional metadata
                     process_grounding_metadata(msg, content)
-                    update_chat_message(msg)
+                    emit_msg_update(msg)
 
                 # sleep for some time if needed
                 end_time = time.time()  # Record end time after response processing
@@ -1280,7 +1367,7 @@ def process_grounding_metadata(msg: Message, content: types.GenerateContentRespo
             and metadata.web_search_queries
         ):
             process_grounding_supports(msg, metadata)
-    update_chat_message(msg)
+    emit_msg_update(msg)
 
 
 def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata):
@@ -1321,7 +1408,7 @@ def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata):
                     },
                 )
             )
-    update_chat_message(msg)
+    emit_msg_update(msg)
 
 
 def handle_generation_failure(msg: Message, error: Exception):
@@ -1335,7 +1422,7 @@ def handle_generation_failure(msg: Message, error: Exception):
         msg.content.append(Content(text=error_message))
     else:
         msg.content[-1].text = error_message
-    update_chat_message(msg)
+    emit_msg_update(msg)
 
 
 # endregion
@@ -1423,20 +1510,20 @@ def handle_send_message(data):
         )
         del files[id]
 
-    complete_chat(message, file_attachments)
+    complete_chat(message, data.get("chat_id", "main"), file_attachments)
 
 
 @socketio.on("retry_msg")
-def handle_retry_message(msg_id: str):
+def handle_retry_message(data: dict[str, str]):
     """
     Handles the retry message event.
     Removes any message after the user message and generates the content.
     """
     try:
-        chat_history.tripAfter(msg_id)
-        ai_response = get_ai_response()
+        chat_history.trip_after(data["msg_id"], data["chat_id"])
+        ai_response = get_ai_response(data["chat_id"])
         if ai_response:
-            update_chat_message(ai_response)
+            emit_msg_update(ai_response)
     except ValueError as e:
         print(f"Error retrying message: {e}")
 
@@ -1470,6 +1557,81 @@ def get_model_compatibility() -> dict:
         "searchGroundingSupportedModels": config.SearchGroundingSuportedModels,
     }
 
+@socketio.on("create_chat")
+def handle_create_chat(data):
+    """Handles request to create a new chat branch."""
+    new_name = data.get("name")
+    parent_id = data.get("parent_id")
+
+    if not new_name:
+        print("Error: Cannot create chat without a name.")
+        return
+
+    if parent_id and parent_id not in chat_history._chats:
+         print(f"Error: Cannot create chat. Parent chat ID '{parent_id}' not found.")
+         return
+
+    try:
+        new_chat = Chat(name=new_name, parent_id=parent_id)
+        chat_history.add_chat(new_chat)
+        print(f"Created new chat: ID={new_chat.id}, Name='{new_name}', Parent={parent_id}")
+        socketio.emit("chat_update", chat_history.jsonify())
+        chat_history.save_to_json(os.path.join(config.AI_DIR, "chat_history.json"))
+    except Exception as e:
+        print(f"Error creating chat: {e}")
+        traceback.print_exc()
+
+@socketio.on("update_chat_parent")
+def handle_update_chat_parent(data):
+    """Handles request to update a chat's parent."""
+    chat_id = data.get("chat_id")
+    new_parent_id = data.get("new_parent_id") # This can be None/null
+
+    if not chat_id:
+        print("Error: chat_id missing in update_chat_parent request.")
+        return
+
+    try:
+        success = chat_history.update_chat_parent(chat_id, new_parent_id)
+        if success:
+            # Save the changes
+            chat_history.save_to_json(os.path.join(config.AI_DIR, "chat_history.json"))
+            # Broadcast the entire updated history structure
+            socketio.emit("chat_update", chat_history.jsonify())
+        else:
+            # Optionally send an error back or just rely on server logs
+             print(f"Failed to update parent for chat {chat_id}.")
+            # Re-emit original state if needed? Less ideal, client should ideally prevent bad drops.
+    except Exception as e:
+        print(f"Error updating chat parent: {e}")
+        traceback.print_exc()
+
+@socketio.on("delete_chat")
+def handle_delete_chat(data):
+    """Handles request to delete a chat."""
+    chat_id = data.get("chat_id")
+
+    if not chat_id:
+        print("Error: chat_id missing in delete_chat request.")
+        return
+
+    if chat_id == 'main':
+         print("Attempted to delete 'main' chat from client. Denied.")
+         return
+
+    try:
+        success = chat_history.delete_chat(chat_id)
+        if success:
+            # Save the changes
+            chat_history.save_to_json(os.path.join(config.AI_DIR, "chat_history.json"))
+            # Broadcast the entire updated history structure
+            socketio.emit("chat_update", chat_history.jsonify())
+        else:
+            print(f"Failed to delete chat {chat_id}.")
+            # Optionally re-emit current state if delete failed unexpectedly
+    except Exception as e:
+        print(f"Error deleting chat: {e}")
+        traceback.print_exc()
 
 @socketio.on("get_chat_history")
 def handle_get_chat_history():

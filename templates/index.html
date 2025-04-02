@@ -57,7 +57,7 @@
                         </div>
                         <button type="button" class="toggle-button" id="autoselect-tool"
                             data-state="unselected">Auto</button>
-                            <button type="button" class="toggle-button" id="google-search-tool"
+                        <button type="button" class="toggle-button" id="google-search-tool"
                             data-state="unselected">SearchGrounding</button>
                         <button type="button" class="toggle-button" id="reminder-tool"
                             data-state="unselected">ScheduleTool</button>
@@ -78,6 +78,12 @@
                             aria-selected="true">Content</button>
                     </li>
                     <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane"
+                            type="button" role="tab" aria-controls="history-pane" aria-selected="false">
+                            History
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link" id="notification-tab" data-bs-toggle="tab"
                             data-bs-target="#notification-pane" type="button" role="tab"
                             aria-controls="notification-pane" aria-selected="false">
@@ -95,6 +101,12 @@
                     <div class="tab-pane fade show active" id="content-pane">
                         <div id="attachment-display-area" class="p-3">
                             <!-- Attachment content will be rendered here -->
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="history-pane" role="tabpanel" aria-labelledby="history-tab"
+                        tabindex="0">
+                        <div class="p-3" id="chat-history-list">
+                            <!-- Chat history list will be rendered here -->
                         </div>
                     </div>
                     <div class="tab-pane fade" id="notification-pane" role="tabpanel" aria-labelledby="notification-tab"

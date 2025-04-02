@@ -4,6 +4,10 @@
 let fileContents = []; // Global variable to store file information (name and content)
 let fileId = null; // Unique ID for the video being uploaded
 const CHUNK_SIZE = 512 * 1024; // 0.5MB chunks
+let messages = [];
+let chats = {};
+let current_chat_id = "main"
+let sortableInstances = [];
 // ==========================================================================
 // --- Helper Functions ---
 // ==========================================================================
@@ -13,7 +17,7 @@ const CHUNK_SIZE = 512 * 1024; // 0.5MB chunks
  */
 function createButton(className, innerHTML) {
   const button = document.createElement("button");
-  button.classList.add(className);
+  button.classList.add(...className.split(' '));
   button.innerHTML = innerHTML;
   return button;
 }
@@ -268,6 +272,359 @@ const uploadFileInChunks = async (base64File, filename, fileId) => {
 // --- UI Management ---
 // ==========================================================================
 
+
+// ==========================================================================
+// --- Chat History Hierarchy Rendering & Interaction ---
+// ==========================================================================
+
+/**
+ * Destroys existing SortableJS instances.
+ */
+function destroySortableInstances() {
+  sortableInstances.forEach(instance => instance.destroy());
+  sortableInstances = []; // Clear the array
+}
+
+/**
+ * Initializes SortableJS on a specific UL element.
+ * @param {HTMLUListElement} ulElement - The UL element to initialize SortableJS on.
+ * @param {object} allChatsMap - The map of all chats for validation.
+ */
+function initializeSortableForElement(ulElement, allChatsMap) {
+  const instance = new Sortable(ulElement, {
+      group: 'shared-chats', // Crucial: Same group name for all lists
+      animation: 150,
+      handle: '.chat-item-name', // Use the name span as the drag handle
+      filter: '.no-drag', // Class to prevent dragging 'main'
+      preventOnFilter: true,
+      fallbackOnBody: true, // Helps with potential clipping issues
+      swapThreshold: 0.65, // Threshold for swapping elements
+
+      onEnd: function (evt) {
+          const itemEl = evt.item; // The dragged list item (LI)
+          const targetList = evt.to; // The list (UL) where the item was dropped
+          const sourceList = evt.from; // The list (UL) where the item came from
+
+          const chatId = itemEl.dataset.chatId;
+
+          // Determine the new parent ID. If dropped in root, parent is null.
+          // Otherwise, find the parent LI of the target UL.
+          let newParentLi = targetList.closest('li.chat-tree-item');
+          let newParentId = newParentLi ? newParentLi.dataset.chatId : null;
+
+          // --- Validation ---
+          if (chatId === 'main') {
+              console.warn("Tried to move the 'main' chat. Reverting.");
+              renderChatHistoryList(chats); // Re-render to fix visual state
+              return;
+          }
+          if (chatId === newParentId) {
+              console.warn("Cannot drop a chat onto itself. Reverting.");
+              renderChatHistoryList(chats);
+              return;
+          }
+          // Check if dropping onto a descendant
+          if (isDescendant(newParentId, chatId, allChatsMap)) {
+              console.warn(`Cannot drop chat ${chatId} onto its descendant ${newParentId}. Reverting.`);
+              renderChatHistoryList(chats);
+              return;
+          }
+
+          // Get the original parent ID *before* the drop from the chats map
+          const originalParentId = chats[chatId]?.parent_id || null;
+
+          // If the parent hasn't actually changed, do nothing
+          // (SortableJS might fire onEnd even if dropped back in the same place)
+          if (originalParentId === newParentId && sourceList === targetList) {
+              // Also check if the index changed if needed, but for parent change, this is enough
+              console.debug("Item dropped in the same list with the same parent. No update needed.");
+              return;
+          }
+
+          console.log(`Chat ${chatId} moved. Target Parent ID: ${newParentId}`);
+
+          // Send update to backend
+          socket.emit("update_chat_parent", {
+              chat_id: chatId,
+              new_parent_id: newParentId
+          });
+          // Important: Don't update the UI here directly. Wait for the 'chat_update'
+          // event from the server which confirms the change and re-renders the whole list.
+          // This ensures the UI reflects the actual state after backend validation/processing.
+      },
+  });
+  sortableInstances.push(instance); // Store the instance
+}
+
+
+/**
+ * Renders the entire chat history list in the history tab.
+ * (No changes needed here, it already calls the modified renderSingleChatNode
+ * and initializes SortableJS correctly)
+ */
+function renderChatHistoryList(chatsMap) {
+  const historyListContainer = document.getElementById('chat-history-list');
+  historyListContainer.innerHTML = '';
+  destroySortableInstances();
+
+  const rootUl = document.createElement('ul');
+  rootUl.classList.add('chat-tree-root');
+  historyListContainer.appendChild(rootUl);
+
+  const mainChat = chatsMap['main'];
+  if (mainChat) {
+      renderSingleChatNode(mainChat, rootUl, 0, chatsMap, true);
+  }
+
+  const rootChats = Object.values(chatsMap).filter(chat =>
+      chat.id !== 'main' && (!chat.parent_id || !chatsMap[chat.parent_id])
+  );
+  rootChats.sort((a, b) => a.name.localeCompare(b.name));
+  rootChats.forEach(chat => {
+      renderSingleChatNode(chat, rootUl, 0, chatsMap, false);
+  });
+
+  const allUlElements = historyListContainer.querySelectorAll('ul');
+  allUlElements.forEach(ul => {
+      // Ensure ULs always have a minimum height to be better drop targets,
+      // especially when empty. Adjust the value as needed.
+      ul.style.minHeight = '10px'; // Small min-height
+      initializeSortableForElement(ul, chatsMap);
+  });
+
+  historyListContainer.removeEventListener('dblclick', handleHistoryDoubleClick);
+  historyListContainer.addEventListener('dblclick', handleHistoryDoubleClick);
+
+  const activeItem = historyListContainer.querySelector('.active-chat > .chat-item-content');
+  if (activeItem) {
+      activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+// Event handler for double-click delegation (no changes needed)
+function handleHistoryDoubleClick(event) {
+   const targetLi = event.target.closest('li.chat-tree-item');
+   if (targetLi && targetLi.dataset.chatId) {
+       switchChat(targetLi.dataset.chatId);
+   }
+}
+
+
+/**
+* Renders a single chat node and its descendants recursively.
+* Ensures a UL is always present for children, even if empty.
+* Adds a delete button.
+* @param {object} chat - The chat object to render.
+* @param {HTMLUListElement} parentUl - The UL element to append this node to.
+* @param {number} level - The current indentation level.
+* @param {object} allChats - The flat object of all chats { id: chat }.
+* @param {boolean} isMain - Flag to indicate if this is the 'main' chat node.
+*/
+function renderSingleChatNode(chat, parentUl, level, allChats, isMain = false) {
+  const li = document.createElement('li');
+  li.dataset.chatId = chat.id;
+  li.classList.add('chat-tree-item');
+  if (chat.id === current_chat_id) {
+      li.classList.add('active-chat');
+  }
+  if (isMain) {
+      li.classList.add('no-drag'); // Prevent dragging/deleting 'main' chat
+  }
+
+  const itemContent = document.createElement('div');
+  itemContent.classList.add('chat-item-content');
+  itemContent.style.paddingLeft = `${level * 1.5}rem`;
+
+  const chatNameSpan = document.createElement('span');
+  chatNameSpan.textContent = chat.name || `Chat ${chat.id.substring(0, 6)}...`;
+  chatNameSpan.classList.add('chat-item-name');
+  chatNameSpan.title = `ID: ${chat.id}\nParent: ${chat.parent_id || 'None'}`;
+
+  // --- Action Buttons ---
+  const buttonGroup = document.createElement('div');
+  buttonGroup.classList.add('chat-item-actions');
+
+  // Branch Button
+  const branchButton = createButton('branch-chat-btn btn btn-sm btn-outline-info', '<i class="bi bi-diagram-2"></i>');
+  branchButton.title = "Create a new branch from here";
+  branchButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      branchFromChat(chat.id);
+  });
+  buttonGroup.appendChild(branchButton);
+
+  // Delete Button (only if not 'main')
+  if (!isMain) {
+      const deleteButton = createButton('delete-chat-btn btn btn-sm btn-outline-danger', '<i class="bi bi-trash3"></i>');
+      deleteButton.title = "Delete this chat";
+      deleteButton.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteChat(chat.id, chat.name);
+      });
+      buttonGroup.appendChild(deleteButton);
+  }
+
+
+  itemContent.appendChild(chatNameSpan);
+  itemContent.appendChild(buttonGroup);
+  li.appendChild(itemContent);
+
+  // --- Render Children ---
+  // !! Always create the UL for children !!
+  const nestedUl = document.createElement('ul');
+  nestedUl.classList.add('chat-tree-level', `level-${level + 1}`);
+  // Add the UL to the LI *before* populating it
+  li.appendChild(nestedUl);
+
+  // Find and render actual children into the created UL
+  const children = Object.values(allChats).filter(c => c.parent_id === chat.id);
+  if (children.length > 0) {
+      children.sort((a, b) => a.name.localeCompare(b.name));
+      children.forEach(child => renderSingleChatNode(child, nestedUl, level + 1, allChats));
+  }
+  // If no children, the empty UL remains, acting as a drop target
+
+  parentUl.appendChild(li);
+}
+
+/**
+ * Prompts for confirmation and sends delete request.
+ * @param {string} chatId - ID of the chat to delete.
+ * @param {string} chatName - Name of the chat for the prompt.
+ */
+function deleteChat(chatId, chatName) {
+  const confirmation = confirm(`Are you sure you want to delete the chat "${chatName || chatId}"?\n\nChildren of this chat will be moved to its parent.\nThis action cannot be undone.`);
+  if (confirmation) {
+      console.log(`Requesting deletion of chat: ${chatId}`);
+      socket.emit("delete_chat", { chat_id: chatId });
+      // UI update will happen via 'chat_update' broadcast
+  }
+}
+
+/** Helper function to check for circular dependencies before dropping */
+function isDescendant(childId, potentialParentId, allChatsMap) {
+  if (!potentialParentId) return false; // Cannot be descendant of root
+  if (childId === potentialParentId) return false; // Cannot be descendant of self
+
+  let currentId = childId;
+  while (currentId) {
+      const chat = allChatsMap[currentId];
+      if (!chat) return false; // Should not happen with consistent data
+      if (chat.parent_id === potentialParentId) {
+          return true; // Found potentialParent in the ancestry
+      }
+      currentId = chat.parent_id; // Move up
+  }
+  return false; // Reached root without finding
+}
+
+/**
+* Switches the current chat view. (No changes needed here, just ensure it's called)
+* @param {string} chatId - The ID of the chat to switch to.
+*/
+function switchChat(chatId) {
+  if (current_chat_id === chatId) return;
+
+  console.log(`Switching to chat: ${chatId}`);
+  const oldChatId = current_chat_id;
+  current_chat_id = chatId;
+  localStorage.setItem('current_chat_id', current_chat_id); // Save selection
+
+  // Update visual selection in the history list efficiently
+  const historyListContainer = document.getElementById('chat-history-list');
+  const oldActive = historyListContainer.querySelector(`li[data-chat-id="${oldChatId}"]`);
+  const newActive = historyListContainer.querySelector(`li[data-chat-id="${current_chat_id}"]`);
+  if (oldActive) oldActive.classList.remove('active-chat');
+  if (newActive) newActive.classList.add('active-chat');
+
+
+  // Re-render the main chat box
+  updateChatDisplay(messages);
+  // Scroll chat box to bottom after switching (or maybe top?)
+  const chatBox = document.getElementById('chat-box');
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+/**
+ * Builds the hierarchical list of chats recursively.
+ * @param {string | null} parentId - The ID of the parent chat (null for root).
+ * @param {object} allChats - The flat object of all chats { id: chat }.
+ * @param {number} level - The current indentation level.
+ * @returns {HTMLUListElement} The generated UL element for this level.
+ */
+function buildChatTree(parentId, allChats, level = 0) {
+  const ul = document.createElement('ul');
+  ul.classList.add('chat-tree-level', `level-${level}`);
+  if (level === 0) ul.classList.add('chat-tree-root');
+
+  // Find children of the current parentId
+  const children = Object.values(allChats).filter(chat => chat.parent_id === parentId);
+
+  // Sort children alphabetically by name (optional)
+  children.sort((a, b) => a.name.localeCompare(b.name));
+
+  children.forEach(chat => {
+    const li = document.createElement('li');
+    li.dataset.chatId = chat.id;
+    li.classList.add('chat-tree-item');
+    if (chat.id === current_chat_id) {
+      li.classList.add('active-chat'); // Mark the selected chat
+    }
+
+    const itemContent = document.createElement('div');
+    itemContent.classList.add('chat-item-content');
+    itemContent.style.paddingLeft = `${level * 1.5}rem`; // Indentation
+
+    const chatNameSpan = document.createElement('span');
+    chatNameSpan.textContent = chat.name || `Chat ${chat.id.substring(0, 6)}...`;
+    chatNameSpan.classList.add('chat-item-name');
+    chatNameSpan.title = `ID: ${chat.id}\nParent: ${chat.parent_id || 'None'}`; // Tooltip for info
+
+    // --- Select Chat Button ---
+    const selectButton = createButton('select-chat-btn btn btn-sm btn-outline-secondary ms-2', '<i class="bi bi-arrow-right-circle"></i>');
+    selectButton.title = "Switch to this chat";
+    selectButton.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent li click event if needed
+      switchChat(chat.id);
+    });
+
+    // --- Branch Chat Button ---
+    const branchButton = createButton('branch-chat-btn btn btn-sm btn-outline-info ms-1', '<i class="bi bi-diagram-2"></i>');
+    branchButton.title = "Create a new branch from here";
+    branchButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      branchFromChat(chat.id);
+    });
+
+    itemContent.appendChild(chatNameSpan);
+    itemContent.appendChild(selectButton);
+    itemContent.appendChild(branchButton);
+    li.appendChild(itemContent);
+
+    // Recursively build the tree for children of this chat
+    const nestedUl = buildChatTree(chat.id, allChats, level + 1);
+    if (nestedUl.hasChildNodes()) {
+      li.appendChild(nestedUl); // Append children list only if it has items
+    }
+
+    ul.appendChild(li);
+  });
+
+  return ul;
+}
+
+/**
+* Prompts the user and initiates creating a new chat branch.
+* @param {string} parentId - The ID of the chat to branch from.
+*/
+function branchFromChat(parentId) {
+  const newName = prompt(`Enter a name for the new chat branch from "${chats[parentId]?.name || parentId}":`);
+  if (newName && newName.trim() !== "") {
+    socket.emit("create_chat", { name: newName.trim(), parent_id: parentId });
+  } else if (newName !== null) { // User entered empty string or only whitespace
+    alert("Chat name cannot be empty.");
+  }
+}
+
 // --------------------------------------------------------------------------
 // --- Message Display ---
 // --------------------------------------------------------------------------
@@ -362,21 +719,38 @@ function createMessageControls(msg) {
  * Retries sending a user message.
  */
 const retryMessage = (msg) => {
-  // Re-send the message content to the server
-  socket.emit("retry_msg", msg.id);
+  // Re-send the message content to the server, specifying the original message ID
+  // *and* the chat it belongs to (which might be different from current_chat_id if user switched)
+  socket.emit("retry_msg", { "msg_id": msg.id, "chat_id": msg.chat_id }); // Send the message's original chat_id
 
-  // Optionally, provide visual feedback to the user
+  // Optionally, provide visual feedback to the user (remains unchanged)
   const msgDiv = document.getElementById(msg.id);
   if (msgDiv) {
     msgDiv.classList.add("message-retrying");
     setTimeout(() => {
       msgDiv.classList.remove("message-retrying");
     }, 2000); // Remove class after 2 seconds
+    // The backend will handle deleting subsequent messages in that specific branch (msg.chat_id)
   }
 };
 
 const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
+  // *** ADD FILTERING LOGIC HERE ***
+  if (!isMemberMsg(msg, chats[current_chat_id])) {
+    console.debug(`Skipping add message ${msg.id} (role: ${msg.role}) - not in current branch ${current_chat_id}`);
+    return; // Don't add if not in the current branch
+  }
+  console.debug(`Adding message ${msg.id} (role: ${msg.role}) to branch ${current_chat_id}`);
+
+
   const chatBox = document.getElementById("chat-box");
+  // Check if message already exists (e.g., due to race condition or retry)
+  if (document.getElementById(msg.id)) {
+    console.warn(`Message ${msg.id} already exists in chat box. Updating instead.`);
+    updateMessageInChatBox(msg);
+    return;
+  }
+
   const msgDiv = document.createElement("div");
   msgDiv.classList.add("message", msg.role === "user" ? "user-msg" : "ai-msg");
   msgDiv.id = msg.id;
@@ -396,20 +770,66 @@ const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
 });
 
 const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
-  const msgDiv = document.getElementById(msg.id);
-  if (!msgDiv) return;
-
-  renderMessageContent(msgDiv, msg); // Re-render the message content
-
-  // Replace existing controls with updated ones
-  const existingControls = msgDiv.querySelector(
-    ".copy-msg-btn, .delete-msg-btn, .timestamp",
-  );
-  if (existingControls) {
-    msgDiv.removeChild(existingControls.parentNode); // Remove the parent div
+  // *** ADD FILTERING LOGIC HERE ***
+  if (!isMemberMsg(msg, chats[current_chat_id])) {
+    // If the message being updated is no longer relevant to the current view,
+    // maybe just remove it? Or ignore the update? Let's ignore for now.
+    console.debug(`Skipping update for message ${msg.id} - not in current branch ${current_chat_id}`);
+    return;
   }
-  const controlsDiv = createMessageControls(msg); // Create the controls
-  msgDiv.appendChild(controlsDiv);
+  console.debug(`Updating message ${msg.id} in branch ${current_chat_id}`);
+
+  const msgDiv = document.getElementById(msg.id);
+  if (!msgDiv) {
+    console.warn(`Tried to update message ${msg.id} but it wasn't found in the DOM. Adding it instead.`);
+    // Maybe it wasn't added initially due to branch filtering, add it now if relevant
+    addMessageToChatBox(msg);
+    return;
+  }
+
+  // Store the updated message data
+  msgDiv.dataset.msg = JSON.stringify(msg);
+
+  // Find the existing controls div to replace later
+  const existingControlsDiv = msgDiv.querySelector(".controls");
+
+  // Clear only the content *before* the controls div
+  while (msgDiv.firstChild && !msgDiv.firstChild.classList?.contains("controls")) {
+    msgDiv.removeChild(msgDiv.firstChild);
+  }
+
+  // Render the new message content before the controls
+  renderMessageContent(msgDiv, msg);
+
+  // Create and append/replace controls
+  const newControlsDiv = createMessageControls(msg);
+  if (existingControlsDiv) {
+    msgDiv.replaceChild(newControlsDiv, existingControlsDiv);
+  } else {
+    // Append controls if they didn't exist for some reason
+    msgDiv.appendChild(newControlsDiv);
+  }
+});
+
+
+/**
+* Updates the main chat display, filtering messages based on the current chat branch.
+*/
+const updateChatDisplay = handleChatBoxUpdate((messagesToDisplay) => {
+  const chatBox = document.getElementById("chat-box");
+  chatBox.innerHTML = ""; // Clear the chat box first
+
+  console.log(`Updating chat display for branch: ${current_chat_id}`);
+
+  // Filter messages based on the current chat branch
+  const filteredMessages = messagesToDisplay.filter(msg =>
+    isMemberMsg(msg, chats[current_chat_id])
+  );
+
+  // Render filtered messages from bottom to top for correct order
+  for (let i = filteredMessages.length - 1; i >= 0; i--) {
+    addMessageToChatBox(filteredMessages[i], true); // Add to the top
+  }
 });
 
 /**
@@ -419,19 +839,6 @@ const deleteMessage = handleChatBoxUpdate((messageId) => {
   document.getElementById(messageId).remove();
   socket.emit("delete_message", { message_id: messageId });
   return;
-});
-
-/**
- * Updates the entire chat display with the given history.
- */
-const updateChatDisplay = handleChatBoxUpdate((history) => {
-  const chatBox = document.getElementById("chat-box");
-  chatBox.innerHTML = "";
-  // Render messages from bottom to top
-  for (let i = history.length - 1; i >= 0; i--) {
-    addMessageToChatBox(history[i], true); // Append at the top
-  }
-  chatBox.scrollTop = chatBox.scrollHeight;
 });
 
 // --------------------------------------------------------------------------
@@ -1425,8 +1832,21 @@ function displayFileNames() {
 }
 
 // --------------------------------------------------------------------------
-// --- Textarea Helper ---
+// --- Helper ---
 // --------------------------------------------------------------------------
+
+function isMemberMsg(msg, chat) {
+  if (msg.chat_id == chat.id) return true;
+
+  // Check if any child chat contains the message
+  for (const child of Object.values(chats)) {
+    if (child.parent_id == chat.id && isMemberMsg(msg, child)) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /**
  * Inserts a newline character at the cursor position in the textarea.
@@ -1846,27 +2266,63 @@ window.addEventListener('resize', setScrollableAreaMaxHeight);
  */
 const sendMessage = async () => {
   const input = document.getElementById("message-input");
-  const message = input.value;
+  const message = input.value.trim(); // Trim whitespace
 
-  const filesData = [];
-
-  for (let i = 0; i < fileContents.length; i++) {
-    const fileData = fileContents[i];
-    fileId = generateUUID();
-    await uploadFileInChunks(fileData.content, fileData.name, fileId);
-    filesData.push({
-      filename: fileData.name,
-      type: fileData.type,
-      id: fileId,
-    });
+  // Don't send empty messages unless files are attached
+  if (!message && fileContents.length === 0) {
+    console.log("Empty message and no files. Not sending.");
+    return;
   }
 
-  input.value = "";
-  fileContents = [];
-  displayFileNames();
-  updateTextareaRows();
 
-  socket.emit("send_message", { message: message, files: filesData });
+  const filesData = [];
+  // Show some indicator that files are uploading
+  const sendButton = document.getElementById('send-button');
+  const originalButtonContent = sendButton.innerHTML;
+  if (fileContents.length > 0) {
+    sendButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Uploading...';
+    sendButton.disabled = true;
+  }
+
+  try {
+    for (let i = 0; i < fileContents.length; i++) {
+      const fileData = fileContents[i];
+      fileId = generateUUID(); // Generate a unique ID for this file upload session
+      await uploadFileInChunks(fileData.content, fileData.name, fileId);
+      filesData.push({
+        filename: fileData.name,
+        type: fileData.type,
+        id: fileId, // Send the generated UUID
+      });
+    }
+
+    // Clear input and file display *after* successful upload/processing
+    input.value = "";
+    fileContents = [];
+    displayFileNames();
+    updateTextareaRows();
+
+    // Emit the message *after* potential file uploads
+    console.log(`Sending message to chat: ${current_chat_id}`);
+    socket.emit("send_message", { message: message, files: filesData, chat_id: current_chat_id }); // Include current_chat_id
+
+  } catch (error) {
+    console.error("Error during file upload or message sending:", error);
+    // Optionally show an error message to the user
+    addMessageToChatBox({
+      role: "model", // Or a specific 'system' role
+      content: [{ text: `Error sending message/files: ${error.message}` }],
+      id: `error-${Date.now()}`,
+      time_stamp: new Date().toISOString(),
+      chat_id: current_chat_id // Associate error with current chat
+    });
+  } finally {
+    // Restore send button state
+    if (fileContents.length === 0) { // Only restore if it was changed due to file upload
+      sendButton.innerHTML = originalButtonContent;
+      sendButton.disabled = false;
+    }
+  }
 };
 
 // --------------------------------------------------------------------------
@@ -1874,16 +2330,64 @@ const sendMessage = async () => {
 // --------------------------------------------------------------------------
 
 socket.on("connect", () => {
-  socket.emit("get_chat_history");
+  current_chat_id = localStorage.getItem('current_chat_id') || "main"; // Load last chat ID
+  socket.emit("get_chat_history"); // Request history on connect
   updateModelSelection()
   updateToolsSelection();
 });
 
-socket.on("chat_update", updateChatDisplay);
-socket.on("updated_msg", updateMessageInChatBox);
-socket.on("add_message", addMessageToChatBox);
-socket.on("delete_message", deleteMessage);
+socket.on("chat_update", (data) => {
+  console.log("Received chat_update:", data);
+  messages = data.messages || [];
+  chats = (data.chats || []).reduce((acc, chat) => {
+      acc[chat.id] = chat;
+      return acc;
+  }, {});
 
+  if (!chats['main']) {
+      console.warn("Backend did not provide 'main' chat. Creating default.");
+      chats['main'] = { id: 'main', name: 'Main Chat', parent_id: null };
+  }
+
+  if (!chats[current_chat_id]) {
+      console.warn(`Current chat ID '${current_chat_id}' no longer exists after update. Defaulting to 'main'.`);
+      current_chat_id = "main";
+      localStorage.setItem('current_chat_id', current_chat_id);
+  }
+
+  renderChatHistoryList(chats); // This now handles Sortable re-initialization
+  updateChatDisplay(messages);
+});
+
+socket.on("updated_msg", (msg) => {
+  // Update the message in the global list
+  const index = messages.findIndex(m => m.id === msg.id);
+  if (index !== -1) {
+    messages[index] = msg;
+  } else {
+    // If not found, maybe it's a new message that arrived out of order? Add it.
+    messages.push(msg);
+  }
+  // Then let updateMessageInChatBox handle rendering if it's relevant
+  updateMessageInChatBox(msg);
+});
+socket.on("add_message", (msg) => {
+  // Add message to the global list first
+  messages.push(msg);
+  // Then let addMessageToChatBox decide whether to render it based on current_chat_id
+  addMessageToChatBox(msg);
+});
+socket.on("delete_message", (messageId) => {
+  // Remove from the global list
+  messages = messages.filter(msg => msg.id !== messageId);
+  // Remove from the DOM if it exists
+  const msgDiv = document.getElementById(messageId);
+  if (msgDiv) {
+    handleChatBoxUpdate(() => { // Wrap DOM manipulation
+      msgDiv.remove();
+    })();
+  }
+});
 socket.on("add_notification", (notification) => {
   updateNotificationDisplay(notification);
 });
@@ -2096,7 +2600,10 @@ document.addEventListener('DOMContentLoaded', function () {
     new bootstrap.Tab(tabEl)
   })
   // Save initial width on load in case the user doesn't resize
-  window.addEventListener('beforeunload', saveRightPanelWidth);
+  window.addEventListener('beforeunload', () => {
+    saveRightPanelWidth();
+    localStorage.setItem('current_chat_id', current_chat_id);
+  });
 });
 
 // ==========================================================================
@@ -2311,6 +2818,11 @@ document.addEventListener('keydown', function (event) {
     const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
     contentTab.show();
     return
+  } else if (keyState['KeyH'] && !event.ctrlKey) {
+    // Toggle History tab
+    const historyTab = new bootstrap.Tab(document.getElementById('history-tab'));
+    historyTab.show();
+    return
   } else if (keyState['KeyN'] && !event.ctrlKey) {
     // Toggle Notification tab
     const notificationTab = new bootstrap.Tab(document.getElementById('notification-tab'));
@@ -2434,6 +2946,7 @@ function showShortcutsPopup() {
     "`t + [1-4]`: Toggle tools (Auto, Search, Schedule, Fetch, Computer)",
     "`c`: Toggle Content tab",
     "`n`: Toggle Notification tab",
+    "`h`: Toggle Chat History tab",
     "`s`: Toggle Schedule tab",
     "`/`: Focus on message input",
     "`m + [1-8]`: Select model by index",

@@ -372,6 +372,7 @@ body {
     from {
         background-position: 200% 0;
     }
+
     to {
         background-position: -200% 0;
     }
@@ -611,20 +612,6 @@ pre {
     display: flex;
     flex-wrap: wrap;
     /* margin-top: var(--margin);  Removed top margin here */
-}
-
-.tab-content {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    /* Take up full height of right-panel */
-}
-
-.tab-pane {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    /* Take up full height of tab-content */
 }
 
 #attachment-display-area {
@@ -941,24 +928,35 @@ pre {
 
 /* --- Resizable Iframe Container --- */
 .resizable-iframe-container {
-    overflow: auto; /* Necessary for the resize property to work */
-    resize: vertical; /* Allow vertical resizing */
-    min-height: 100px; /* Set a minimum height */
-    max-height: 70vh; /* Set a maximum height (e.g., 70% of viewport height) */
-    height: 250px; /* Set an initial default height */
-    border: 1px solid var(--gray-700); /* Optional: Add a border to see the container */
+    overflow: auto;
+    /* Necessary for the resize property to work */
+    resize: vertical;
+    /* Allow vertical resizing */
+    min-height: 100px;
+    /* Set a minimum height */
+    max-height: 70vh;
+    /* Set a maximum height (e.g., 70% of viewport height) */
+    height: 250px;
+    /* Set an initial default height */
+    border: 1px solid var(--gray-700);
+    /* Optional: Add a border to see the container */
     border-radius: var(--border-radius);
-    margin-bottom: var(--margin); /* Add some space below */
-    position: relative; /* Needed if you want to style the handle later */
+    margin-bottom: var(--margin);
+    /* Add some space below */
+    position: relative;
+    /* Needed if you want to style the handle later */
     cursor: row-resize !important;
 }
 
 /* Style the iframe within the container */
 .resizable-iframe-container iframe {
-    display: block; /* Prevent extra space below iframe */
+    display: block;
+    /* Prevent extra space below iframe */
     width: 100%;
-    height: 100%; /* Make iframe fill the container */
-    border: none; /* Ensure no iframe border */
+    height: 100%;
+    /* Make iframe fill the container */
+    border: none;
+    /* Ensure no iframe border */
 }
 
 .resizable-iframe-container::-webkit-resizer {
@@ -968,13 +966,20 @@ pre {
 
 /* --- Notification Count Bubble --- */
 .notification-count {
-    background-color: var(--danger); /* Red background for the bubble */
-    color: var(--gray-100); /* White text color */
-    font-size: 0.75rem; /* Smaller font size */
-    padding: 0.2rem 0.4rem; /* Adjust padding as needed */
-    border-radius: 1rem; /* Make it circular */
-    margin-left: 0.5rem; /* Add some space between the text and the bubble */
-    vertical-align: middle; /* Vertically align with the text */
+    background-color: var(--danger);
+    /* Red background for the bubble */
+    color: var(--gray-100);
+    /* White text color */
+    font-size: 0.75rem;
+    /* Smaller font size */
+    padding: 0.2rem 0.4rem;
+    /* Adjust padding as needed */
+    border-radius: 1rem;
+    /* Make it circular */
+    margin-left: 0.5rem;
+    /* Add some space between the text and the bubble */
+    vertical-align: middle;
+    /* Vertically align with the text */
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1240,7 +1245,8 @@ pre {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+    background-color: rgba(0, 0, 0, 0.5);
+    /* Semi-transparent background */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1249,8 +1255,10 @@ pre {
 }
 
 .shortcuts-popup-closing {
-    opacity: 0; /* Fade out the popup */
-    pointer-events: none; /* Prevent interaction during fade out */
+    opacity: 0;
+    /* Fade out the popup */
+    pointer-events: none;
+    /* Prevent interaction during fade out */
 }
 
 .shortcuts-popup-content {
@@ -1262,7 +1270,8 @@ pre {
     text-align: left;
     min-width: 300px;
     max-width: 80%;
-    position: relative; /* Make position relative for absolute positioning of button */
+    position: relative;
+    /* Make position relative for absolute positioning of button */
 }
 
 .shortcuts-popup h3 {
@@ -1293,4 +1302,221 @@ pre {
 
 .close-popup-button:hover {
     color: var(--gray-100);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Chat History Tree Styles - Enhanced */
+/* -------------------------------------------------------------------------- */
+
+#chat-history-list {
+    overflow-y: auto;
+    height: 100%; /* Occupy full height of its container */
+    padding: 0.5rem; /* Add some padding */
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-bg);
+}
+
+.chat-tree-root,
+.chat-tree-level {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.chat-tree-item {
+    margin-bottom: 0.1rem; /* Tighter spacing */
+    padding: 0;
+    border-radius: var(--border-radius);
+    transition: background-color 0.15s ease-in-out;
+    position: relative; /* For potential connector lines */
+}
+
+/* Optional: Connector Lines (Basic Example) */
+/* Creates a vertical line for nested items */
+.chat-tree-level > .chat-tree-item {
+     padding-left: 20px; /* Indentation space */
+     position: relative;
+}
+
+.chat-tree-level > .chat-tree-item::before {
+    content: '';
+    position: absolute;
+    left: 8px; /* Position line within the padding */
+    top: -4px; /* Start slightly above the item */
+    bottom: 0;
+    width: 1px;
+    background-color: var(--gray-700);
+    height: calc(100% + 4px); /* Extend slightly above */
+}
+
+/* Horizontal line connecting item to vertical line */
+.chat-tree-level > .chat-tree-item::after {
+    content: '';
+    position: absolute;
+    left: 8px; /* Align with vertical line */
+    top: 15px; /* Adjust vertical position */
+    width: 12px; /* Length of the horizontal line */
+    height: 1px;
+    background-color: var(--gray-700);
+}
+
+/* Adjust line for the last item in a level */
+.chat-tree-level > .chat-tree-item:last-child::before {
+     height: 19px; /* Stop line at the item's connection point */
+}
+
+
+.chat-item-content {
+    display: flex;
+    align-items: center;
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--border-radius);
+    transition: background-color 0.15s ease;
+    min-height: 32px; /* Ensure consistent height */
+    position: relative; /* Needed for actions absolute positioning if used */
+}
+
+/* Ensure ULs are always potential drop targets, even when empty */
+ul.chat-tree-level {
+    min-height: 5px; /* Very small min-height just to ensure it exists for Sortable */
+    /* Add padding/margin if needed for visual spacing when empty */
+     /* padding-top: 2px; */
+     /* margin-left: 1.5rem; /* Corresponds to indentation */
+}
+
+.chat-tree-item:not(.no-drag):hover > .chat-item-content {
+    background-color: var(--gray-800); /* Hover effect only if draggable */
+}
+
+.chat-item-name {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 0.5rem;
+    color: var(--gray-300);
+    cursor: grab; /* Indicate draggability */
+    user-select: none; /* Prevent text selection during drag */
+    padding: 0.2rem 0; /* Add some vertical padding to increase grab area */
+}
+.no-drag .chat-item-name {
+    cursor: default; /* No grab cursor for non-draggable items */
+}
+
+
+.chat-tree-item.active-chat > .chat-item-content {
+    background-color: var(--primary); /* Brighter highlight for active */
+    color: var(--gray-900);
+}
+
+.chat-tree-item.active-chat > .chat-item-content .chat-item-name {
+     color: var(--gray-900);
+     font-weight: 500;
+     cursor: default; /* No grab cursor when active */
+}
+
+/* Action Buttons Styling */
+.chat-item-actions {
+    display: flex;
+    align-items: center;
+    margin-left: auto; /* Push actions to the right */
+    padding-left: 0.5rem; /* Space between name and actions */
+    gap: 0.2rem;
+    opacity: 0; /* Hide actions by default */
+    visibility: hidden; /* Hide completely */
+    transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+}
+/* Make actions visible on item hover, not just content hover */
+.chat-tree-item:hover .chat-item-actions,
+.chat-tree-item.active-chat .chat-item-actions {
+    opacity: 1;
+    visibility: visible; /* Make visible */
+}
+
+
+.chat-item-actions .btn {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: var(--gray-500);
+}
+.chat-item-actions .btn:hover {
+    background-color: var(--gray-700);
+    color: var(--gray-100);
+    border-color: var(--gray-600);
+}
+
+/* Specific style for delete button hover */
+.chat-item-actions .delete-chat-btn:hover {
+     background-color: rgba(220, 53, 69, 0.8); /* Slightly transparent danger */
+     color: var(--gray-100);
+     border-color: var(--danger);
+}
+
+
+.chat-tree-item.active-chat > .chat-item-content .chat-item-actions .btn {
+    color: var(--gray-800); /* Darker icons on active background */
+}
+.chat-tree-item.active-chat > .chat-item-content .chat-item-actions .btn:hover {
+    background-color: rgba(0, 0, 0, 0.1); /* Subtle dark hover on active */
+    border-color: rgba(0, 0, 0, 0.2);
+    color: var(--gray-900);
+}
+.chat-tree-item.active-chat > .chat-item-content .chat-item-actions .delete-chat-btn:hover {
+     background-color: var(--danger); /* Solid danger color */
+     border-color: var(--danger);
+     color: var(--gray-100); /* Keep text white on red background */
+}
+
+/* SortableJS Drag Styles */
+.sortable-ghost {
+    opacity: 0.4;
+    background-color: var(--primary-dark); /* Indicate ghost */
+    border: 1px dashed var(--primary);
+    border-radius: var(--border-radius);
+}
+
+.sortable-chosen {
+    /* Style for the element actively being dragged - often same as ghost */
+    opacity: 0.7;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3); /* Add shadow while dragging */
+}
+
+.chat-item-name:active {
+    cursor: grabbing; /* Cursor while dragging */
+}
+
+/* Ensure history pane allows scrolling */
+#history-pane .p-3 { /* Target the specific padding div if it exists */
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 0 !important; /* Remove padding here if #chat-history-list has it */
+}
+
+/* -------------------------------------------------------------------------- */
+/* Right Panel Tab Content - Ensure history pane fills height */
+/* -------------------------------------------------------------------------- */
+
+.tab-content {
+    flex-grow: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.tab-pane {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Ensure the history pane itself allows its content (#chat-history-list) to grow */
+#history-pane {
+    flex-grow: 1;
+    display: flex; /* Use flexbox */
+    flex-direction: column; /* Stack children vertically */
+    overflow: hidden; /* Prevent pane itself from scrolling */
 }
