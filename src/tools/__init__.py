@@ -7,6 +7,7 @@ from .reminder import CreateReminder, save_jobs, run_reminders, get_reminders, g
 from .webfetch import FetchWebsite
 from .space import CodeExecutionEnvironment
 from .imagen import Imagen
+from .deepresearch import DeepResearch, DeepResearcher
 from lschedule import CreateTask, UpdateTask
 
 RunCommand = CodeExecutionEnvironment.RunCommand
@@ -24,7 +25,10 @@ WriteFile = CodeExecutionEnvironment.WriteFile
 SendControlC = CodeExecutionEnvironment.SendControlC
 LinkAttachment = CodeExecutionEnvironment.LinkAttachment
 
-FetchTool = types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=FetchWebsite)])
+FetchTool = types.Tool(function_declarations=[
+    types.FunctionDeclaration.from_callable_with_api_option(callable=FetchWebsite),
+    types.FunctionDeclaration.from_callable_with_api_option(callable=DeepResearch),
+])
 ImagenTool = types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=Imagen)])
 ReminderTool = types.Tool(function_declarations=[
     types.FunctionDeclaration.from_callable_with_api_option(callable=CreateReminder),

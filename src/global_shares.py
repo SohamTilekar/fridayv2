@@ -6,13 +6,13 @@ if TYPE_CHECKING:
     from main import ChatHistory, Content, File
 
 class Shared(TypedDict):
-    socketio: Optional[SocketIO]
-    mail_service: Optional[Any]
-    client: Optional[genai.Client]
+    socketio: SocketIO
+    mail_service: Any
+    client: genai.Client
     take_permision: Callable[[str], bool]
-    chat_history: Optional["ChatHistory"]
-    file: Optional[type["File"]]
-    content: Optional[type["Content"]]
+    chat_history: "ChatHistory"
+    file: type["File"]
+    content: type["Content"]
 
 global_shares: Shared = {
     "socketio": None,
@@ -22,4 +22,4 @@ global_shares: Shared = {
     "chat_history": None,
     "file": None,
     "content": None
-}
+} # type: ignore

@@ -1,5 +1,4 @@
 # main.py
-import mimetypes
 import re
 import ssl
 import traceback
@@ -14,7 +13,7 @@ import prompt
 import config
 import uuid
 from io import BytesIO  # Import BytesIO
-from typing import Any, Literal, Optional, Iterator
+from typing import Any, Literal, Optional
 from mail import start_checking_mail
 from global_shares import global_shares
 import notification
@@ -26,7 +25,6 @@ import time
 import datetime
 import utils
 import threading
-import tools
 import google.auth.exceptions
 import http.client
 
@@ -36,6 +34,7 @@ global_shares["socketio"] = socketio
 
 client = genai.Client(api_key=config.GOOGLE_API)
 global_shares["client"] = client
+import tools
 
 model: Optional[str] = None  # None for Auto
 selected_tools: Optional[list[tools.ToolLiteral]] = None  # None for Auto
@@ -257,26 +256,29 @@ class FunctionCall:
     id: str = ""
     name: Optional[str]
     args: dict[str, Any]
+    extra_data: dict[str, Any]
 
     def __init__(
         self,
         id: Optional[str] = None,
         name: Optional[str] = "",
         args: Optional[dict[str, Any]] = None,
+        extra_data: Optional[dict[str, Any]] = None
     ):
         self.id = id if id else str(uuid.uuid4())
         self.name = name
         self.args = args if args else {}
+        self.extra_data = extra_data if extra_data else {}
 
     def for_ai(self) -> types.FunctionCall:
         return types.FunctionCall(id=self.id, name=self.name, args=self.args)
 
     def jsonify(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name, "args": self.args}
+        return {"id": self.id, "name": self.name, "args": self.args, "extra_data": self.extra_data}
 
     @staticmethod
     def from_jsonify(data: dict[str, Any]) -> "FunctionCall":
-        return FunctionCall(data.get("id"), data.get("name"), data.get("args"))
+        return FunctionCall(data.get("id"), data.get("name"), data.get("args"), data.get("extra_data"))
 
 
 class FunctionResponce:
@@ -530,7 +532,7 @@ class Message:
                     )
                     parts_buffer = []
                 if part := item.for_ai(suport_tools, imagen_selected, msg):
-                    ai_contents.append(types.Content(parts=part, role="user"))
+                    ai_contents.append(types.Content(parts=part, role="user")) # type: ignore
             elif part := item.for_ai(suport_tools, imagen_selected, msg):
                 if isinstance(part, types.Part):
                     parts_buffer.append(part)
@@ -540,7 +542,7 @@ class Message:
                         types.Content(parts=parts_buffer, role=self.role)
                     )
                     parts_buffer = []
-                    
+
 
         if parts_buffer:
             ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
@@ -600,7 +602,7 @@ class ChatHistory:
 
     def __getitem__(self, idx: int):
         return self._messages[idx]
-    
+
     def getImage(self, ID: str) -> types.File:
         for msg in self._messages:
             for content in msg.content:
@@ -628,7 +630,7 @@ class ChatHistory:
 
     def trip_after(self, msg_id: str, chat_id: str) -> None:
         chat = self._chats[chat_id]
-        
+
         # Use dictionary lookup for faster index retrieval
         msg_index = {msg.id: i for i, msg in enumerate(self._messages)}
         idx = msg_index.get(msg_id, -1)
@@ -637,17 +639,17 @@ class ChatHistory:
 
         # Collect messages to delete using a set
         ids_to_del = {msg.id for msg in self._messages[idx + 1:] if msg.is_member(chat, self._chats)}
-        
+
         # Emit deletion events
         for msg_id in ids_to_del:
             emit_msg_del(msg_id)
-        
+
         # Use filter for in-place removal
         self._messages = list(filter(lambda msg: msg.id not in ids_to_del, self._messages))
 
     def for_ai(self, ai_msg: Message, suport_tools: bool, imagen_selected: bool, chat_id: str) -> list[types.Content]:
         result: list[types.Content] = []
-        for msg in self._messages: 
+        for msg in self._messages:
             if msg.is_member(self._chats[chat_id], self._chats):
                 result.extend(msg.for_ai(suport_tools, imagen_selected, ai_msg))
         return result
@@ -886,19 +888,43 @@ def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
                 )
             )
         )
-        id = msg.content[-1].function_call.id
+        fc: FunctionCall = msg.content[-1].function_call # type: ignore
+        id: str = msg.content[-1].function_call.id # type: ignore
         emit_msg_update(msg)
 
         try:
             # Validate function name
             if not func_call.name:
                 raise ValueError("Function with no name specified")
-
-            # Call the appropriate tool function and add response
-            if func_call.args:
-                func_response = getattr(tools, func_call.name)(**func_call.args)
+            if func_call.name == "DeepResearch":
+                if func_call.args:
+                    def call_back(data: Optional[dict[str, Any]]) -> None:
+                        if not data:
+                            emit_msg_update(msg)
+                            return
+                        if data.get("action") == "thinking":
+                            fc.extra_data["steps"].append(data)
+                        elif data.get("action") == "topic_updated":
+                            fc.extra_data["topic"] = data["topic"]
+                        elif data.get("action") == "fetching_url":
+                            fc.extra_data["steps"].append(data)
+                        elif data.get("action") == "search":
+                            fc.extra_data["steps"].append(data)
+                        elif data.get("action") == "generating_report":
+                            fc.extra_data["steps"].append(data)
+                        emit_msg_update(msg)
+                    researcher = tools.DeepResearcher(**func_call.args, call_back=call_back)
+                    fc.extra_data["topic"] = researcher.topic.jsonify()
+                    fc.extra_data["steps"] = []
+                    func_response: Any = researcher.research()
+                else:
+                    raise ValueError("DeepResearch call withoout")
             else:
-                func_response = getattr(tools, func_call.name)()
+                # Call the appropriate tool function and add response
+                if func_call.args:
+                    func_response = getattr(tools, func_call.name)(**func_call.args)
+                else:
+                    func_response = getattr(tools, func_call.name)()
             if func_call.name == "Imagen":
                 msg.content.append(
                     Content(
@@ -1083,7 +1109,7 @@ def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
                 types.Content(
                     parts=[
                         types.Part(
-                            text=f"Select which model and tools to use to reply to the user message."
+                            text="Select which model and tools to use to reply to the user message."
                         )
                     ],
                     role="user",
@@ -1106,11 +1132,11 @@ def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
                 # Make selection request to tool selector model
                 selector_response = client.models.generate_content(
                     model=config.MODEL_TOOL_SELECTOR,
-                    contents=chat,
+                    contents=chat, # type: ignore
                     config=types.GenerateContentConfig(
                         system_instruction=prompt.ModelAndToolSelectorSYSTEM_INSTUNCTION,
                         temperature=0.1,
-                        tools=tools_list,
+                        tools=tools_list, # type: ignore
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(
                             disable=True, maximum_remote_calls=None
                         ),
@@ -1180,8 +1206,8 @@ def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
                         types.Content(
                             parts=[
                                 types.Part(
-                                    text=f"Select which model and tools to use to reply to the user message. "
-                                    f"You didn't call the required function."
+                                    text="Select which model and tools to use to reply to the user message. "
+                                    "You didn't call the required function."
                                 )
                             ],
                             role="user",
@@ -1234,14 +1260,14 @@ def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
                 # Generate streaming content
                 response = client.models.generate_content_stream(
                     model=selected_model,
-                    contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list, chat_id),
+                    contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list, chat_id), # type: ignore
                     config=types.GenerateContentConfig(
                         system_instruction=f"""{prompt.SYSTEM_INSTUNCTION}
 {tools.get_reminders() + lschedule.get_todo_list_string() if tools.ReminderTool in selected_tools_list else ""}
 {tools.space.CodeExecutionEnvironment.dir_tree() if tools.ComputerTool in selected_tools_list else ""}
 """,
                         temperature=config.CHAT_AI_TEMP,
-                        tools=selected_tools_list,
+                        tools=selected_tools_list, # type: ignore
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(
                             disable=True, maximum_remote_calls=None
                         ),

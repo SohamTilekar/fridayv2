@@ -1,9 +1,11 @@
 import pathlib
 import enum
-from typing import Literal
+from typing import Literal, Optional
 
 # Remove the -example part
 GOOGLE_API: str = "Your-Google-API-Gose-Here"
+FIRECRAWL_API: str = "fc-..."
+FIRECRAWL_ENDPOINT: Optional[str] = None # None for public
 AI_DIR: pathlib.Path = pathlib.Path("~/friday/")
 
 YOUR_NAME: str = "LastName FirstName" #e.g Musk Elon

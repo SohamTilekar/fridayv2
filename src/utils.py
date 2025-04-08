@@ -2,8 +2,9 @@ import time
 import functools
 import config
 import traceback
+from typing import Optional
 
-def retry(max_retries: int | float = config.MAX_RETRIES, delay=config.RETRY_DELAY, exceptions=None):
+def retry(max_retries: int | float = config.MAX_RETRIES, delay=config.RETRY_DELAY, exceptions: Optional[tuple]=None):
     """
     A decorator that retries a function up to `max_retries` times with exponential backoff.
 
@@ -25,9 +26,9 @@ def retry(max_retries: int | float = config.MAX_RETRIES, delay=config.RETRY_DELA
                         print(f"Exception {type(e).__name__} not in retry list for {func.__name__}. Raising.")
                         traceback.print_exc()
                         raise  # Re-raise exceptions we don't want to retry on
-                        
+
                     print(f"Attempt {attempt + 1} failed: {e}, retrying...")
-                    
+
                     if attempt < max_retries - 1:
                         # Calculate backoff time
                         backoff_time = min(delay * (2 ** attempt), 128)
@@ -37,10 +38,9 @@ def retry(max_retries: int | float = config.MAX_RETRIES, delay=config.RETRY_DELA
                         print(f"Max retries ({max_retries}) reached for {func.__name__}. Raising exception.")
                         traceback.print_exc()
                         raise  # Re-raise the exception
-                        
+
                 attempt += 1
-                
-            return None  # Should not reach here if exception is raised
-            
+            raise
+
         return wrapper_retry
     return decorator_retry

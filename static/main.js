@@ -6,7 +6,7 @@ let fileId = null; // Unique ID for the video being uploaded
 const CHUNK_SIZE = 512 * 1024; // 0.5MB chunks
 let messages = [];
 let chats = {};
-let current_chat_id = "main"
+let current_chat_id = "main";
 let sortableInstances = [];
 // ==========================================================================
 // --- Helper Functions ---
@@ -17,7 +17,7 @@ let sortableInstances = [];
  */
 function createButton(className, innerHTML) {
   const button = document.createElement("button");
-  button.classList.add(...className.split(' '));
+  button.classList.add(...className.split(" "));
   button.innerHTML = innerHTML;
   return button;
 }
@@ -79,11 +79,11 @@ function renderNotification(notification) {
 
   if (notification.type === "Mail") {
     let bodyContent = "";
-    notification.body.forEach(content => {
-      const iframeContainer = document.createElement('div');
-      iframeContainer.classList.add('resizable-iframe-container'); // Add class for styling
+    notification.body.forEach((content) => {
+      const iframeContainer = document.createElement("div");
+      iframeContainer.classList.add("resizable-iframe-container"); // Add class for styling
 
-      const iframe = document.createElement('iframe');
+      const iframe = document.createElement("iframe");
       iframe.sandbox = "allow-scripts";
       iframe.style.border = "none";
       // iframe width/height will be controlled by the container via CSS
@@ -135,15 +135,17 @@ function renderNotification(notification) {
   const markReadButton = document.createElement("button");
   markReadButton.classList.add("mark-read-button");
   markReadButton.innerHTML = `<i class="bi bi-check-circle"></i> Mark as Read`;
-  markReadButton.addEventListener("click", () => markNotificationRead(notification.id));
+  markReadButton.addEventListener("click", () =>
+    markNotificationRead(notification.id),
+  );
   notificationDiv.appendChild(markReadButton);
 
   return notificationDiv;
 }
 
 /**
-* Marks a notification as read by removing it from the UI and sending a request to the server.
-*/
+ * Marks a notification as read by removing it from the UI and sending a request to the server.
+ */
 function markNotificationRead(notificationId) {
   socket.emit("mark_read", { notification_id: notificationId });
 }
@@ -152,23 +154,30 @@ function markNotificationRead(notificationId) {
  * Updates the notification count in the bubble on the "Notifications" tab.
  */
 function updateNotificationCount() {
-  const notificationCountSpan = document.querySelector('#notification-tab .notification-count');
-  const notificationDisplayArea = document.getElementById("notification-display-area");
-  const notificationCount = notificationDisplayArea.querySelectorAll('.notification').length; // Count existing notifications
+  const notificationCountSpan = document.querySelector(
+    "#notification-tab .notification-count",
+  );
+  const notificationDisplayArea = document.getElementById(
+    "notification-display-area",
+  );
+  const notificationCount =
+    notificationDisplayArea.querySelectorAll(".notification").length; // Count existing notifications
 
   if (notificationCountSpan) {
     notificationCountSpan.textContent = notificationCount;
-    notificationCountSpan.style.display = notificationCount ? 'inline' : 'none'; // Show/hide based on count
+    notificationCountSpan.style.display = notificationCount ? "inline" : "none"; // Show/hide based on count
   }
 }
 
 /**
-* Updates the entire notification display with the given notifications.
-*/
+ * Updates the entire notification display with the given notifications.
+ */
 function updateNotificationDisplayAll(notifications) {
-  const notificationDisplayArea = document.getElementById("notification-display-area");
+  const notificationDisplayArea = document.getElementById(
+    "notification-display-area",
+  );
   notificationDisplayArea.innerHTML = ""; // Clear existing notifications
-  notifications.forEach(notification => {
+  notifications.forEach((notification) => {
     const notificationElement = renderNotification(notification);
     notificationDisplayArea.appendChild(notificationElement);
   });
@@ -176,20 +185,24 @@ function updateNotificationDisplayAll(notifications) {
 }
 
 /**
-* Updates the notification display area with the given notification.
-*/
+ * Updates the notification display area with the given notification.
+ */
 function updateNotificationDisplay(notification) {
-  const notificationDisplayArea = document.getElementById("notification-display-area");
+  const notificationDisplayArea = document.getElementById(
+    "notification-display-area",
+  );
   const notificationElement = renderNotification(notification);
   notificationDisplayArea.prepend(notificationElement); // Add new notifications to the top
   updateNotificationCount(); // Update the count after adding
 }
 
 /**
-* Deletes a notification from the UI.
-*/
+ * Deletes a notification from the UI.
+ */
 function deleteNotification(notificationId) {
-  const notificationElement = document.querySelector(`.notification[data-notification-id="${notificationId}"]`);
+  const notificationElement = document.querySelector(
+    `.notification[data-notification-id="${notificationId}"]`,
+  );
   if (notificationElement) {
     notificationElement.remove();
   }
@@ -272,7 +285,6 @@ const uploadFileInChunks = async (base64File, filename, fileId) => {
 // --- UI Management ---
 // ==========================================================================
 
-
 // ==========================================================================
 // --- Chat History Hierarchy Rendering & Interaction ---
 // ==========================================================================
@@ -281,7 +293,7 @@ const uploadFileInChunks = async (base64File, filename, fileId) => {
  * Destroys existing SortableJS instances.
  */
 function destroySortableInstances() {
-  sortableInstances.forEach(instance => instance.destroy());
+  sortableInstances.forEach((instance) => instance.destroy());
   sortableInstances = []; // Clear the array
 }
 
@@ -292,70 +304,73 @@ function destroySortableInstances() {
  */
 function initializeSortableForElement(ulElement, allChatsMap) {
   const instance = new Sortable(ulElement, {
-      group: 'shared-chats', // Crucial: Same group name for all lists
-      animation: 150,
-      handle: '.chat-item-name', // Use the name span as the drag handle
-      filter: '.no-drag', // Class to prevent dragging 'main'
-      preventOnFilter: true,
-      fallbackOnBody: true, // Helps with potential clipping issues
-      swapThreshold: 0.65, // Threshold for swapping elements
+    group: "shared-chats", // Crucial: Same group name for all lists
+    animation: 150,
+    handle: ".chat-item-name", // Use the name span as the drag handle
+    filter: ".no-drag", // Class to prevent dragging 'main'
+    preventOnFilter: true,
+    fallbackOnBody: true, // Helps with potential clipping issues
+    swapThreshold: 0.65, // Threshold for swapping elements
 
-      onEnd: function (evt) {
-          const itemEl = evt.item; // The dragged list item (LI)
-          const targetList = evt.to; // The list (UL) where the item was dropped
-          const sourceList = evt.from; // The list (UL) where the item came from
+    onEnd: function (evt) {
+      const itemEl = evt.item; // The dragged list item (LI)
+      const targetList = evt.to; // The list (UL) where the item was dropped
+      const sourceList = evt.from; // The list (UL) where the item came from
 
-          const chatId = itemEl.dataset.chatId;
+      const chatId = itemEl.dataset.chatId;
 
-          // Determine the new parent ID. If dropped in root, parent is null.
-          // Otherwise, find the parent LI of the target UL.
-          let newParentLi = targetList.closest('li.chat-tree-item');
-          let newParentId = newParentLi ? newParentLi.dataset.chatId : null;
+      // Determine the new parent ID. If dropped in root, parent is null.
+      // Otherwise, find the parent LI of the target UL.
+      let newParentLi = targetList.closest("li.chat-tree-item");
+      let newParentId = newParentLi ? newParentLi.dataset.chatId : null;
 
-          // --- Validation ---
-          if (chatId === 'main') {
-              console.warn("Tried to move the 'main' chat. Reverting.");
-              renderChatHistoryList(chats); // Re-render to fix visual state
-              return;
-          }
-          if (chatId === newParentId) {
-              console.warn("Cannot drop a chat onto itself. Reverting.");
-              renderChatHistoryList(chats);
-              return;
-          }
-          // Check if dropping onto a descendant
-          if (isDescendant(newParentId, chatId, allChatsMap)) {
-              console.warn(`Cannot drop chat ${chatId} onto its descendant ${newParentId}. Reverting.`);
-              renderChatHistoryList(chats);
-              return;
-          }
+      // --- Validation ---
+      if (chatId === "main") {
+        console.warn("Tried to move the 'main' chat. Reverting.");
+        renderChatHistoryList(chats); // Re-render to fix visual state
+        return;
+      }
+      if (chatId === newParentId) {
+        console.warn("Cannot drop a chat onto itself. Reverting.");
+        renderChatHistoryList(chats);
+        return;
+      }
+      // Check if dropping onto a descendant
+      if (isDescendant(newParentId, chatId, allChatsMap)) {
+        console.warn(
+          `Cannot drop chat ${chatId} onto its descendant ${newParentId}. Reverting.`,
+        );
+        renderChatHistoryList(chats);
+        return;
+      }
 
-          // Get the original parent ID *before* the drop from the chats map
-          const originalParentId = chats[chatId]?.parent_id || null;
+      // Get the original parent ID *before* the drop from the chats map
+      const originalParentId = chats[chatId]?.parent_id || null;
 
-          // If the parent hasn't actually changed, do nothing
-          // (SortableJS might fire onEnd even if dropped back in the same place)
-          if (originalParentId === newParentId && sourceList === targetList) {
-              // Also check if the index changed if needed, but for parent change, this is enough
-              console.debug("Item dropped in the same list with the same parent. No update needed.");
-              return;
-          }
+      // If the parent hasn't actually changed, do nothing
+      // (SortableJS might fire onEnd even if dropped back in the same place)
+      if (originalParentId === newParentId && sourceList === targetList) {
+        // Also check if the index changed if needed, but for parent change, this is enough
+        console.debug(
+          "Item dropped in the same list with the same parent. No update needed.",
+        );
+        return;
+      }
 
-          console.log(`Chat ${chatId} moved. Target Parent ID: ${newParentId}`);
+      console.log(`Chat ${chatId} moved. Target Parent ID: ${newParentId}`);
 
-          // Send update to backend
-          socket.emit("update_chat_parent", {
-              chat_id: chatId,
-              new_parent_id: newParentId
-          });
-          // Important: Don't update the UI here directly. Wait for the 'chat_update'
-          // event from the server which confirms the change and re-renders the whole list.
-          // This ensures the UI reflects the actual state after backend validation/processing.
-      },
+      // Send update to backend
+      socket.emit("update_chat_parent", {
+        chat_id: chatId,
+        new_parent_id: newParentId,
+      });
+      // Important: Don't update the UI here directly. Wait for the 'chat_update'
+      // event from the server which confirms the change and re-renders the whole list.
+      // This ensures the UI reflects the actual state after backend validation/processing.
+    },
   });
   sortableInstances.push(instance); // Store the instance
 }
-
 
 /**
  * Renders the entire chat history list in the history tab.
@@ -363,107 +378,117 @@ function initializeSortableForElement(ulElement, allChatsMap) {
  * and initializes SortableJS correctly)
  */
 function renderChatHistoryList(chatsMap) {
-  const historyListContainer = document.getElementById('chat-history-list');
-  historyListContainer.innerHTML = '';
+  const historyListContainer = document.getElementById("chat-history-list");
+  historyListContainer.innerHTML = "";
   destroySortableInstances();
 
-  const rootUl = document.createElement('ul');
-  rootUl.classList.add('chat-tree-root');
+  const rootUl = document.createElement("ul");
+  rootUl.classList.add("chat-tree-root");
   historyListContainer.appendChild(rootUl);
 
-  const mainChat = chatsMap['main'];
+  const mainChat = chatsMap["main"];
   if (mainChat) {
-      renderSingleChatNode(mainChat, rootUl, 0, chatsMap, true);
+    renderSingleChatNode(mainChat, rootUl, 0, chatsMap, true);
   }
 
-  const rootChats = Object.values(chatsMap).filter(chat =>
-      chat.id !== 'main' && (!chat.parent_id || !chatsMap[chat.parent_id])
+  const rootChats = Object.values(chatsMap).filter(
+    (chat) =>
+      chat.id !== "main" && (!chat.parent_id || !chatsMap[chat.parent_id]),
   );
   rootChats.sort((a, b) => a.name.localeCompare(b.name));
-  rootChats.forEach(chat => {
-      renderSingleChatNode(chat, rootUl, 0, chatsMap, false);
+  rootChats.forEach((chat) => {
+    renderSingleChatNode(chat, rootUl, 0, chatsMap, false);
   });
 
-  const allUlElements = historyListContainer.querySelectorAll('ul');
-  allUlElements.forEach(ul => {
-      // Ensure ULs always have a minimum height to be better drop targets,
-      // especially when empty. Adjust the value as needed.
-      ul.style.minHeight = '10px'; // Small min-height
-      initializeSortableForElement(ul, chatsMap);
+  const allUlElements = historyListContainer.querySelectorAll("ul");
+  allUlElements.forEach((ul) => {
+    // Ensure ULs always have a minimum height to be better drop targets,
+    // especially when empty. Adjust the value as needed.
+    ul.style.minHeight = "10px"; // Small min-height
+    initializeSortableForElement(ul, chatsMap);
   });
 
-  historyListContainer.removeEventListener('dblclick', handleHistoryDoubleClick);
-  historyListContainer.addEventListener('dblclick', handleHistoryDoubleClick);
+  historyListContainer.removeEventListener(
+    "dblclick",
+    handleHistoryDoubleClick,
+  );
+  historyListContainer.addEventListener("dblclick", handleHistoryDoubleClick);
 
-  const activeItem = historyListContainer.querySelector('.active-chat > .chat-item-content');
+  const activeItem = historyListContainer.querySelector(
+    ".active-chat > .chat-item-content",
+  );
   if (activeItem) {
-      activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    activeItem.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 }
 
 // Event handler for double-click delegation (no changes needed)
 function handleHistoryDoubleClick(event) {
-   const targetLi = event.target.closest('li.chat-tree-item');
-   if (targetLi && targetLi.dataset.chatId) {
-       switchChat(targetLi.dataset.chatId);
-   }
+  const targetLi = event.target.closest("li.chat-tree-item");
+  if (targetLi && targetLi.dataset.chatId) {
+    switchChat(targetLi.dataset.chatId);
+  }
 }
 
-
 /**
-* Renders a single chat node and its descendants recursively.
-* Ensures a UL is always present for children, even if empty.
-* Adds a delete button.
-* @param {object} chat - The chat object to render.
-* @param {HTMLUListElement} parentUl - The UL element to append this node to.
-* @param {number} level - The current indentation level.
-* @param {object} allChats - The flat object of all chats { id: chat }.
-* @param {boolean} isMain - Flag to indicate if this is the 'main' chat node.
-*/
+ * Renders a single chat node and its descendants recursively.
+ * Ensures a UL is always present for children, even if empty.
+ * Adds a delete button.
+ * @param {object} chat - The chat object to render.
+ * @param {HTMLUListElement} parentUl - The UL element to append this node to.
+ * @param {number} level - The current indentation level.
+ * @param {object} allChats - The flat object of all chats { id: chat }.
+ * @param {boolean} isMain - Flag to indicate if this is the 'main' chat node.
+ */
 function renderSingleChatNode(chat, parentUl, level, allChats, isMain = false) {
-  const li = document.createElement('li');
+  const li = document.createElement("li");
   li.dataset.chatId = chat.id;
-  li.classList.add('chat-tree-item');
+  li.classList.add("chat-tree-item");
   if (chat.id === current_chat_id) {
-      li.classList.add('active-chat');
+    li.classList.add("active-chat");
   }
   if (isMain) {
-      li.classList.add('no-drag'); // Prevent dragging/deleting 'main' chat
+    li.classList.add("no-drag"); // Prevent dragging/deleting 'main' chat
   }
 
-  const itemContent = document.createElement('div');
-  itemContent.classList.add('chat-item-content');
+  const itemContent = document.createElement("div");
+  itemContent.classList.add("chat-item-content");
   itemContent.style.paddingLeft = `${level * 1.5}rem`;
 
-  const chatNameSpan = document.createElement('span');
+  const chatNameSpan = document.createElement("span");
   chatNameSpan.textContent = chat.name || `Chat ${chat.id.substring(0, 6)}...`;
-  chatNameSpan.classList.add('chat-item-name');
-  chatNameSpan.title = `ID: ${chat.id}\nParent: ${chat.parent_id || 'None'}`;
+  chatNameSpan.classList.add("chat-item-name");
+  chatNameSpan.title = `ID: ${chat.id}\nParent: ${chat.parent_id || "None"}`;
 
   // --- Action Buttons ---
-  const buttonGroup = document.createElement('div');
-  buttonGroup.classList.add('chat-item-actions');
+  const buttonGroup = document.createElement("div");
+  buttonGroup.classList.add("chat-item-actions");
 
   // Branch Button
-  const branchButton = createButton('branch-chat-btn btn btn-sm btn-outline-info', '<i class="bi bi-diagram-2"></i>');
+  const branchButton = createButton(
+    "branch-chat-btn btn btn-sm btn-outline-info",
+    '<i class="bi bi-diagram-2"></i>',
+  );
   branchButton.title = "Create a new branch from here";
-  branchButton.addEventListener('click', (e) => {
-      e.stopPropagation();
-      branchFromChat(chat.id);
+  branchButton.addEventListener("click", (e) => {
+    e.stopPropagation();
+    branchFromChat(chat.id);
   });
   buttonGroup.appendChild(branchButton);
 
   // Delete Button (only if not 'main')
   if (!isMain) {
-      const deleteButton = createButton('delete-chat-btn btn btn-sm btn-outline-danger', '<i class="bi bi-trash3"></i>');
-      deleteButton.title = "Delete this chat";
-      deleteButton.addEventListener('click', (e) => {
-          e.stopPropagation();
-          deleteChat(chat.id, chat.name);
-      });
-      buttonGroup.appendChild(deleteButton);
+    const deleteButton = createButton(
+      "delete-chat-btn btn btn-sm btn-outline-danger",
+      '<i class="bi bi-trash3"></i>',
+    );
+    deleteButton.title = "Delete this chat";
+    deleteButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteChat(chat.id, chat.name);
+    });
+    buttonGroup.appendChild(deleteButton);
   }
-
 
   itemContent.appendChild(chatNameSpan);
   itemContent.appendChild(buttonGroup);
@@ -471,16 +496,20 @@ function renderSingleChatNode(chat, parentUl, level, allChats, isMain = false) {
 
   // --- Render Children ---
   // !! Always create the UL for children !!
-  const nestedUl = document.createElement('ul');
-  nestedUl.classList.add('chat-tree-level', `level-${level + 1}`);
+  const nestedUl = document.createElement("ul");
+  nestedUl.classList.add("chat-tree-level", `level-${level + 1}`);
   // Add the UL to the LI *before* populating it
   li.appendChild(nestedUl);
 
   // Find and render actual children into the created UL
-  const children = Object.values(allChats).filter(c => c.parent_id === chat.id);
+  const children = Object.values(allChats).filter(
+    (c) => c.parent_id === chat.id,
+  );
   if (children.length > 0) {
-      children.sort((a, b) => a.name.localeCompare(b.name));
-      children.forEach(child => renderSingleChatNode(child, nestedUl, level + 1, allChats));
+    children.sort((a, b) => a.name.localeCompare(b.name));
+    children.forEach((child) =>
+      renderSingleChatNode(child, nestedUl, level + 1, allChats),
+    );
   }
   // If no children, the empty UL remains, acting as a drop target
 
@@ -493,11 +522,13 @@ function renderSingleChatNode(chat, parentUl, level, allChats, isMain = false) {
  * @param {string} chatName - Name of the chat for the prompt.
  */
 function deleteChat(chatId, chatName) {
-  const confirmation = confirm(`Are you sure you want to delete the chat "${chatName || chatId}"?\n\nChildren of this chat will be moved to its parent.\nThis action cannot be undone.`);
+  const confirmation = confirm(
+    `Are you sure you want to delete the chat "${chatName || chatId}"?\n\nChildren of this chat will be moved to its parent.\nThis action cannot be undone.`,
+  );
   if (confirmation) {
-      console.log(`Requesting deletion of chat: ${chatId}`);
-      socket.emit("delete_chat", { chat_id: chatId });
-      // UI update will happen via 'chat_update' broadcast
+    console.log(`Requesting deletion of chat: ${chatId}`);
+    socket.emit("delete_chat", { chat_id: chatId });
+    // UI update will happen via 'chat_update' broadcast
   }
 }
 
@@ -508,40 +539,43 @@ function isDescendant(childId, potentialParentId, allChatsMap) {
 
   let currentId = childId;
   while (currentId) {
-      const chat = allChatsMap[currentId];
-      if (!chat) return false; // Should not happen with consistent data
-      if (chat.parent_id === potentialParentId) {
-          return true; // Found potentialParent in the ancestry
-      }
-      currentId = chat.parent_id; // Move up
+    const chat = allChatsMap[currentId];
+    if (!chat) return false; // Should not happen with consistent data
+    if (chat.parent_id === potentialParentId) {
+      return true; // Found potentialParent in the ancestry
+    }
+    currentId = chat.parent_id; // Move up
   }
   return false; // Reached root without finding
 }
 
 /**
-* Switches the current chat view. (No changes needed here, just ensure it's called)
-* @param {string} chatId - The ID of the chat to switch to.
-*/
+ * Switches the current chat view. (No changes needed here, just ensure it's called)
+ * @param {string} chatId - The ID of the chat to switch to.
+ */
 function switchChat(chatId) {
   if (current_chat_id === chatId) return;
 
   console.log(`Switching to chat: ${chatId}`);
   const oldChatId = current_chat_id;
   current_chat_id = chatId;
-  localStorage.setItem('current_chat_id', current_chat_id); // Save selection
+  localStorage.setItem("current_chat_id", current_chat_id); // Save selection
 
   // Update visual selection in the history list efficiently
-  const historyListContainer = document.getElementById('chat-history-list');
-  const oldActive = historyListContainer.querySelector(`li[data-chat-id="${oldChatId}"]`);
-  const newActive = historyListContainer.querySelector(`li[data-chat-id="${current_chat_id}"]`);
-  if (oldActive) oldActive.classList.remove('active-chat');
-  if (newActive) newActive.classList.add('active-chat');
-
+  const historyListContainer = document.getElementById("chat-history-list");
+  const oldActive = historyListContainer.querySelector(
+    `li[data-chat-id="${oldChatId}"]`,
+  );
+  const newActive = historyListContainer.querySelector(
+    `li[data-chat-id="${current_chat_id}"]`,
+  );
+  if (oldActive) oldActive.classList.remove("active-chat");
+  if (newActive) newActive.classList.add("active-chat");
 
   // Re-render the main chat box
   updateChatDisplay(messages);
   // Scroll chat box to bottom after switching (or maybe top?)
-  const chatBox = document.getElementById('chat-box');
+  const chatBox = document.getElementById("chat-box");
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 /**
@@ -552,45 +586,54 @@ function switchChat(chatId) {
  * @returns {HTMLUListElement} The generated UL element for this level.
  */
 function buildChatTree(parentId, allChats, level = 0) {
-  const ul = document.createElement('ul');
-  ul.classList.add('chat-tree-level', `level-${level}`);
-  if (level === 0) ul.classList.add('chat-tree-root');
+  const ul = document.createElement("ul");
+  ul.classList.add("chat-tree-level", `level-${level}`);
+  if (level === 0) ul.classList.add("chat-tree-root");
 
   // Find children of the current parentId
-  const children = Object.values(allChats).filter(chat => chat.parent_id === parentId);
+  const children = Object.values(allChats).filter(
+    (chat) => chat.parent_id === parentId,
+  );
 
   // Sort children alphabetically by name (optional)
   children.sort((a, b) => a.name.localeCompare(b.name));
 
-  children.forEach(chat => {
-    const li = document.createElement('li');
+  children.forEach((chat) => {
+    const li = document.createElement("li");
     li.dataset.chatId = chat.id;
-    li.classList.add('chat-tree-item');
+    li.classList.add("chat-tree-item");
     if (chat.id === current_chat_id) {
-      li.classList.add('active-chat'); // Mark the selected chat
+      li.classList.add("active-chat"); // Mark the selected chat
     }
 
-    const itemContent = document.createElement('div');
-    itemContent.classList.add('chat-item-content');
+    const itemContent = document.createElement("div");
+    itemContent.classList.add("chat-item-content");
     itemContent.style.paddingLeft = `${level * 1.5}rem`; // Indentation
 
-    const chatNameSpan = document.createElement('span');
-    chatNameSpan.textContent = chat.name || `Chat ${chat.id.substring(0, 6)}...`;
-    chatNameSpan.classList.add('chat-item-name');
-    chatNameSpan.title = `ID: ${chat.id}\nParent: ${chat.parent_id || 'None'}`; // Tooltip for info
+    const chatNameSpan = document.createElement("span");
+    chatNameSpan.textContent =
+      chat.name || `Chat ${chat.id.substring(0, 6)}...`;
+    chatNameSpan.classList.add("chat-item-name");
+    chatNameSpan.title = `ID: ${chat.id}\nParent: ${chat.parent_id || "None"}`; // Tooltip for info
 
     // --- Select Chat Button ---
-    const selectButton = createButton('select-chat-btn btn btn-sm btn-outline-secondary ms-2', '<i class="bi bi-arrow-right-circle"></i>');
+    const selectButton = createButton(
+      "select-chat-btn btn btn-sm btn-outline-secondary ms-2",
+      '<i class="bi bi-arrow-right-circle"></i>',
+    );
     selectButton.title = "Switch to this chat";
-    selectButton.addEventListener('click', (e) => {
+    selectButton.addEventListener("click", (e) => {
       e.stopPropagation(); // Prevent li click event if needed
       switchChat(chat.id);
     });
 
     // --- Branch Chat Button ---
-    const branchButton = createButton('branch-chat-btn btn btn-sm btn-outline-info ms-1', '<i class="bi bi-diagram-2"></i>');
+    const branchButton = createButton(
+      "branch-chat-btn btn btn-sm btn-outline-info ms-1",
+      '<i class="bi bi-diagram-2"></i>',
+    );
     branchButton.title = "Create a new branch from here";
-    branchButton.addEventListener('click', (e) => {
+    branchButton.addEventListener("click", (e) => {
       e.stopPropagation();
       branchFromChat(chat.id);
     });
@@ -613,14 +656,17 @@ function buildChatTree(parentId, allChats, level = 0) {
 }
 
 /**
-* Prompts the user and initiates creating a new chat branch.
-* @param {string} parentId - The ID of the chat to branch from.
-*/
+ * Prompts the user and initiates creating a new chat branch.
+ * @param {string} parentId - The ID of the chat to branch from.
+ */
 function branchFromChat(parentId) {
-  const newName = prompt(`Enter a name for the new chat branch from "${chats[parentId]?.name || parentId}":`);
+  const newName = prompt(
+    `Enter a name for the new chat branch from "${chats[parentId]?.name || parentId}":`,
+  );
   if (newName && newName.trim() !== "") {
     socket.emit("create_chat", { name: newName.trim(), parent_id: parentId });
-  } else if (newName !== null) { // User entered empty string or only whitespace
+  } else if (newName !== null) {
+    // User entered empty string or only whitespace
     alert("Chat name cannot be empty.");
   }
 }
@@ -633,7 +679,7 @@ function branchFromChat(parentId) {
  * Renders a message in the chat box.  Handles both adding and updating messages.
  */
 function renderMessageContent(msgDiv, msg) {
-  msgDiv.innerHTML = ""
+  msgDiv.innerHTML = "";
   // Render each Content item separately
   msg.content.forEach((contentItem) => {
     const contentDiv = document.createElement("div");
@@ -651,8 +697,7 @@ function renderMessageContent(msgDiv, msg) {
       // Enhance code blocks/inlines
       enhanceCodeBlocks(contentDiv);
       enhanceCodeInlines(contentDiv);
-      if (contentItem.grounding_metadata)
-        initializeTooltips(contentDiv);
+      if (contentItem.grounding_metadata) initializeTooltips(contentDiv);
     } else if (contentItem.function_call) {
       contentDiv.innerHTML = renderFunctionCall(contentItem.function_call);
       msgDiv.appendChild(contentDiv);
@@ -669,7 +714,7 @@ function renderMessageContent(msgDiv, msg) {
                   <div class="dot"></div>
                   <div class="dot"></div>
               </div>
-    `
+    `;
 }
 
 /**
@@ -677,7 +722,7 @@ function renderMessageContent(msgDiv, msg) {
  */
 function createMessageControls(msg) {
   const controlsDiv = document.createElement("div"); // Create a container for the controls
-  controlsDiv.classList.add("controls")
+  controlsDiv.classList.add("controls");
   const copyButton = createButton(
     "copy-msg-btn",
     `<i class="bi bi-clipboard"></i> Copy`,
@@ -721,7 +766,7 @@ function createMessageControls(msg) {
 const retryMessage = (msg) => {
   // Re-send the message content to the server, specifying the original message ID
   // *and* the chat it belongs to (which might be different from current_chat_id if user switched)
-  socket.emit("retry_msg", { "msg_id": msg.id, "chat_id": msg.chat_id }); // Send the message's original chat_id
+  socket.emit("retry_msg", { msg_id: msg.id, chat_id: msg.chat_id }); // Send the message's original chat_id
 
   // Optionally, provide visual feedback to the user (remains unchanged)
   const msgDiv = document.getElementById(msg.id);
@@ -737,16 +782,21 @@ const retryMessage = (msg) => {
 const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
   // *** ADD FILTERING LOGIC HERE ***
   if (!isMemberMsg(msg, chats[current_chat_id])) {
-    console.debug(`Skipping add message ${msg.id} (role: ${msg.role}) - not in current branch ${current_chat_id}`);
+    console.debug(
+      `Skipping add message ${msg.id} (role: ${msg.role}) - not in current branch ${current_chat_id}`,
+    );
     return; // Don't add if not in the current branch
   }
-  console.debug(`Adding message ${msg.id} (role: ${msg.role}) to branch ${current_chat_id}`);
-
+  console.debug(
+    `Adding message ${msg.id} (role: ${msg.role}) to branch ${current_chat_id}`,
+  );
 
   const chatBox = document.getElementById("chat-box");
   // Check if message already exists (e.g., due to race condition or retry)
   if (document.getElementById(msg.id)) {
-    console.warn(`Message ${msg.id} already exists in chat box. Updating instead.`);
+    console.warn(
+      `Message ${msg.id} already exists in chat box. Updating instead.`,
+    );
     updateMessageInChatBox(msg);
     return;
   }
@@ -766,7 +816,6 @@ const addMessageToChatBox = handleChatBoxUpdate((msg, appendAtTop = false) => {
 
   const controlsDiv = createMessageControls(msg); // Create the controls
   msgDiv.appendChild(controlsDiv);
-
 });
 
 const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
@@ -774,14 +823,18 @@ const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
   if (!isMemberMsg(msg, chats[current_chat_id])) {
     // If the message being updated is no longer relevant to the current view,
     // maybe just remove it? Or ignore the update? Let's ignore for now.
-    console.debug(`Skipping update for message ${msg.id} - not in current branch ${current_chat_id}`);
+    console.debug(
+      `Skipping update for message ${msg.id} - not in current branch ${current_chat_id}`,
+    );
     return;
   }
   console.debug(`Updating message ${msg.id} in branch ${current_chat_id}`);
 
   const msgDiv = document.getElementById(msg.id);
   if (!msgDiv) {
-    console.warn(`Tried to update message ${msg.id} but it wasn't found in the DOM. Adding it instead.`);
+    console.warn(
+      `Tried to update message ${msg.id} but it wasn't found in the DOM. Adding it instead.`,
+    );
     // Maybe it wasn't added initially due to branch filtering, add it now if relevant
     addMessageToChatBox(msg);
     return;
@@ -794,7 +847,10 @@ const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
   const existingControlsDiv = msgDiv.querySelector(".controls");
 
   // Clear only the content *before* the controls div
-  while (msgDiv.firstChild && !msgDiv.firstChild.classList?.contains("controls")) {
+  while (
+    msgDiv.firstChild &&
+    !msgDiv.firstChild.classList?.contains("controls")
+  ) {
     msgDiv.removeChild(msgDiv.firstChild);
   }
 
@@ -811,10 +867,9 @@ const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
   }
 });
 
-
 /**
-* Updates the main chat display, filtering messages based on the current chat branch.
-*/
+ * Updates the main chat display, filtering messages based on the current chat branch.
+ */
 const updateChatDisplay = handleChatBoxUpdate((messagesToDisplay) => {
   const chatBox = document.getElementById("chat-box");
   chatBox.innerHTML = ""; // Clear the chat box first
@@ -822,8 +877,8 @@ const updateChatDisplay = handleChatBoxUpdate((messagesToDisplay) => {
   console.log(`Updating chat display for branch: ${current_chat_id}`);
 
   // Filter messages based on the current chat branch
-  const filteredMessages = messagesToDisplay.filter(msg =>
-    isMemberMsg(msg, chats[current_chat_id])
+  const filteredMessages = messagesToDisplay.filter((msg) =>
+    isMemberMsg(msg, chats[current_chat_id]),
   );
 
   // Render filtered messages from bottom to top for correct order
@@ -913,16 +968,16 @@ function applyGroundingInfo(contentText, groundingMetadata) {
     });
     result = result.substring(0, idx).endsWith("```")
       ? result.substring(0, idx) +
-      "\n" +
-      `<i class="bi bi-info-circle grounding-marker" data-tooltip="${encodeURIComponent(
-        marked.parse(tooltipContent),
-      )}"></i>` +
-      result.substring(idx)
+        "\n" +
+        `<i class="bi bi-info-circle grounding-marker" data-tooltip="${encodeURIComponent(
+          marked.parse(tooltipContent),
+        )}"></i>` +
+        result.substring(idx)
       : result.substring(0, idx) +
-      `<i class="bi bi-info-circle grounding-marker" data-tooltip="${encodeURIComponent(
-        marked.parse(tooltipContent),
-      )}"></i>` +
-      result.substring(idx);
+        `<i class="bi bi-info-circle grounding-marker" data-tooltip="${encodeURIComponent(
+          marked.parse(tooltipContent),
+        )}"></i>` +
+        result.substring(idx);
   });
 
   // First, insert the rendered_content at first_offset if it exists
@@ -1020,14 +1075,16 @@ function initializeTooltips(element) {
 // --------------------------------------------------------------------------
 
 function displayAttachmentInRightPanel(file) {
-  const rightPanel = document.querySelector('.right-panel');
-  const attachmentDisplayArea = document.getElementById('attachment-display-area');
+  const rightPanel = document.querySelector(".right-panel");
+  const attachmentDisplayArea = document.getElementById(
+    "attachment-display-area",
+  );
 
-  if (rightPanel.classList.contains('d-none')) {
-    rightPanel.classList.remove('d-none');
+  if (rightPanel.classList.contains("d-none")) {
+    rightPanel.classList.remove("d-none");
   }
 
-  attachmentDisplayArea.innerHTML = ''; // Clear previous content
+  attachmentDisplayArea.innerHTML = ""; // Clear previous content
 
   if (file.type.startsWith("image/")) {
     const img = document.createElement("img");
@@ -1038,7 +1095,6 @@ function displayAttachmentInRightPanel(file) {
 
     const downloadButton = createDownloadButton(file);
     attachmentDisplayArea.appendChild(downloadButton);
-
   } else if (file.type.startsWith("video/")) {
     const video = document.createElement("video");
     video.classList.add("vid-attachment-panel"); // Add class for styling in right panel
@@ -1049,22 +1105,23 @@ function displayAttachmentInRightPanel(file) {
 
     const downloadButton = createDownloadButton(file);
     attachmentDisplayArea.appendChild(downloadButton);
-
-  } else if (file.type.startsWith("text/") || file.type === "application/pdf") { // Handle text and pdf as text for now
-    const textContainer = document.createElement('div');
-    textContainer.classList.add('text-attachment-panel');
+  } else if (file.type.startsWith("text/") || file.type === "application/pdf") {
+    // Handle text and pdf as text for now
+    const textContainer = document.createElement("div");
+    textContainer.classList.add("text-attachment-panel");
 
     let textContent = atob(file.content); // Decode base64 to text
 
     if (file.type != "text/plain" && file.type.startsWith("text")) {
-      highlightedCode = null
-      const language = hljs.getLanguage(file.type.split("/")[1]) ? file.type.split("/")[1] : null;
+      highlightedCode = null;
+      const language = hljs.getLanguage(file.type.split("/")[1])
+        ? file.type.split("/")[1]
+        : null;
       if (language !== null)
         highlightedCode = hljs.highlight(textContent, { language });
       else if (file.type == "text/x-python")
         highlightedCode = hljs.highlight(textContent, { language: "py" });
-      else
-        highlightedCode = hljs.highlightAuto(textContent);
+      else highlightedCode = hljs.highlightAuto(textContent);
       textContainer.innerHTML = `<pre><code class="hljs ${highlightedCode.language}">${highlightedCode.value}</code></pre>`;
     } else {
       textContainer.textContent = textContent;
@@ -1078,14 +1135,17 @@ function displayAttachmentInRightPanel(file) {
   }
 
   // Activate the content tab
-  const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+  const contentTab = new bootstrap.Tab(document.getElementById("content-tab"));
   contentTab.show();
 }
 
 function createDownloadButton(file, textContent = null) {
-  const downloadButton = createButton("download-btn", `<i class="bi bi-download"></i> Download`);
+  const downloadButton = createButton(
+    "download-btn",
+    `<i class="bi bi-download"></i> Download`,
+  );
   downloadButton.classList.add("btn", "btn-secondary");
-  downloadButton.addEventListener('click', () => {
+  downloadButton.addEventListener("click", () => {
     let blob;
     if (textContent !== null) {
       blob = new Blob([textContent], { type: file.type });
@@ -1093,7 +1153,7 @@ function createDownloadButton(file, textContent = null) {
       blob = base64ToBlob(file.content, file.type);
     }
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = file.filename;
     document.body.appendChild(a); // Required for Firefox
@@ -1105,9 +1165,12 @@ function createDownloadButton(file, textContent = null) {
 }
 
 function createCopyButton(textContent) {
-  const copyButton = createButton("copy-text-btn", `<i class="bi bi-clipboard"></i> Copy`);
+  const copyButton = createButton(
+    "copy-text-btn",
+    `<i class="bi bi-clipboard"></i> Copy`,
+  );
   copyButton.classList.add("btn", "btn-secondary");
-  copyButton.addEventListener('click', () => {
+  copyButton.addEventListener("click", () => {
     copyToClipboard(textContent, copyButton);
   });
   return copyButton;
@@ -1129,7 +1192,7 @@ function base64ToBlob(base64Data, contentType) {
 }
 
 /**
- * Creates an element to display attachments, now handling all file types 
+ * Creates an element to display attachments, now handling all file types
  * with preview for images/videos and icon+name for others.
  */
 function createAttachmentElement(file) {
@@ -1169,14 +1232,14 @@ function createAttachmentElement(file) {
 
     const fileInfoSpan = document.createElement("span");
     fileInfoSpan.classList.add("attachment-fileinfo");
-    const fileType = file.type.split('/')[0].toUpperCase();
-    const fileSizeKB = (file.content.length * (3 / 4) / 1024).toFixed(2);
+    const fileType = file.type.split("/")[0].toUpperCase();
+    const fileSizeKB = ((file.content.length * (3 / 4)) / 1024).toFixed(2);
     fileInfoSpan.textContent = `${fileType} · ${fileSizeKB} KB`;
 
     fileBoxContent.appendChild(iconFilenameWrapper);
     fileBoxContent.appendChild(fileInfoSpan);
   }
-  fileBoxContent.addEventListener('click', function (event) {
+  fileBoxContent.addEventListener("click", function (event) {
     event.stopPropagation(); // Stop event from bubbling up to chat-box
     const fileData = JSON.parse(this.dataset.file); // Retrieve file data
     displayAttachmentInRightPanel(fileData);
@@ -1198,6 +1261,7 @@ function createAttachmentElement(file) {
 function renderFunctionCall(functionCall) {
   const name = functionCall.name;
   const args = functionCall.args || {};
+  const extra_data = functionCall.extra_data || {};
   const functionId = functionCall.id;
   const iconClass = getFunctionIconClass(name);
   let isClickable = false; // Flag to determine if the box should be clickable
@@ -1222,12 +1286,20 @@ function renderFunctionCall(functionCall) {
     const once = args.once;
     displayText = `<span class="fn-name">CreateReminder</span> to <span class="fn-argv">\`${message}\`</span>`;
     if (once) displayText += ` <span class="fn-argk">once</span>`;
-    if (intervalType === "minute" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">minute(s)</span>`;
-    else if (intervalType === "hour" && intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">hour(s)</span>`;
+    if (intervalType === "minute" && intervalInt > 0)
+      displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">minute(s)</span>`;
+    else if (intervalType === "hour" && intervalInt > 0)
+      displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">hour(s)</span>`;
     else if (intervalType === "day") {
-      if (specificTime) displayText += ` every day at <span class="fn-argv">${specificTime}</span>`;
-      else if (intervalInt > 0) displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">day(s)</span>`;
-    } else if (intervalType === "week" && intervalList && intervalList.length > 0) {
+      if (specificTime)
+        displayText += ` every day at <span class="fn-argv">${specificTime}</span>`;
+      else if (intervalInt > 0)
+        displayText += ` every <span class="fn-argv">${intervalInt}</span> <span class="fn-argk">day(s)</span>`;
+    } else if (
+      intervalType === "week" &&
+      intervalList &&
+      intervalList.length > 0
+    ) {
       const days = intervalList.join(", ");
       displayText += ` every <span class="fn-argv">${days}</span> at <span class="fn-argv">${specificTime}</span>`;
     }
@@ -1236,8 +1308,10 @@ function renderFunctionCall(functionCall) {
     const reminderId = args.reminder_id;
     const foreverOrNext = args.forever_or_next;
     displayText = `<span class="fn-name">CancelReminder</span>`;
-    if (foreverOrNext === "forever") displayText += ` of ID <span class="fn-argv">${reminderId}</span> <span class="fn-argk">forever</span>`;
-    else if (foreverOrNext === "next") displayText += ` Next Run of ID <span class="fn-argv">${reminderId}</span>`;
+    if (foreverOrNext === "forever")
+      displayText += ` of ID <span class="fn-argv">${reminderId}</span> <span class="fn-argk">forever</span>`;
+    else if (foreverOrNext === "next")
+      displayText += ` Next Run of ID <span class="fn-argv">${reminderId}</span>`;
     // No response needed inline for CancelReminder
   } else if (name === "CreateTask") {
     const title = args.title;
@@ -1251,14 +1325,18 @@ function renderFunctionCall(functionCall) {
     if (startDate) {
       if (startDate === endDate) {
         displayText += ` on <span class="fn-argv">${startDate}</span>`;
-        if (startTime && endTime) displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
-        else if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+        if (startTime && endTime)
+          displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
+        else if (startTime)
+          displayText += ` at <span class="fn-argv">${startTime}</span>`;
       } else {
         displayText += ` from <span class="fn-argv">${startDate}</span>`;
-        if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+        if (startTime)
+          displayText += ` at <span class="fn-argv">${startTime}</span>`;
         if (endDate) {
           displayText += ` to <span class="fn-argv">${endDate}</span>`;
-          if (endTime) displayText += ` until <span class="fn-argv">${endTime}</span>`;
+          if (endTime)
+            displayText += ` until <span class="fn-argv">${endTime}</span>`;
         }
       }
     }
@@ -1275,23 +1353,30 @@ function renderFunctionCall(functionCall) {
     const allDay = args.allDay;
     const completed = args.completed;
     displayText = `<span class="fn-name">UpdateTask</span> <span class="fn-argk">ID</span> <span class="fn-argv">\`${taskId}\`</span>`;
-    if (title) displayText += `, <span class="fn-argk">title</span> to <span class="fn-argv">\`${title}\`</span>`;
+    if (title)
+      displayText += `, <span class="fn-argk">title</span> to <span class="fn-argv">\`${title}\`</span>`;
     if (startDate) {
       if (startDate === endDate) {
         displayText += ` on <span class="fn-argv">${startDate}</span>`;
-        if (startTime && endTime) displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
-        else if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+        if (startTime && endTime)
+          displayText += ` from <span class="fn-argv">${startTime}</span> to <span class="fn-argv">${endTime}</span>`;
+        else if (startTime)
+          displayText += ` at <span class="fn-argv">${startTime}</span>`;
       } else {
         displayText += ` from <span class="fn-argv">${startDate}</span>`;
-        if (startTime) displayText += ` at <span class="fn-argv">${startTime}</span>`;
+        if (startTime)
+          displayText += ` at <span class="fn-argv">${startTime}</span>`;
         if (endDate) {
           displayText += ` to <span class="fn-argv">${endDate}</span>`;
-          if (endTime) displayText += ` until <span class="fn-argv">${endTime}</span>`;
+          if (endTime)
+            displayText += ` until <span class="fn-argv">${endTime}</span>`;
         }
       }
     }
-    if (allDay !== undefined) displayText += ` <span class="fn-argk">allDay</span> to <span class="fn-argv">${allDay}</span>`;
-    if (completed !== undefined) displayText += ` <span class="fn-argk">completed</span> to <span class="fn-argv">${completed}</span>`;
+    if (allDay !== undefined)
+      displayText += ` <span class="fn-argk">allDay</span> to <span class="fn-argv">${allDay}</span>`;
+    if (completed !== undefined)
+      displayText += ` <span class="fn-argk">completed</span> to <span class="fn-argv">${completed}</span>`;
     // No response needed inline for UpdateTask
   } else if (name === "FetchWebsite") {
     displayText = `<span class="fn-name">${name}</span> from <span class="fn-argv">${args.url}</span>`;
@@ -1329,12 +1414,17 @@ function renderFunctionCall(functionCall) {
   } else if (name === "SendControlC") {
     displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>`;
     // No response needed inline
+  } else if (name === "DeepResearch") {
+    steps = extra_data["steps"];
+    displayText = `<span class="fn-name">${name}</span>`;
+    steps.forEach((step) => {
+      if (step.thoughts) displayText += step.thoughts;
+    });
+    isClickable = true; // Make clickable to show content
   } else if (name === "LinkAttachment" || name === "Imagen") {
     var placeholder;
-    if (name === "LinkAttachment")
-      placeholder = args.relative_paths;
-    else
-      placeholder = args.prompt;
+    if (name === "LinkAttachment") placeholder = args.relative_paths;
+    else placeholder = args.prompt;
     return `
         <div class="fn-call-box" id="fn-call-${functionId}" data-function-name="${name}" data-function-id="${functionId}">
             <span class="placeholder-text">${placeholder}</span>
@@ -1344,15 +1434,22 @@ function renderFunctionCall(functionCall) {
   // --- Default Rendering (Fallback) ---
   else {
     const formattedArgs = Object.entries(args)
-      .filter(([key, value]) => value !== null && value !== undefined && value !== "")
+      .filter(
+        ([key, value]) => value !== null && value !== undefined && value !== "",
+      )
       .map(([key, value]) => {
         let displayValue;
-        try { displayValue = JSON.stringify(value); }
-        catch (e) { displayValue = String(value); }
+        try {
+          displayValue = JSON.stringify(value);
+        } catch (e) {
+          displayValue = String(value);
+        }
         return `<span class="fn-arg"><span class="fn-argk">${key}</span>=<span class="fn-argv">${displayValue}</span></span>`;
       })
-      .join(', ');
-    displayText += formattedArgs ? ` <span class="fn-args"> ${formattedArgs}</span>` : '';
+      .join(", ");
+    displayText += formattedArgs
+      ? ` <span class="fn-args"> ${formattedArgs}</span>`
+      : "";
   }
 
   // --- Construct Final HTML ---
@@ -1364,7 +1461,7 @@ function renderFunctionCall(functionCall) {
               ${displayText}
           </span>
           <span class="fn-response">
-              <span class="fn-arrow">-></span> 
+              <span class="fn-arrow">-></span>
               <div class="thinking-loader">
                   <div class="dot"></div>
                   <div class="dot"></div>
@@ -1376,18 +1473,26 @@ function renderFunctionCall(functionCall) {
 }
 
 /**
-* Helper function to determine the icon class based on the function name.
-* You can customize this based on your function names and desired icons.
-* @param {string} functionName
-* @returns {string} Bootstrap Icons class
-*/
+ * Helper function to determine the icon class based on the function name.
+ * You can customize this based on your function names and desired icons.
+ * @param {string} functionName
+ * @returns {string} Bootstrap Icons class
+ */
 function getFunctionIconClass(functionName) {
   functionName = functionName.toLowerCase();
-  if (functionName.includes("read") || functionName.includes("get") || functionName.includes("fetch")) {
+  if (
+    functionName.includes("read") ||
+    functionName.includes("get") ||
+    functionName.includes("fetch")
+  ) {
     return "bi bi-file-earmark-text"; // Example icon for reading/fetching files or data
   } else if (functionName.includes("execute") || functionName.includes("run")) {
     return "bi bi-play-btn"; // Example icon for executing commands
-  } else if (functionName.includes("create") || functionName.includes("make") || functionName.includes("generate")) {
+  } else if (
+    functionName.includes("create") ||
+    functionName.includes("make") ||
+    functionName.includes("generate")
+  ) {
     return "bi bi-pencil-square"; // Example icon for creating/writing files
   } else {
     return "bi bi-gear"; // Default gear icon for other functions
@@ -1405,7 +1510,9 @@ function renderFunctionResponse(functionResponse) {
   const isSuccess = response.output !== undefined;
   var showArrow = true;
 
-  const fnResponseSpan = document.querySelector(`#fn-call-${functionId} .fn-response`);
+  const fnResponseSpan = document.querySelector(
+    `#fn-call-${functionId} .fn-response`,
+  );
   const fnCallBox = document.getElementById(`fn-call-${functionId}`);
 
   const functionName = fnCallBox.dataset.functionName;
@@ -1414,43 +1521,63 @@ function renderFunctionResponse(functionResponse) {
     let successText = "";
     if (functionName === "CreateReminder") {
       successText = ` of ID \`${response.output}\``;
-      showArrow = false
+      showArrow = false;
     } else if (functionName === "RunCommandBackground") {
       successText = ` Process ID: \`${response.output}\``;
     } else if (functionName === "IsProcessRunning") {
       successText = ` Running: <span class="fn-argv">${response.output}</span>`;
-    } else if (["FetchWebsite", "GetSTDOut", "ReadFile"].includes(functionName)) {
+    } else if (
+      ["FetchWebsite", "GetSTDOut", "ReadFile", "DeepResearch"].includes(
+        functionName,
+      )
+    ) {
       // For functions where output might be large, just show success
       // Click handler will display full content
       successText = ` Success`;
-    } else if (["CreateTask", "UpdateTask", "CancelReminder", "CreateFile", "RunCommand", "SendSTDIn", "CreateFolder", "DeleteFile", "DeleteFolder", "KillProcess", "WriteFile", "SendControlC"].includes(functionName)) {
+    } else if (
+      [
+        "CreateTask",
+        "UpdateTask",
+        "CancelReminder",
+        "CreateFile",
+        "RunCommand",
+        "SendSTDIn",
+        "CreateFolder",
+        "DeleteFile",
+        "DeleteFolder",
+        "KillProcess",
+        "WriteFile",
+        "SendControlC",
+      ].includes(functionName)
+    ) {
       // For simple actions, show success message
       successText = ` Success`;
     } else if (functionName === "LinkAttachment" || functionName === "Imagen") {
-      fnCallBox.classList = []
+      fnCallBox.classList = [];
       fnCallBox.innerHTML = "";
-      functionResponse.inline_data.forEach(
-        (content) => {
-          if (content.attachment)
-            fnCallBox.appendChild(createAttachmentElement(content.attachment))
-          else if (content.text) {
-            const contentDiv = document.createElement("div");
-            contentDiv.innerHTML = marked.parse(content.text);
-            fnCallBox.appendChild(contentDiv);
-          }
+      functionResponse.inline_data.forEach((content) => {
+        if (content.attachment)
+          fnCallBox.appendChild(createAttachmentElement(content.attachment));
+        else if (content.text) {
+          const contentDiv = document.createElement("div");
+          contentDiv.innerHTML = marked.parse(content.text);
+          fnCallBox.appendChild(contentDiv);
         }
-      )
+      });
       return;
     } else {
       // Default success display (e.g., for functions not explicitly handled)
       const formattedContent = JSON.stringify(response.output, null, 2);
       successText = `<span><pre class="fn-inline-response-content">${formattedContent}</pre></span>`;
     }
-    fnResponseSpan.innerHTML = successText ? `${showArrow ? "<span class=\"fn-arrow\">-></span>" : ""}${successText}` : '';
-  } else { // Handle Error
+    fnResponseSpan.innerHTML = successText
+      ? `${showArrow ? '<span class="fn-arrow">-></span>' : ""}${successText}`
+      : "";
+  } else {
+    // Handle Error
     fnCallBox.classList.add("fn-call-box-clickable"); // Make error box clickable
-    fnCallBox.classList.add('fn-call-box-error');
-    fnResponseSpan.innerHTML = ''; // Clear response area on error
+    fnCallBox.classList.add("fn-call-box-error");
+    fnResponseSpan.innerHTML = ""; // Clear response area on error
   }
 }
 
@@ -1459,7 +1586,8 @@ document.getElementById("chat-box").addEventListener("click", function (event) {
   const clickableTarget = event.target.closest(".fn-call-box-clickable");
   const errorTarget = event.target.closest(".fn-call-box-error");
 
-  if (clickableTarget && !errorTarget) { // Handle non-error clicks first
+  if (clickableTarget && !errorTarget) {
+    // Handle non-error clicks first
     const functionName = clickableTarget.dataset.functionName;
     const functionId = clickableTarget.dataset.functionId;
 
@@ -1475,10 +1603,11 @@ document.getElementById("chat-box").addEventListener("click", function (event) {
       displayReadFileContent(functionId); // New handler
     } else if (functionName === "WriteFile") {
       displayWriteFileContent(functionId); // New handler
+    } else if (functionName === "DeepResearch") {
+      displayFetchWebsiteOutput(functionId);
     }
-    // Add other non-error clickable handlers here if needed
-
-  } else if (errorTarget) { // Handle error clicks
+  } else if (errorTarget) {
+    // Handle error clicks
     const functionId = errorTarget.dataset.functionId;
     displayFunctionError(functionId);
   }
@@ -1489,30 +1618,38 @@ document.getElementById("chat-box").addEventListener("click", function (event) {
  * @param {string} functionId - The ID of the function call.
  */
 function displayFunctionError(functionId) {
-  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    .closest(".message");
   const msg = JSON.parse(msgDiv.dataset.msg);
-  const contentItem = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+  const contentItem = msg.content.find(
+    (c) => c.function_response && c.function_response.id === functionId,
+  );
   if (contentItem && contentItem.function_response) {
     const functionResponse = contentItem.function_response;
     const error = functionResponse.response.error;
 
-    const rightPanel = document.querySelector('.right-panel');
-    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector(".right-panel");
+    const attachmentDisplayArea = document.getElementById(
+      "attachment-display-area",
+    );
 
-    if (rightPanel.classList.contains('d-none')) {
-      rightPanel.classList.remove('d-none');
+    if (rightPanel.classList.contains("d-none")) {
+      rightPanel.classList.remove("d-none");
     }
 
-    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    attachmentDisplayArea.innerHTML = ""; // Clear previous content
 
     // Display the error message
-    const errorContainer = document.createElement('div');
-    errorContainer.classList.add('terminal-error');
+    const errorContainer = document.createElement("div");
+    errorContainer.classList.add("terminal-error");
     errorContainer.textContent = error;
     attachmentDisplayArea.appendChild(errorContainer);
 
     // Activate the content tab
-    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    const contentTab = new bootstrap.Tab(
+      document.getElementById("content-tab"),
+    );
     contentTab.show();
   } else {
     console.error(`Function call with ID ${functionId} not found in message.`);
@@ -1524,33 +1661,39 @@ function displayFunctionError(functionId) {
  * @param {string} functionId - The ID of the function call.
  */
 function displayCreateFileContent(functionId) {
-  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    .closest(".message");
   const msg = JSON.parse(msgDiv.dataset.msg);
-  const contentItem = msg.content.find(c => c.function_call && c.function_call.id === functionId);
+  const contentItem = msg.content.find(
+    (c) => c.function_call && c.function_call.id === functionId,
+  );
 
   if (contentItem && contentItem.function_call) {
     const functionCall = contentItem.function_call;
     const fileContent = functionCall.args.content;
     const filename = functionCall.args.relative_path;
 
-    const rightPanel = document.querySelector('.right-panel');
-    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector(".right-panel");
+    const attachmentDisplayArea = document.getElementById(
+      "attachment-display-area",
+    );
 
-    if (rightPanel.classList.contains('d-none')) {
-      rightPanel.classList.remove('d-none');
+    if (rightPanel.classList.contains("d-none")) {
+      rightPanel.classList.remove("d-none");
     }
 
-    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    attachmentDisplayArea.innerHTML = ""; // Clear previous content
 
     // Display the file path
-    const filePathHeader = document.createElement('h6');
+    const filePathHeader = document.createElement("h6");
     filePathHeader.textContent = `File Path: ${filename}`;
     attachmentDisplayArea.appendChild(filePathHeader);
 
     // Create a pre element to display the code with highlighting
-    const pre = document.createElement('pre');
-    const code = document.createElement('code');
-    code.classList.add('hljs'); // Add hljs class for highlighting
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.classList.add("hljs"); // Add hljs class for highlighting
     code.textContent = fileContent;
     pre.appendChild(code);
     attachmentDisplayArea.appendChild(pre);
@@ -1559,7 +1702,9 @@ function displayCreateFileContent(functionId) {
     hljs.highlightElement(code);
 
     // Activate the content tab
-    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    const contentTab = new bootstrap.Tab(
+      document.getElementById("content-tab"),
+    );
     contentTab.show();
   } else {
     console.error(`Function call with ID ${functionId} not found in message.`);
@@ -1567,32 +1712,45 @@ function displayCreateFileContent(functionId) {
 }
 
 /**
-* Displays the output of a RunCommand function call in the right panel with a terminal theme.
-* @param {string} functionId - The ID of the function call.
-*/
+ * Displays the output of a RunCommand function call in the right panel with a terminal theme.
+ * @param {string} functionId - The ID of the function call.
+ */
 function displayRunCommandOutput(functionId) {
-  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    .closest(".message");
   const msg = JSON.parse(msgDiv.dataset.msg);
-  const contentItemCall = msg.content.find(c => c.function_call && c.function_call.id === functionId);
-  const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+  const contentItemCall = msg.content.find(
+    (c) => c.function_call && c.function_call.id === functionId,
+  );
+  const contentItemResponce = msg.content.find(
+    (c) => c.function_response && c.function_response.id === functionId,
+  );
 
-  if (contentItemCall && contentItemCall.function_call && contentItemResponce && contentItemResponce.function_response) {
+  if (
+    contentItemCall &&
+    contentItemCall.function_call &&
+    contentItemResponce &&
+    contentItemResponce.function_response
+  ) {
     const functionCall = contentItemCall.function_call;
     const functionResponse = contentItemResponce.function_response;
     const command = functionCall.args.command;
 
-    const rightPanel = document.querySelector('.right-panel');
-    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector(".right-panel");
+    const attachmentDisplayArea = document.getElementById(
+      "attachment-display-area",
+    );
 
-    if (rightPanel.classList.contains('d-none')) {
-      rightPanel.classList.remove('d-none');
+    if (rightPanel.classList.contains("d-none")) {
+      rightPanel.classList.remove("d-none");
     }
 
-    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    attachmentDisplayArea.innerHTML = ""; // Clear previous content
 
     // Display the command
-    const commandHeader = document.createElement('div');
-    commandHeader.classList.add('terminal-command');
+    const commandHeader = document.createElement("div");
+    commandHeader.classList.add("terminal-command");
     commandHeader.textContent = `$ ${command}`;
     attachmentDisplayArea.appendChild(commandHeader);
 
@@ -1602,34 +1760,36 @@ function displayRunCommandOutput(functionId) {
       const returnCode = functionResponse.response.output[2];
 
       // Display the output
-      const outputContainer = document.createElement('div');
-      outputContainer.classList.add('terminal-output');
-      outputContainer.textContent = output || '';
+      const outputContainer = document.createElement("div");
+      outputContainer.classList.add("terminal-output");
+      outputContainer.textContent = output || "";
       attachmentDisplayArea.appendChild(outputContainer);
 
       // Display the error
       if (error) {
-        const errorContainer = document.createElement('div');
-        errorContainer.classList.add('terminal-error');
+        const errorContainer = document.createElement("div");
+        errorContainer.classList.add("terminal-error");
         errorContainer.textContent = `stderr: ${error}`;
         attachmentDisplayArea.appendChild(errorContainer);
       }
 
       // Display the return code
-      const returnCodeContainer = document.createElement('div');
-      returnCodeContainer.classList.add('terminal-return-code');
+      const returnCodeContainer = document.createElement("div");
+      returnCodeContainer.classList.add("terminal-return-code");
       returnCodeContainer.textContent = `Return Code: ${returnCode || 0}`;
       attachmentDisplayArea.appendChild(returnCodeContainer);
     } else if (functionResponse.response.error) {
       // Display the error message
-      const errorContainer = document.createElement('div');
-      errorContainer.classList.add('terminal-error');
+      const errorContainer = document.createElement("div");
+      errorContainer.classList.add("terminal-error");
       errorContainer.textContent = functionResponse.response.error;
       attachmentDisplayArea.appendChild(errorContainer);
     }
 
     // Activate the content tab
-    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    const contentTab = new bootstrap.Tab(
+      document.getElementById("content-tab"),
+    );
     contentTab.show();
   } else {
     console.error(`Function call with ID ${functionId} not found in message.`);
@@ -1641,60 +1801,84 @@ function displayRunCommandOutput(functionId) {
  * @param {string} functionId - The ID of the function call.
  */
 function displayFetchWebsiteOutput(functionId) {
-  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    .closest(".message");
   const msg = JSON.parse(msgDiv.dataset.msg);
-  const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+  const contentItemResponce = msg.content.find(
+    (c) => c.function_response && c.function_response.id === functionId,
+  );
 
-  if (contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
+  if (
+    contentItemResponce &&
+    contentItemResponce.function_response &&
+    contentItemResponce.function_response.response.output
+  ) {
     const output = contentItemResponce.function_response.response.output;
 
-    const rightPanel = document.querySelector('.right-panel');
-    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector(".right-panel");
+    const attachmentDisplayArea = document.getElementById(
+      "attachment-display-area",
+    );
 
-    if (rightPanel.classList.contains('d-none')) {
-      rightPanel.classList.remove('d-none');
+    if (rightPanel.classList.contains("d-none")) {
+      rightPanel.classList.remove("d-none");
     }
-    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    attachmentDisplayArea.innerHTML = ""; // Clear previous content
 
-    const outputContainer = document.createElement('div');
-    outputContainer.classList.add('text-attachment-panel'); // Use existing style
-    outputContainer.textContent = output;
+    const outputContainer = document.createElement("div");
+    outputContainer.classList.add("text-attachment-panel"); // Use existing style
+    outputContainer.innerHTML = marked.parse(output);
     attachmentDisplayArea.appendChild(outputContainer);
 
     const copyButton = createCopyButton(output);
     attachmentDisplayArea.appendChild(copyButton);
 
     // Activate the content tab
-    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    const contentTab = new bootstrap.Tab(
+      document.getElementById("content-tab"),
+    );
     contentTab.show();
   } else {
-    console.error(`Function response for FetchWebsite with ID ${functionId} not found or has no output.`);
+    console.error(
+      `Function response for FetchWebsite with ID ${functionId} not found or has no output.`,
+    );
   }
 }
 
 /**
-* Displays the output of a GetSTDOut function call in the right panel.
-* @param {string} functionId - The ID of the function call.
-*/
+ * Displays the output of a GetSTDOut function call in the right panel.
+ * @param {string} functionId - The ID of the function call.
+ */
 function displayGetSTDOutOutput(functionId) {
-  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    .closest(".message");
   const msg = JSON.parse(msgDiv.dataset.msg);
-  const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+  const contentItemResponce = msg.content.find(
+    (c) => c.function_response && c.function_response.id === functionId,
+  );
 
-  if (contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
+  if (
+    contentItemResponce &&
+    contentItemResponce.function_response &&
+    contentItemResponce.function_response.response.output
+  ) {
     const outputLines = contentItemResponce.function_response.response.output;
-    const output = outputLines.join('\n'); // Join lines into a single string
+    const output = outputLines.join("\n"); // Join lines into a single string
 
-    const rightPanel = document.querySelector('.right-panel');
-    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector(".right-panel");
+    const attachmentDisplayArea = document.getElementById(
+      "attachment-display-area",
+    );
 
-    if (rightPanel.classList.contains('d-none')) {
-      rightPanel.classList.remove('d-none');
+    if (rightPanel.classList.contains("d-none")) {
+      rightPanel.classList.remove("d-none");
     }
-    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    attachmentDisplayArea.innerHTML = ""; // Clear previous content
 
-    const outputContainer = document.createElement('div');
-    outputContainer.classList.add('terminal-output'); // Use terminal style
+    const outputContainer = document.createElement("div");
+    outputContainer.classList.add("terminal-output"); // Use terminal style
     outputContainer.textContent = output;
     attachmentDisplayArea.appendChild(outputContainer);
 
@@ -1702,42 +1886,60 @@ function displayGetSTDOutOutput(functionId) {
     attachmentDisplayArea.appendChild(copyButton);
 
     // Activate the content tab
-    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    const contentTab = new bootstrap.Tab(
+      document.getElementById("content-tab"),
+    );
     contentTab.show();
   } else {
-    console.error(`Function response for GetSTDOut with ID ${functionId} not found or has no output.`);
+    console.error(
+      `Function response for GetSTDOut with ID ${functionId} not found or has no output.`,
+    );
   }
 }
 
 /**
-* Displays the content of a ReadFile function call in the right panel.
-* @param {string} functionId - The ID of the function call.
-*/
+ * Displays the content of a ReadFile function call in the right panel.
+ * @param {string} functionId - The ID of the function call.
+ */
 function displayReadFileContent(functionId) {
-  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    .closest(".message");
   const msg = JSON.parse(msgDiv.dataset.msg);
-  const contentItemCall = msg.content.find(c => c.function_call && c.function_call.id === functionId);
-  const contentItemResponce = msg.content.find(c => c.function_response && c.function_response.id === functionId);
+  const contentItemCall = msg.content.find(
+    (c) => c.function_call && c.function_call.id === functionId,
+  );
+  const contentItemResponce = msg.content.find(
+    (c) => c.function_response && c.function_response.id === functionId,
+  );
 
-  if (contentItemCall && contentItemCall.function_call && contentItemResponce && contentItemResponce.function_response && contentItemResponce.function_response.response.output) {
+  if (
+    contentItemCall &&
+    contentItemCall.function_call &&
+    contentItemResponce &&
+    contentItemResponce.function_response &&
+    contentItemResponce.function_response.response.output
+  ) {
     const filename = contentItemCall.function_call.args.relative_path;
     const fileContent = contentItemResponce.function_response.response.output;
 
-    const rightPanel = document.querySelector('.right-panel');
-    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector(".right-panel");
+    const attachmentDisplayArea = document.getElementById(
+      "attachment-display-area",
+    );
 
-    if (rightPanel.classList.contains('d-none')) {
-      rightPanel.classList.remove('d-none');
+    if (rightPanel.classList.contains("d-none")) {
+      rightPanel.classList.remove("d-none");
     }
-    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    attachmentDisplayArea.innerHTML = ""; // Clear previous content
 
-    const filePathHeader = document.createElement('h6');
+    const filePathHeader = document.createElement("h6");
     filePathHeader.textContent = `File Path: ${filename}`;
     attachmentDisplayArea.appendChild(filePathHeader);
 
-    const pre = document.createElement('pre');
-    const code = document.createElement('code');
-    code.classList.add('hljs');
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.classList.add("hljs");
     code.textContent = fileContent;
     pre.appendChild(code);
     attachmentDisplayArea.appendChild(pre);
@@ -1747,41 +1949,51 @@ function displayReadFileContent(functionId) {
     attachmentDisplayArea.appendChild(copyButton);
 
     // Activate the content tab
-    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    const contentTab = new bootstrap.Tab(
+      document.getElementById("content-tab"),
+    );
     contentTab.show();
   } else {
-    console.error(`Function call or response for ReadFile with ID ${functionId} not found or has no output.`);
+    console.error(
+      `Function call or response for ReadFile with ID ${functionId} not found or has no output.`,
+    );
   }
 }
 
 /**
-* Displays the content that was written by a WriteFile function call.
-* @param {string} functionId - The ID of the function call.
-*/
+ * Displays the content that was written by a WriteFile function call.
+ * @param {string} functionId - The ID of the function call.
+ */
 function displayWriteFileContent(functionId) {
-  const msgDiv = document.getElementById(`fn-call-${functionId}`).closest(".message");
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    .closest(".message");
   const msg = JSON.parse(msgDiv.dataset.msg);
-  const contentItemCall = msg.content.find(c => c.function_call && c.function_call.id === functionId);
+  const contentItemCall = msg.content.find(
+    (c) => c.function_call && c.function_call.id === functionId,
+  );
 
   if (contentItemCall && contentItemCall.function_call) {
     const filename = contentItemCall.function_call.args.relative_path;
     const fileContent = contentItemCall.function_call.args.content; // Get content from the call args
 
-    const rightPanel = document.querySelector('.right-panel');
-    const attachmentDisplayArea = document.getElementById('attachment-display-area');
+    const rightPanel = document.querySelector(".right-panel");
+    const attachmentDisplayArea = document.getElementById(
+      "attachment-display-area",
+    );
 
-    if (rightPanel.classList.contains('d-none')) {
-      rightPanel.classList.remove('d-none');
+    if (rightPanel.classList.contains("d-none")) {
+      rightPanel.classList.remove("d-none");
     }
-    attachmentDisplayArea.innerHTML = ''; // Clear previous content
+    attachmentDisplayArea.innerHTML = ""; // Clear previous content
 
-    const filePathHeader = document.createElement('h6');
+    const filePathHeader = document.createElement("h6");
     filePathHeader.textContent = `File Path: ${filename}`;
     attachmentDisplayArea.appendChild(filePathHeader);
 
-    const pre = document.createElement('pre');
-    const code = document.createElement('code');
-    code.classList.add('hljs');
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.classList.add("hljs");
     code.textContent = fileContent;
     pre.appendChild(code);
     attachmentDisplayArea.appendChild(pre);
@@ -1791,10 +2003,14 @@ function displayWriteFileContent(functionId) {
     attachmentDisplayArea.appendChild(copyButton);
 
     // Activate the content tab
-    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    const contentTab = new bootstrap.Tab(
+      document.getElementById("content-tab"),
+    );
     contentTab.show();
   } else {
-    console.error(`Function call for WriteFile with ID ${functionId} not found.`);
+    console.error(
+      `Function call for WriteFile with ID ${functionId} not found.`,
+    );
   }
 }
 
@@ -1869,10 +2085,10 @@ function updateTextareaRows() {
 }
 
 // Constants and element references
-const modelSelect = document.getElementById('model-select');
+const modelSelect = document.getElementById("model-select");
 // const toggleButtons = document.querySelectorAll('.toggle-button');
-const autoSelectButton = document.getElementById('autoselect-tool');
-const googleSearchButton = document.getElementById('google-search-tool');
+const autoSelectButton = document.getElementById("autoselect-tool");
+const googleSearchButton = document.getElementById("google-search-tool");
 
 // Global variables to store model compatibility information
 let toolSupportedModels = [];
@@ -1883,23 +2099,23 @@ let searchGroundingSupportedModels = [];
 // Fetch available models from the backend
 async function fetchModels() {
   try {
-    const response = await fetch('/get_models');
+    const response = await fetch("/get_models");
     if (!response.ok) {
-      throw new Error('Failed to fetch models');
+      throw new Error("Failed to fetch models");
     }
     const models = await response.json();
 
     // Clear existing options
-    modelSelect.innerHTML = '';
+    modelSelect.innerHTML = "";
 
     // Add new options based on API response
-    models.forEach(model => {
-      const option = document.createElement('option');
+    models.forEach((model) => {
+      const option = document.createElement("option");
       option.value = model;
       option.textContent = model;
       modelSelect.appendChild(option);
     });
-    const option = document.createElement('option');
+    const option = document.createElement("option");
     option.value = "auto";
     option.textContent = "auto";
     modelSelect.appendChild(option);
@@ -1907,38 +2123,56 @@ async function fetchModels() {
     // Load saved selection after populating options
     loadSelectedModel();
   } catch (error) {
-    console.error('Error fetching models:', error);
+    console.error("Error fetching models:", error);
   }
 }
 
 // Fetch model compatibility information from the backend
 async function fetchModelCompatibility() {
   try {
-    const response = await fetch('/get_model_compatibility');
+    const response = await fetch("/get_model_compatibility");
     if (!response.ok) {
-      throw new Error('Failed to fetch model compatibility');
+      throw new Error("Failed to fetch model compatibility");
     }
     const compatibility = await response.json();
 
     // Store compatibility information
     toolSupportedModels = compatibility.toolSupportedModels || [];
-    searchGroundingSupportedModels = compatibility.searchGroundingSupportedModels || [];
+    searchGroundingSupportedModels =
+      compatibility.searchGroundingSupportedModels || [];
 
     // Update tool availability based on current model after compatibility info is loaded
     updateToolAvailability(modelSelect.value);
   } catch (error) {
-    console.error('Error fetching model compatibility:', error);
+    console.error("Error fetching model compatibility:", error);
     // Fallback to hardcoded values if fetch fails
-    toolSupportedModels = ['Large25', 'Large20', 'Medium20', 'Small20', 'Large15', 'Medium15', 'Small15'];
-    searchGroundingSupportedModels = ['Large20', 'Large20', 'Large15', 'Medium20', 'Medium15'];
+    toolSupportedModels = [
+      "Large25",
+      "Large20",
+      "Medium20",
+      "Small20",
+      "Large15",
+      "Medium15",
+      "Small15",
+    ];
+    searchGroundingSupportedModels = [
+      "Large20",
+      "Large20",
+      "Large15",
+      "Medium20",
+      "Medium15",
+    ];
     updateToolAvailability(modelSelect.value);
   }
 }
 
 // Load saved model from local storage
 function loadSelectedModel() {
-  const savedModel = localStorage.getItem('selectedModel');
-  if (savedModel && Array.from(modelSelect.options).some(opt => opt.value === savedModel)) {
+  const savedModel = localStorage.getItem("selectedModel");
+  if (
+    savedModel &&
+    Array.from(modelSelect.options).some((opt) => opt.value === savedModel)
+  ) {
     modelSelect.value = savedModel;
   } else if (modelSelect.options.length > 0) {
     // Set first option as default if saved model is invalid
@@ -1951,36 +2185,36 @@ function loadSelectedModel() {
 
 // Save selected model to local storage and update backend
 function saveSelectedModel(model) {
-  localStorage.setItem('selectedModel', model);
+  localStorage.setItem("selectedModel", model);
   updateModelSelection(model);
 }
 
 // Send model selection to the backend
 function updateModelSelection(selectedModel) {
-  selectedModel = selectedModel ? selectedModel : modelSelect.value
-  socket.emit('set_models', selectedModel == "auto" ? null : selectedModel);
+  selectedModel = selectedModel ? selectedModel : modelSelect.value;
+  socket.emit("set_models", selectedModel == "auto" ? null : selectedModel);
 }
 
 // Updated function to dynamically check model compatibility with tools
 function updateToolAvailability(selectedModel) {
   // First clear any existing disabled or selected states for a fresh start
-  const allButtons = document.querySelectorAll('.toggle-button');
+  const allButtons = document.querySelectorAll(".toggle-button");
 
   // Special case for 'auto' selection
-  if (selectedModel === 'auto') {
+  if (selectedModel === "auto") {
     // When auto is selected, check if auto button is selected and update accordingly
-    if (autoSelectButton.dataset.state === 'selected') {
+    if (autoSelectButton.dataset.state === "selected") {
       // If Auto is selected, disable all other buttons
-      allButtons.forEach(button => {
-        if (button.id !== 'autoselect-tool') {
-          button.dataset.state = 'disabled';
+      allButtons.forEach((button) => {
+        if (button.id !== "autoselect-tool") {
+          button.dataset.state = "disabled";
         }
       });
     } else {
       // If Auto is not selected, enable all buttons
-      allButtons.forEach(button => {
-        if (button.dataset.state === 'disabled') {
-          button.dataset.state = 'unselected';
+      allButtons.forEach((button) => {
+        if (button.dataset.state === "disabled") {
+          button.dataset.state = "unselected";
         }
       });
     }
@@ -1992,15 +2226,17 @@ function updateToolAvailability(selectedModel) {
 
   // Check if the selected model supports tools
   const modelSupportsTools = toolSupportedModels.includes(selectedModel);
-  const modelSupportsSearch = searchGroundingSupportedModels.includes(selectedModel);
+  const modelSupportsSearch =
+    searchGroundingSupportedModels.includes(selectedModel);
 
   // Check current button states
-  const isAutoSelected = autoSelectButton.dataset.state === 'selected';
-  const isGoogleSearchSelected = googleSearchButton && googleSearchButton.dataset.state === 'selected';
+  const isAutoSelected = autoSelectButton.dataset.state === "selected";
+  const isGoogleSearchSelected =
+    googleSearchButton && googleSearchButton.dataset.state === "selected";
 
   // If Auto is selected, apply its rules regardless of model
   if (isAutoSelected) {
-    updateToggleButtonStates('auto');
+    updateToggleButtonStates("auto");
     return;
   }
 
@@ -2008,41 +2244,44 @@ function updateToolAvailability(selectedModel) {
   if (googleSearchButton) {
     if (!modelSupportsSearch) {
       // If currently selected but not supported, unselect it
-      if (googleSearchButton.dataset.state === 'selected') {
-        googleSearchButton.dataset.state = 'unselected';
+      if (googleSearchButton.dataset.state === "selected") {
+        googleSearchButton.dataset.state = "unselected";
       }
-      googleSearchButton.dataset.state = 'disabled';
-    } else if (googleSearchButton.dataset.state === 'disabled' && modelSupportsSearch) {
+      googleSearchButton.dataset.state = "disabled";
+    } else if (
+      googleSearchButton.dataset.state === "disabled" &&
+      modelSupportsSearch
+    ) {
       // Re-enable if it was disabled but is now supported
-      googleSearchButton.dataset.state = 'unselected';
+      googleSearchButton.dataset.state = "unselected";
     }
   }
 
   // If Google is selected, apply its rules to other buttons
   if (isGoogleSearchSelected && modelSupportsSearch) {
-    updateToggleButtonStates('google');
+    updateToggleButtonStates("google");
     return;
   }
 
   // Handle reminder and fetch website buttons
   const otherToolButtons = [
-    document.getElementById('reminder-tool'),
-    document.getElementById('fetch-website-tool'),
-    document.getElementById('imagen-tool'),
-    document.getElementById('computer-tool')
+    document.getElementById("reminder-tool"),
+    document.getElementById("fetch-website-tool"),
+    document.getElementById("imagen-tool"),
+    document.getElementById("computer-tool"),
   ];
 
-  otherToolButtons.forEach(button => {
+  otherToolButtons.forEach((button) => {
     if (button) {
       if (!modelSupportsTools) {
         // If selected but not supported, unselect it
-        if (button.dataset.state === 'selected') {
-          button.dataset.state = 'unselected';
+        if (button.dataset.state === "selected") {
+          button.dataset.state = "unselected";
         }
-        button.dataset.state = 'disabled';
-      } else if (button.dataset.state === 'disabled' && modelSupportsTools) {
+        button.dataset.state = "disabled";
+      } else if (button.dataset.state === "disabled" && modelSupportsTools) {
         // Re-enable if it was disabled but is now supported
-        button.dataset.state = 'unselected';
+        button.dataset.state = "unselected";
       }
     }
   });
@@ -2052,7 +2291,7 @@ function updateToolAvailability(selectedModel) {
 }
 
 // Handle model selection
-modelSelect.addEventListener('change', function () {
+modelSelect.addEventListener("change", function () {
   const selectedModel = this.value;
   saveSelectedModel(selectedModel);
   updateToolAvailability(selectedModel);
@@ -2062,9 +2301,9 @@ modelSelect.addEventListener('change', function () {
 
 // Load saved button states from local storage
 function loadButtonStates() {
-  const allButtons = document.querySelectorAll('.toggle-button');
-  allButtons.forEach(button => {
-    const savedState = localStorage.getItem(button.id + '-state');
+  const allButtons = document.querySelectorAll(".toggle-button");
+  allButtons.forEach((button) => {
+    const savedState = localStorage.getItem(button.id + "-state");
     if (savedState) {
       button.dataset.state = savedState;
     }
@@ -2076,37 +2315,45 @@ function loadButtonStates() {
 
 // Save button states to local storage
 function saveButtonStates() {
-  const allButtons = document.querySelectorAll('.toggle-button');
-  allButtons.forEach(button => {
-    localStorage.setItem(button.id + '-state', button.dataset.state);
+  const allButtons = document.querySelectorAll(".toggle-button");
+  allButtons.forEach((button) => {
+    localStorage.setItem(button.id + "-state", button.dataset.state);
   });
 }
 
 // Update toggle button states based on Auto or Google Search selection
 function updateToggleButtonStates(selectedTool) {
-  const allButtons = document.querySelectorAll('.toggle-button');
+  const allButtons = document.querySelectorAll(".toggle-button");
 
-  allButtons.forEach(button => {
-    if (selectedTool === 'auto') {
+  allButtons.forEach((button) => {
+    if (selectedTool === "auto") {
       // If Auto is selected, disable all other buttons
-      if (button.id !== 'autoselect-tool') {
-        button.dataset.state = 'disabled';
+      if (button.id !== "autoselect-tool") {
+        button.dataset.state = "disabled";
       }
-    } else if (selectedTool === 'google') {
+    } else if (selectedTool === "google") {
       // If Google Search is selected, disable Reminder and Fetch
-      if (button.id === 'reminder-tool' || button.id === 'fetch-website-tool' || button.id === 'imagen-tool' || button.id === 'computer-tool') {
-        button.dataset.state = 'disabled';
-      } else if (button.id !== 'autoselect-tool' && button.id !== 'google-search-tool') {
+      if (
+        button.id === "reminder-tool" ||
+        button.id === "fetch-website-tool" ||
+        button.id === "imagen-tool" ||
+        button.id === "computer-tool"
+      ) {
+        button.dataset.state = "disabled";
+      } else if (
+        button.id !== "autoselect-tool" &&
+        button.id !== "google-search-tool"
+      ) {
         // For any other buttons besides Auto and Google, set to unselected if they were disabled
-        if (button.dataset.state === 'disabled') {
-          button.dataset.state = 'unselected';
+        if (button.dataset.state === "disabled") {
+          button.dataset.state = "unselected";
         }
       }
     } else {
       // No tool is selected, enable all buttons (or keep their state)
       // Only change state if the button was previously disabled
-      if (button.dataset.state === 'disabled') {
-        button.dataset.state = 'unselected';
+      if (button.dataset.state === "disabled") {
+        button.dataset.state = "unselected";
       }
     }
   });
@@ -2117,57 +2364,60 @@ function updateToggleButtonStates(selectedTool) {
 
 // Send tools selection to the backend
 function updateToolsSelection() {
-  const isAutoSelected = autoSelectButton.dataset.state === 'selected';
+  const isAutoSelected = autoSelectButton.dataset.state === "selected";
 
   if (isAutoSelected) {
     // If Auto is selected, send null to use default behavior
-    socket.emit('set_tools', null);
+    socket.emit("set_tools", null);
   } else {
     // Get all selected tools
     const selectedTools = [];
-    const allButtons = document.querySelectorAll('.toggle-button:not(#autoselect-tool)');
+    const allButtons = document.querySelectorAll(
+      ".toggle-button:not(#autoselect-tool)",
+    );
 
-    allButtons.forEach(button => {
-      if (button.dataset.state === 'selected') {
+    allButtons.forEach((button) => {
+      if (button.dataset.state === "selected") {
         // Convert button ID to tool name format
-        const buttonId = button.id.replace('-tool', '');
+        const buttonId = button.id.replace("-tool", "");
         let toolName;
 
         // Map button IDs to tool names
-        if (buttonId === 'google-search') {
-          toolName = 'SearchGrounding';
-        } else if (buttonId === 'reminder') {
-          toolName = 'Reminder';
-        } else if (buttonId === 'fetch-website') {
-          toolName = 'FetchWebsite';
-        } else if (buttonId === 'computer') {
-          toolName = 'ComputerTool';
+        if (buttonId === "google-search") {
+          toolName = "SearchGrounding";
+        } else if (buttonId === "reminder") {
+          toolName = "Reminder";
+        } else if (buttonId === "fetch-website") {
+          toolName = "FetchWebsite";
+        } else if (buttonId === "computer") {
+          toolName = "ComputerTool";
         } else {
           // Use capitalized version of the ID for other tools
-          toolName = buttonId.split('-').map(word =>
-            word.charAt(0).toUpperCase() + word.slice(1)
-          ).join('');
+          toolName = buttonId
+            .split("-")
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join("");
         }
 
         selectedTools.push(toolName);
       }
     });
-    socket.emit('set_tools', selectedTools.length > 0 ? selectedTools : []);
+    socket.emit("set_tools", selectedTools.length > 0 ? selectedTools : []);
   }
 }
 
 // Set up Auto button click handler
-autoSelectButton.addEventListener('click', function () {
-  if (this.dataset.state === 'disabled') {
+autoSelectButton.addEventListener("click", function () {
+  if (this.dataset.state === "disabled") {
     return; // Don't do anything if the button is disabled
   }
 
-  const isBeingSelected = this.dataset.state === 'unselected';
-  this.dataset.state = isBeingSelected ? 'selected' : 'unselected';
+  const isBeingSelected = this.dataset.state === "unselected";
+  this.dataset.state = isBeingSelected ? "selected" : "unselected";
 
   if (isBeingSelected) {
     // If Auto is being turned ON, disable all other buttons
-    updateToggleButtonStates('auto');
+    updateToggleButtonStates("auto");
   } else {
     // If Auto is being turned OFF, apply model compatibility
     updateToolAvailability(modelSelect.value);
@@ -2175,22 +2425,22 @@ autoSelectButton.addEventListener('click', function () {
 });
 
 // Set up Google Search button click handler
-googleSearchButton.addEventListener('click', function () {
-  if (this.dataset.state === 'disabled') {
+googleSearchButton.addEventListener("click", function () {
+  if (this.dataset.state === "disabled") {
     return; // Don't do anything if the button is disabled
   }
 
   // If Auto is selected, clicking any other button should do nothing
-  if (autoSelectButton.dataset.state === 'selected') {
+  if (autoSelectButton.dataset.state === "selected") {
     return;
   }
 
-  const isBeingSelected = this.dataset.state === 'unselected';
-  this.dataset.state = isBeingSelected ? 'selected' : 'unselected';
+  const isBeingSelected = this.dataset.state === "unselected";
+  this.dataset.state = isBeingSelected ? "selected" : "unselected";
 
   if (isBeingSelected) {
     // If Google Search is being turned ON, apply its rules to other buttons
-    updateToggleButtonStates('google');
+    updateToggleButtonStates("google");
   } else {
     // If Google Search is being turned OFF, restore compatibility based on model
     updateToolAvailability(modelSelect.value);
@@ -2200,27 +2450,35 @@ googleSearchButton.addEventListener('click', function () {
 // Initialize listeners for all buttons
 function initializeButtonListeners() {
   // Remove any existing listeners first to avoid duplicates
-  const allButtons = document.querySelectorAll('.toggle-button:not(#autoselect-tool):not(#google-search-tool)');
+  const allButtons = document.querySelectorAll(
+    ".toggle-button:not(#autoselect-tool):not(#google-search-tool)",
+  );
 
-  allButtons.forEach(button => {
+  allButtons.forEach((button) => {
     // Clone the button to remove all event listeners
     const newButton = button.cloneNode(true);
     button.parentNode.replaceChild(newButton, button);
 
     // Add new event listener
-    newButton.addEventListener('click', function () {
-      if (this.dataset.state === 'disabled') {
+    newButton.addEventListener("click", function () {
+      if (this.dataset.state === "disabled") {
         return; // Don't do anything if the button is disabled
       }
 
       // If Auto is selected or Google is selected, clicking other buttons should do nothing
-      if (autoSelectButton.dataset.state === 'selected' ||
-        (googleSearchButton.dataset.state === 'selected' &&
-          (this.id === 'reminder-tool' || this.id === 'fetch-website-tool' || this.id === 'imagen-tool' || this.id === 'computer-tool'))) {
+      if (
+        autoSelectButton.dataset.state === "selected" ||
+        (googleSearchButton.dataset.state === "selected" &&
+          (this.id === "reminder-tool" ||
+            this.id === "fetch-website-tool" ||
+            this.id === "imagen-tool" ||
+            this.id === "computer-tool"))
+      ) {
         return;
       }
 
-      this.dataset.state = (this.dataset.state === 'unselected') ? 'selected' : 'unselected';
+      this.dataset.state =
+        this.dataset.state === "unselected" ? "selected" : "unselected";
       saveButtonStates();
       updateToolsSelection();
     });
@@ -2228,7 +2486,7 @@ function initializeButtonListeners() {
 }
 
 // Initialize everything when the page loads
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener("DOMContentLoaded", function () {
   fetchModels();
   fetchModelCompatibility();
 
@@ -2238,9 +2496,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // Function to calculate and set the max-height of scrollable areas
 function setScrollableAreaMaxHeight() {
-  const rightPanelTabs = document.getElementById('rightPanelTabs');
-  const attachmentDisplayArea = document.getElementById('attachment-display-area');
-  const notificationDisplayArea = document.getElementById('notification-display-area');
+  const rightPanelTabs = document.getElementById("rightPanelTabs");
+  const attachmentDisplayArea = document.getElementById(
+    "attachment-display-area",
+  );
+  const notificationDisplayArea = document.getElementById(
+    "notification-display-area",
+  );
 
   if (!rightPanelTabs || !attachmentDisplayArea || !notificationDisplayArea) {
     return; // Exit if elements are not found
@@ -2254,8 +2516,8 @@ function setScrollableAreaMaxHeight() {
 }
 
 // Call the function on page load and window resize
-document.addEventListener('DOMContentLoaded', setScrollableAreaMaxHeight);
-window.addEventListener('resize', setScrollableAreaMaxHeight);
+document.addEventListener("DOMContentLoaded", setScrollableAreaMaxHeight);
+window.addEventListener("resize", setScrollableAreaMaxHeight);
 
 // ==========================================================================
 // --- Socket Communication ---
@@ -2274,13 +2536,13 @@ const sendMessage = async () => {
     return;
   }
 
-
   const filesData = [];
   // Show some indicator that files are uploading
-  const sendButton = document.getElementById('send-button');
+  const sendButton = document.getElementById("send-button");
   const originalButtonContent = sendButton.innerHTML;
   if (fileContents.length > 0) {
-    sendButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Uploading...';
+    sendButton.innerHTML =
+      '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Uploading...';
     sendButton.disabled = true;
   }
 
@@ -2304,8 +2566,11 @@ const sendMessage = async () => {
 
     // Emit the message *after* potential file uploads
     console.log(`Sending message to chat: ${current_chat_id}`);
-    socket.emit("send_message", { message: message, files: filesData, chat_id: current_chat_id }); // Include current_chat_id
-
+    socket.emit("send_message", {
+      message: message,
+      files: filesData,
+      chat_id: current_chat_id,
+    }); // Include current_chat_id
   } catch (error) {
     console.error("Error during file upload or message sending:", error);
     // Optionally show an error message to the user
@@ -2314,11 +2579,12 @@ const sendMessage = async () => {
       content: [{ text: `Error sending message/files: ${error.message}` }],
       id: `error-${Date.now()}`,
       time_stamp: new Date().toISOString(),
-      chat_id: current_chat_id // Associate error with current chat
+      chat_id: current_chat_id, // Associate error with current chat
     });
   } finally {
     // Restore send button state
-    if (fileContents.length === 0) { // Only restore if it was changed due to file upload
+    if (fileContents.length === 0) {
+      // Only restore if it was changed due to file upload
       sendButton.innerHTML = originalButtonContent;
       sendButton.disabled = false;
     }
@@ -2330,9 +2596,9 @@ const sendMessage = async () => {
 // --------------------------------------------------------------------------
 
 socket.on("connect", () => {
-  current_chat_id = localStorage.getItem('current_chat_id') || "main"; // Load last chat ID
+  current_chat_id = localStorage.getItem("current_chat_id") || "main"; // Load last chat ID
   socket.emit("get_chat_history"); // Request history on connect
-  updateModelSelection()
+  updateModelSelection();
   updateToolsSelection();
 });
 
@@ -2340,19 +2606,21 @@ socket.on("chat_update", (data) => {
   console.log("Received chat_update:", data);
   messages = data.messages || [];
   chats = (data.chats || []).reduce((acc, chat) => {
-      acc[chat.id] = chat;
-      return acc;
+    acc[chat.id] = chat;
+    return acc;
   }, {});
 
-  if (!chats['main']) {
-      console.warn("Backend did not provide 'main' chat. Creating default.");
-      chats['main'] = { id: 'main', name: 'Main Chat', parent_id: null };
+  if (!chats["main"]) {
+    console.warn("Backend did not provide 'main' chat. Creating default.");
+    chats["main"] = { id: "main", name: "Main Chat", parent_id: null };
   }
 
   if (!chats[current_chat_id]) {
-      console.warn(`Current chat ID '${current_chat_id}' no longer exists after update. Defaulting to 'main'.`);
-      current_chat_id = "main";
-      localStorage.setItem('current_chat_id', current_chat_id);
+    console.warn(
+      `Current chat ID '${current_chat_id}' no longer exists after update. Defaulting to 'main'.`,
+    );
+    current_chat_id = "main";
+    localStorage.setItem("current_chat_id", current_chat_id);
   }
 
   renderChatHistoryList(chats); // This now handles Sortable re-initialization
@@ -2361,7 +2629,7 @@ socket.on("chat_update", (data) => {
 
 socket.on("updated_msg", (msg) => {
   // Update the message in the global list
-  const index = messages.findIndex(m => m.id === msg.id);
+  const index = messages.findIndex((m) => m.id === msg.id);
   if (index !== -1) {
     messages[index] = msg;
   } else {
@@ -2379,11 +2647,12 @@ socket.on("add_message", (msg) => {
 });
 socket.on("delete_message", (messageId) => {
   // Remove from the global list
-  messages = messages.filter(msg => msg.id !== messageId);
+  messages = messages.filter((msg) => msg.id !== messageId);
   // Remove from the DOM if it exists
   const msgDiv = document.getElementById(messageId);
   if (msgDiv) {
-    handleChatBoxUpdate(() => { // Wrap DOM manipulation
+    handleChatBoxUpdate(() => {
+      // Wrap DOM manipulation
       msgDiv.remove();
     })();
   }
@@ -2417,20 +2686,28 @@ socket.on("take_permission", (msg) => {
     "permission-request",
     "d-flex",
     "align-items-center",
-    "justify-content-end", /* Align buttons to the right */
+    "justify-content-end" /* Align buttons to the right */,
     "mt-2",
-    "p-1" /* Reduced padding */
+    "p-1" /* Reduced padding */,
   );
 
   // 3. Create the message text, Agree button, and Deny button
-  const messageText = document.createElement("span"); /* Use span for inline display */
+  const messageText =
+    document.createElement("span"); /* Use span for inline display */
   messageText.textContent = msg; // Or msg.content if it's an object
-  messageText.classList.add("me-2", "text-muted"); /* Muted text color, margin right */
+  messageText.classList.add(
+    "me-2",
+    "text-muted",
+  ); /* Muted text color, margin right */
   permissionRequestDiv.appendChild(messageText);
 
   const agreeButton = document.createElement("button");
   agreeButton.textContent = "Agree";
-  agreeButton.classList.add("btn", "btn-sm", "toggle-button"); /* Use toggle-button style */
+  agreeButton.classList.add(
+    "btn",
+    "btn-sm",
+    "toggle-button",
+  ); /* Use toggle-button style */
   agreeButton.addEventListener("click", () => {
     socket.emit("set_permission", true);
     permissionRequestDiv.remove();
@@ -2439,7 +2716,11 @@ socket.on("take_permission", (msg) => {
 
   const denyButton = document.createElement("button");
   denyButton.textContent = "Deny";
-  denyButton.classList.add("btn", "btn-sm", "toggle-button"); /* Use toggle-button style */
+  denyButton.classList.add(
+    "btn",
+    "btn-sm",
+    "toggle-button",
+  ); /* Use toggle-button style */
   denyButton.addEventListener("click", () => {
     socket.emit("set_permission", false);
     permissionRequestDiv.remove();
@@ -2454,10 +2735,10 @@ socket.on("take_permission", (msg) => {
 // --- Right Panel Functions ---
 // --------------------------------------------------------------------------
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener("DOMContentLoaded", function () {
   // Create a resizer element
-  const resizer = document.createElement('div');
-  resizer.className = 'panel-resizer';
+  const resizer = document.createElement("div");
+  resizer.className = "panel-resizer";
   resizer.style.cssText = `
     width: 6px;
     cursor: col-resize;
@@ -2471,20 +2752,20 @@ document.addEventListener('DOMContentLoaded', function () {
   `;
 
   // Add hover effect
-  resizer.addEventListener('mouseover', () => {
-    resizer.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+  resizer.addEventListener("mouseover", () => {
+    resizer.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
   });
 
-  resizer.addEventListener('mouseout', () => {
-    resizer.style.backgroundColor = 'transparent';
+  resizer.addEventListener("mouseout", () => {
+    resizer.style.backgroundColor = "transparent";
   });
 
   // Get panel elements
-  const rightPanel = document.querySelector('.right-panel');
-  const chatContainer = document.querySelector('.chat-container');
+  const rightPanel = document.querySelector(".right-panel");
+  const chatContainer = document.querySelector(".chat-container");
 
   // Add the resizer to the right panel
-  rightPanel.style.position = 'relative';
+  rightPanel.style.position = "relative";
   rightPanel.prepend(resizer);
 
   // Variables for tracking the resize
@@ -2494,47 +2775,49 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Function to start resizing from the right edge
   function startResizeFromEdge(e) {
-    if (rightPanel.classList.contains('d-none')) {
+    if (rightPanel.classList.contains("d-none")) {
       isResizing = true;
       lastDownX = e.clientX;
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
       panelWasHidden = true; // Indicate that the panel was hidden
       e.preventDefault(); // Prevent text selection during drag
     }
   }
 
   // Add event listeners for resizing
-  resizer.addEventListener('mousedown', (e) => {
+  resizer.addEventListener("mousedown", (e) => {
     isResizing = true;
     lastDownX = e.clientX; // Store the initial mouse position
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
     e.preventDefault();
-    panelWasHidden = rightPanel.classList.contains('d-none'); // Check if panel was hidden
+    panelWasHidden = rightPanel.classList.contains("d-none"); // Check if panel was hidden
   });
 
   // Add mousedown listener to chatContainer for dragging from the right edge
-  chatContainer.addEventListener('mousedown', (e) => {
+  chatContainer.addEventListener("mousedown", (e) => {
     // Check if the mouse is near the right edge
-    if (e.clientX > chatContainer.offsetWidth - 10 && !isResizing) { // Adjust the 10 value for sensitivity
+    if (e.clientX > chatContainer.offsetWidth - 10 && !isResizing) {
+      // Adjust the 10 value for sensitivity
       startResizeFromEdge(e);
     }
   });
 
-  document.addEventListener('mousemove', (e) => {
+  document.addEventListener("mousemove", (e) => {
     if (!isResizing) return;
 
-    const containerWidth = document.querySelector('.container-fluid').offsetWidth;
+    const containerWidth =
+      document.querySelector(".container-fluid").offsetWidth;
     let rightPanelWidth;
     let chatContainerWidth;
 
     if (panelWasHidden) {
       // Dragging to show the panel
-      rightPanel.classList.remove('d-none');
-      rightPanel.classList.add('col-md-4');
-      chatContainer.classList.remove('col-md-12');
-      chatContainer.classList.add('col-md-8');
+      rightPanel.classList.remove("d-none");
+      rightPanel.classList.add("col-md-4");
+      chatContainer.classList.remove("col-md-12");
+      chatContainer.classList.add("col-md-8");
 
       rightPanelWidth = e.clientX;
       chatContainerWidth = containerWidth - e.clientX;
@@ -2561,20 +2844,27 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Function to save the right panel width to local storage
   function saveRightPanelWidth() {
-    const containerWidth = document.querySelector('.container-fluid').offsetWidth;
+    const containerWidth =
+      document.querySelector(".container-fluid").offsetWidth;
     const rightPanelWidth = rightPanel.offsetWidth;
-    const paddingLeft = parseFloat(window.getComputedStyle(rightPanel).paddingLeft);
-    const paddingRight = parseFloat(window.getComputedStyle(rightPanel).paddingRight);
+    const paddingLeft = parseFloat(
+      window.getComputedStyle(rightPanel).paddingLeft,
+    );
+    const paddingRight = parseFloat(
+      window.getComputedStyle(rightPanel).paddingRight,
+    );
     const contentWidth = rightPanelWidth - paddingLeft - paddingRight;
     const rightPanelPercent = (contentWidth / containerWidth) * 100;
-    localStorage.setItem('rightPanelWidth', rightPanelPercent.toString());
+    localStorage.setItem("rightPanelWidth", rightPanelPercent.toString());
   }
 
   // Function to load the right panel width from local storage
   function loadRightPanelWidth() {
-    const savedWidth = localStorage.getItem('rightPanelWidth');
+    const savedWidth = localStorage.getItem("rightPanelWidth");
     if (savedWidth) {
-      const rightPanelPercent = parseFloat(savedWidth) ? parseFloat(savedWidth) : 0.1;
+      const rightPanelPercent = parseFloat(savedWidth)
+        ? parseFloat(savedWidth)
+        : 0.1;
       rightPanel.style.width = `${rightPanelPercent}%`;
       chatContainer.style.width = `${100 - rightPanelPercent}%`;
     }
@@ -2583,11 +2873,11 @@ document.addEventListener('DOMContentLoaded', function () {
   // Call loadRightPanelWidth on page load
   loadRightPanelWidth();
 
-  document.addEventListener('mouseup', () => {
+  document.addEventListener("mouseup", () => {
     if (isResizing) {
       isResizing = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
       panelWasHidden = false; // Reset the flag
 
       // Save the right panel width when resizing stops
@@ -2595,14 +2885,16 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
   // Initialize Bootstrap Tabs explicitly
-  var tabElList = [].slice.call(document.querySelectorAll('#rightPanelTabs button'))
-  tabElList.forEach(tabEl => {
-    new bootstrap.Tab(tabEl)
-  })
+  var tabElList = [].slice.call(
+    document.querySelectorAll("#rightPanelTabs button"),
+  );
+  tabElList.forEach((tabEl) => {
+    new bootstrap.Tab(tabEl);
+  });
   // Save initial width on load in case the user doesn't resize
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener("beforeunload", () => {
     saveRightPanelWidth();
-    localStorage.setItem('current_chat_id', current_chat_id);
+    localStorage.setItem("current_chat_id", current_chat_id);
   });
 });
 
@@ -2734,7 +3026,7 @@ const marked = new Marked(
   }),
 );
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener("DOMContentLoaded", function () {
   fetchModels();
   fetchModelCompatibility();
 
@@ -2748,10 +3040,14 @@ document.addEventListener('DOMContentLoaded', function () {
 // --- Key State Object ---
 const keyState = {};
 
-document.addEventListener('keydown', function (event) {
+document.addEventListener("keydown", function (event) {
   // --- Check if the focus is on a textarea or input type="text" ---
   const activeElement = document.activeElement;
-  if (activeElement && (activeElement.tagName === 'TEXTAREA' || (activeElement.tagName === 'INPUT' && activeElement.type === 'text'))) {
+  if (
+    activeElement &&
+    (activeElement.tagName === "TEXTAREA" ||
+      (activeElement.tagName === "INPUT" && activeElement.type === "text"))
+  ) {
     return; // Ignore the key press if focus is on a textarea or text input
   }
 
@@ -2759,135 +3055,139 @@ document.addEventListener('keydown', function (event) {
   keyState[event.code] = true;
 
   // --- Right Panel Resize Shortcuts (R + number) ---
-  if (keyState['KeyR']) {
-    if (keyState['Digit1']) {
+  if (keyState["KeyR"]) {
+    if (keyState["Digit1"]) {
       resizeRightPanel(10);
-    } else if (keyState['Digit2']) {
+    } else if (keyState["Digit2"]) {
       resizeRightPanel(20);
-    } else if (keyState['Digit3']) {
+    } else if (keyState["Digit3"]) {
       resizeRightPanel(30);
-    } else if (keyState['Digit4']) {
+    } else if (keyState["Digit4"]) {
       resizeRightPanel(40);
-    } else if (keyState['Digit5']) {
+    } else if (keyState["Digit5"]) {
       resizeRightPanel(50);
-    } else if (keyState['Digit6']) {
+    } else if (keyState["Digit6"]) {
       resizeRightPanel(60);
-    } else if (keyState['Digit7']) {
+    } else if (keyState["Digit7"]) {
       resizeRightPanel(70);
-    } else if (keyState['Digit8']) {
+    } else if (keyState["Digit8"]) {
       resizeRightPanel(80);
-    } else if (keyState['Digit9']) {
+    } else if (keyState["Digit9"]) {
       resizeRightPanel(90);
-    } else if (keyState['Digit0']) {
+    } else if (keyState["Digit0"]) {
       resizeRightPanel(0.1);
     }
-    return
+    return;
   }
 
   // --- Toggle Tools Shortcuts (t + number) ---
-  if (keyState['KeyT'] && !event.ctrlKey) {
-    if (event.code === 'Digit1') {
+  if (keyState["KeyT"] && !event.ctrlKey) {
+    if (event.code === "Digit1") {
       googleSearchButton.click();
-    }
-    else if (event.code === 'Digit2') {
-      const scheduleButton = document.getElementById('reminder-tool');
+    } else if (event.code === "Digit2") {
+      const scheduleButton = document.getElementById("reminder-tool");
       scheduleButton.click();
-    }
-    else if (event.code === 'Digit3') {
-      const fetchWebsiteButton = document.getElementById('fetch-website-tool');
+    } else if (event.code === "Digit3") {
+      const fetchWebsiteButton = document.getElementById("fetch-website-tool");
       fetchWebsiteButton.click();
-    }
-    else if (event.code === 'Digit4') {
-      const fetchWebsiteButton = document.getElementById('imagen-tool');
+    } else if (event.code === "Digit4") {
+      const fetchWebsiteButton = document.getElementById("imagen-tool");
       fetchWebsiteButton.click();
-    }
-    else if (event.code === 'Digit5') {
-      const computerToolButton = document.getElementById('computer-tool');
+    } else if (event.code === "Digit5") {
+      const computerToolButton = document.getElementById("computer-tool");
       computerToolButton.click();
     }
-    return
+    return;
   }
-  if (keyState['KeyA'] && !event.ctrlKey) {
+  if (keyState["KeyA"] && !event.ctrlKey) {
     autoSelectButton.click();
-    return
+    return;
   }
 
   // --- Toggle Tabs Shortcuts (c, N, S) ---
-  if (keyState['KeyC'] && !event.ctrlKey) {
+  if (keyState["KeyC"] && !event.ctrlKey) {
     // Toggle Content tab
-    const contentTab = new bootstrap.Tab(document.getElementById('content-tab'));
+    const contentTab = new bootstrap.Tab(
+      document.getElementById("content-tab"),
+    );
     contentTab.show();
-    return
-  } else if (keyState['KeyH'] && !event.ctrlKey) {
+    return;
+  } else if (keyState["KeyH"] && !event.ctrlKey) {
     // Toggle History tab
-    const historyTab = new bootstrap.Tab(document.getElementById('history-tab'));
+    const historyTab = new bootstrap.Tab(
+      document.getElementById("history-tab"),
+    );
     historyTab.show();
-    return
-  } else if (keyState['KeyN'] && !event.ctrlKey) {
+    return;
+  } else if (keyState["KeyN"] && !event.ctrlKey) {
     // Toggle Notification tab
-    const notificationTab = new bootstrap.Tab(document.getElementById('notification-tab'));
+    const notificationTab = new bootstrap.Tab(
+      document.getElementById("notification-tab"),
+    );
     notificationTab.show();
-    return
-  } else if (event.ctrlKey && event.key === 's' && event.code === 'KeyS') {
+    return;
+  } else if (event.ctrlKey && event.key === "s" && event.code === "KeyS") {
     showShortcutsPopup();
     event.preventDefault(); // Prevent the browser from saving the page
-    return
-  } else if (keyState['KeyS']) {
+    return;
+  } else if (keyState["KeyS"]) {
     // Toggle Schedule tab
-    const scheduleTab = new bootstrap.Tab(document.getElementById('schedule-tab'));
+    const scheduleTab = new bootstrap.Tab(
+      document.getElementById("schedule-tab"),
+    );
     scheduleTab.show();
-    return
+    return;
   }
 
   // --- Enter Prompt Shortcut (/) ---
-  if (event.key === '/' && event.code === 'Slash') {
+  if (event.key === "/" && event.code === "Slash") {
     // Focus on the message input
-    document.getElementById('message-input').focus();
+    document.getElementById("message-input").focus();
     event.preventDefault(); // Prevent the slash from being entered in the input
-    return
+    return;
   }
-  if (event.key === 'd' && event.code === 'KeyD') {
+  if (event.key === "d" && event.code === "KeyD") {
     // Focus on the message input
-    document.getElementById('new-task').focus();
+    document.getElementById("new-task").focus();
     event.preventDefault(); // Prevent the D from being entered in the input
-    return
+    return;
   }
   // --- Select Model Shortcuts (m + number) ---
-  if (keyState['KeyM']) {
+  if (keyState["KeyM"]) {
     const modelSelect = document.getElementById("model-select");
     if (modelSelect) {
-      if (keyState['Digit1']) {
+      if (keyState["Digit1"]) {
         selectModelByIndex(modelSelect, 0);
-      } else if (keyState['Digit2']) {
+      } else if (keyState["Digit2"]) {
         selectModelByIndex(modelSelect, 1);
-      } else if (keyState['Digit3']) {
+      } else if (keyState["Digit3"]) {
         selectModelByIndex(modelSelect, 2);
-      } else if (keyState['Digit4']) {
+      } else if (keyState["Digit4"]) {
         selectModelByIndex(modelSelect, 3);
-      } else if (keyState['Digit5']) {
+      } else if (keyState["Digit5"]) {
         selectModelByIndex(modelSelect, 4);
-      } else if (keyState['Digit6']) {
+      } else if (keyState["Digit6"]) {
         selectModelByIndex(modelSelect, 5);
-      } else if (keyState['Digit7']) {
+      } else if (keyState["Digit7"]) {
         selectModelByIndex(modelSelect, 6);
-      } else if (keyState['Digit8']) {
+      } else if (keyState["Digit8"]) {
         selectModelByIndex(modelSelect, 7);
       }
     }
-    return
+    return;
   }
   // --- Close Shortcuts Popup (Esc) ---
-  if (event.key === 'Escape' || event.code === 'Escape') {
-    const popup = document.querySelector('.shortcuts-popup');
+  if (event.key === "Escape" || event.code === "Escape") {
+    const popup = document.querySelector(".shortcuts-popup");
     if (popup) {
       popup.remove();
-      document.body.style.overflow = 'auto'; // Restore scrolling
+      document.body.style.overflow = "auto"; // Restore scrolling
     }
-    return
+    return;
   }
 });
 
-document.addEventListener('keyup', function (event) {
+document.addEventListener("keyup", function (event) {
   // --- Update Key State ---
   keyState[event.code] = false;
 });
@@ -2908,9 +3208,9 @@ document.addEventListener("visibilitychange", function () {
  * @param {number} percentage - The percentage to resize the right panel to.
  */
 function resizeRightPanel(percentage) {
-  const rightPanel = document.querySelector('.right-panel');
-  const chatContainer = document.querySelector('.chat-container');
-  const containerWidth = document.querySelector('.container-fluid').offsetWidth;
+  const rightPanel = document.querySelector(".right-panel");
+  const chatContainer = document.querySelector(".chat-container");
+  const containerWidth = document.querySelector(".container-fluid").offsetWidth;
 
   const rightPanelWidth = (percentage / 100) * containerWidth;
   const chatContainerWidth = containerWidth - rightPanelWidth;
@@ -2919,7 +3219,7 @@ function resizeRightPanel(percentage) {
   chatContainer.style.width = `${100 - percentage}%`;
 
   // Save the right panel width to local storage
-  localStorage.setItem('rightPanelWidth', percentage.toString());
+  localStorage.setItem("rightPanelWidth", percentage.toString());
 }
 
 /**
@@ -2928,13 +3228,17 @@ function resizeRightPanel(percentage) {
  * @param {number} index - The index of the option to select.
  */
 function selectModelByIndex(selectElement, index) {
-  if (selectElement && selectElement.options && index >= 0 && index < selectElement.options.length) {
+  if (
+    selectElement &&
+    selectElement.options &&
+    index >= 0 &&
+    index < selectElement.options.length
+  ) {
     selectElement.selectedIndex = index;
     // Dispatch a change event to trigger any associated actions
-    selectElement.dispatchEvent(new Event('change'));
+    selectElement.dispatchEvent(new Event("change"));
   }
 }
-
 
 /**
  * Shows a popup window with a list of available shortcuts.
@@ -2950,14 +3254,16 @@ function showShortcutsPopup() {
     "`s`: Toggle Schedule tab",
     "`/`: Focus on message input",
     "`m + [1-8]`: Select model by index",
-    "`Ctrl + S`: Show shortcuts popup"
+    "`Ctrl + S`: Show shortcuts popup",
   ];
 
-  const popupContent = shortcuts.map(shortcut => marked.parse(shortcut)).join('');
+  const popupContent = shortcuts
+    .map((shortcut) => marked.parse(shortcut))
+    .join("");
 
   // Create the popup element
-  const popup = document.createElement('div');
-  popup.classList.add('shortcuts-popup');
+  const popup = document.createElement("div");
+  popup.classList.add("shortcuts-popup");
   popup.innerHTML = `
         <div class="shortcuts-popup-content">
             <h3>Keyboard Shortcuts</h3>
@@ -2970,18 +3276,18 @@ function showShortcutsPopup() {
   document.body.appendChild(popup);
 
   // Add event listener to the close button
-  const closeButton = popup.querySelector('.close-popup-button');
-  closeButton.addEventListener('click', function () {
+  const closeButton = popup.querySelector(".close-popup-button");
+  closeButton.addEventListener("click", function () {
     popup.remove();
   });
 
   // Prevent scrolling of the main page when the popup is open
-  document.body.style.overflow = 'hidden';
+  document.body.style.overflow = "hidden";
 
   // Restore scrolling when the popup is closed
-  popup.addEventListener('transitionend', function () {
+  popup.addEventListener("transitionend", function () {
     if (!document.body.contains(popup)) {
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = "auto";
     }
   });
 }
