@@ -1,19 +1,16 @@
 # main.py
 import re
-import ssl
 import traceback
-import httplib2
 from rich import print
 from flask import Flask, render_template, redirect, url_for
 from flask_socketio import SocketIO
 from google import genai
 from google.genai import types
-import urllib3.connection
 import prompt
 import config
 import uuid
 from io import BytesIO  # Import BytesIO
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, TypedDict, NamedTuple, overload, cast
 from mail import start_checking_mail
 from global_shares import global_shares
 import notification
@@ -25,8 +22,6 @@ import time
 import datetime
 import utils
 import threading
-import google.auth.exceptions
-import http.client
 
 app = Flask("Friday")
 socketio = SocketIO(app)
@@ -64,12 +59,11 @@ global_shares["take_permision"] = take_permission
 
 
 class File:
-    type: str  # mime types = ""
+    type: str = ""  # mime types
     content: bytes = b""
     filename: str = ""
-    # whether the current attachment is the summary
     id: str = ""
-    cloud_uri: Optional[types.File] = None  # URI of the file in the cloud
+    cloud_uri: Optional[types.File] = None  # None if not uploded yet
 
     def __init__(
         self,
@@ -86,7 +80,7 @@ class File:
         self.cloud_uri = cloud_uri
 
     def delete(self):
-        if self.cloud_uri and self.is_expiration_valid(self.cloud_uri.expiration_time) and self.cloud_uri.name:
+        if self.cloud_uri and self.is_file_valid(self.cloud_uri.expiration_time) and self.cloud_uri.name:
             client.files.delete(name=self.cloud_uri.name)
 
     @staticmethod
@@ -97,7 +91,7 @@ class File:
         return valid_id
 
     @staticmethod
-    def is_expiration_valid(expiration_time: datetime.datetime | None) -> bool:
+    def is_file_valid(expiration_time: datetime.datetime | None) -> bool:
         if expiration_time is None:
             return True
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -105,58 +99,85 @@ class File:
 
         return expiration_time >= ten_minutes_from_now
 
-    def for_ai(self, imagen_selected: bool, msg: Optional["Message"] = None) -> types.Part | tuple[types.Part, types.Part]:
-        if self.type.startswith("text/") or self.type.startswith(
-            ("image/", "video/") or self.type == "application/pdf"
-        ):
-            # Use cloud URI if available, otherwise upload
-            if self.cloud_uri and self.is_expiration_valid(
-                self.cloud_uri.expiration_time
-            ):
-                if not self.cloud_uri.uri or not self.cloud_uri.mime_type:
-                    raise Exception("file uri & mime type not available")
-                if imagen_selected and self.type.startswith("image/"):
-                    return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
-                return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
-            if self.type.startswith("image/"):
-                prefix = "Processing Image:"
-            elif self.type.startswith("text/"):
-                prefix = "Processing Text File:"
-            elif self.type.startswith("video/"):
-                prefix = "Processing Video:"
+
+    @utils.retry(exceptions=utils.network_errors + (ValueError,), ignore_exceptions=utils.ignore_network_error)
+    def upload_file(self):
+        self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type=self.type))
+        while self.cloud_uri.state == types.FileState.PROCESSING:
+            time.sleep(0.3)
+            if self.cloud_uri.name:
+                self.cloud_uri = client.files.get(name=self.cloud_uri.name)
             else:
-                prefix = "Processing PDF:"
-            for attempt in range(config.MAX_RETRIES):
+                raise ValueError("Failed to Upload File")
+        if self.cloud_uri.state == types.FileState.FAILED:
+            raise ValueError(self.cloud_uri.state.name)
+        if not self.cloud_uri.uri or not self.cloud_uri.mime_type:
+            raise ValueError("file uri & mime type not available")
+
+    @overload
+    def for_ai(self, imagen_selected: Literal[True], msg: Optional["Message"] = ...) -> tuple[types.Part, types.Part]: ...
+
+    @overload
+    def for_ai(self, imagen_selected: Literal[False], msg: Optional["Message"] = ...) -> types.Part: ...
+
+    def for_ai(self, imagen_selected: bool, msg: Optional["Message"] = None) -> types.Part | tuple[types.Part, types.Part]:
+        """
+        Prepares the file for use with the AI model.
+
+        Args:
+            imagen_selected (bool): Indicates if the image generation tool is selected.
+            msg (Optional["Message"]): The message object, used for updating the UI during file processing.
+
+        Returns:
+            types.Part | tuple[types.Part, types.Part]: The file as a Part object, ready for AI processing.
+                                                        Returns a tuple of Parts if imagen_selected is True and the file is an image.
+
+        Raises:
+            ValueError: If the file type is not supported.
+            Exception: If file upload fails or file URI/MIME type are not available.
+        """
+        # Check if the file type is supported
+        if self.type.startswith("text/") or self.type.startswith(("image/", "video/")) or self.type == "application/pdf":
+            # Check if the file needs to be uploaded to the cloud
+            if not self.cloud_uri or not self.is_file_valid(self.cloud_uri.expiration_time):
+                # Determine the processing prefix based on the file type
+                if self.type.startswith("image/"):
+                    prefix = "Processing Image:"
+                elif self.type.startswith("text/"):
+                    prefix = "Processing Text File:"
+                elif self.type.startswith("video/"):
+                    prefix = "Processing Video:"
+                else:
+                    prefix = "Processing PDF:"
+
+                # Update the UI to indicate that the file is being processed
                 if msg:
-                    msg.content.append(
-                        Content(text=f"{prefix} {self.filename}")
-                    )
+                    msg.content.append(Content(text=f"{prefix} {self.filename}"))
                     emit_msg_update(msg)
-                try:
-                    self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type=self.type))
-                    # Check whether the file is ready to be used.
-                    while self.cloud_uri.state and self.cloud_uri.state.name == "PROCESSING":
-                        time.sleep(1)
-                        if self.cloud_uri.name:
-                            self.cloud_uri = client.files.get(name=self.cloud_uri.name)
-                        else:
-                            raise Exception("Failed to Upload File")
-                    if self.cloud_uri.state and self.cloud_uri.state.name == "FAILED":
-                        raise ValueError(self.cloud_uri.state.name)
-                    if not self.cloud_uri.uri or not self.cloud_uri.mime_type:
-                        raise Exception("file uri & mime type not available")
-                    if imagen_selected and self.type.startswith("image/"):
-                        return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
-                    return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
-                except Exception:
-                    if attempt < config.MAX_RETRIES - 1:
-                        time.sleep(config.RETRY_DELAY)
-                    else:
-                        raise  # Re-raise the exception to be caught in completeChat
-                finally:
-                    if msg:
-                        msg.content.pop()
-                        emit_msg_update(msg)
+
+                # Upload the file to the cloud
+                self.upload_file()
+
+                # Remove the processing message from the UI
+                if msg:
+                    msg.content.pop()
+                    emit_msg_update(msg)
+
+            # Check if the file was successfully uploaded or not
+            if not self.cloud_uri:
+                raise Exception("Failed to upload type")
+            if not self.cloud_uri.uri or not self.cloud_uri.mime_type:
+                raise Exception("file uri & mime type not available")
+
+            # Prepare the file part for the AI model
+            if imagen_selected and self.type.startswith("image/"):
+                # If the image generation tool is selected and the file is an image, attach image id with image
+                return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
+
+            # Otherwise, return a single Part object
+            return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
+
+        # Raise an error if the file type is not supported
         raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
 
     def jsonify(self) -> dict:
@@ -170,31 +191,30 @@ class File:
 
     @staticmethod
     def from_jsonify(data: dict):
-        content = base64.b64decode(data.get("content", ""))
+        content = base64.b64decode(data["content"])
         return File(
-            content,
-            data.get("type", ""),
-            data.get("filename", ""),
-            (
-                types.File.model_validate(data.get("cloud_uri"))
-                if data.get("cloud_uri")
-                else None
-            ),
-            data.get("id", ""),
+            content=content,
+            type=data["type"],
+            filename=data["filename"],
+            cloud_uri=types.File.model_validate(data["cloud_uri"]) if data["cloud_uri"] else None,
+            id=data["id"],
         )
 
 global_shares["file"] = File
 
+class Segment(TypedDict):
+    start_index: int
+    end_index: int
+    text: str
+
 class GroundingSupport:
-    grounding_chunk_indices: list[int] = []
-    # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
-    segment: dict[str, int | str] = {}
+    grounding_chunk_indices: list[int]
+    segment: Segment
 
     def __init__(
         self,
         grounding_chunk_indices: list[int],
-        # dict[{"start_index", int}, {"end_index", int}, {"text", str}]
-        segment: dict[str, int | str],
+        segment: Segment,
     ):
         self.grounding_chunk_indices = grounding_chunk_indices
         self.segment = segment
@@ -207,53 +227,50 @@ class GroundingSupport:
 
     @staticmethod
     def from_jsonify(data: dict):
-        return GroundingSupport(
-            data.get("grounding_chunk_indices", []), data.get("segment", {})
-        )
+        return GroundingSupport(**data)
 
+class GroundingChunck(NamedTuple):
+    title: str
+    uri: str
 
 class GroundingMetaData:
-    first_offset: int = 0
-    rendered_content: str = ""
-    # list[tuple[str: title, str: uri]]
-    grounding_chuncks: list[tuple[str, str]] = []
-    grounding_supports: list[GroundingSupport] = []
+    grounding_chuncks: list[GroundingChunck]
+    grounding_supports: list[GroundingSupport]
+    first_offset: int
+    rendered_content: str
 
     def __init__(
         self,
-        grounding_chuncks: Optional[list[tuple[str, str]]] = None,
+        grounding_chuncks: Optional[list[GroundingChunck]] = None,
         grounding_supports: Optional[list[GroundingSupport]] = None,
-        first_offset: Optional[int] = 0,
-        rendered_content: Optional[str] = "",
+        first_offset: int = 0,
+        rendered_content: str = "",
     ):
         self.grounding_chuncks = grounding_chuncks if grounding_chuncks else []
         self.grounding_supports = grounding_supports if grounding_supports else []
-        self.first_offset = first_offset if first_offset else 0
-        self.rendered_content = rendered_content if rendered_content else ""
+        self.first_offset = first_offset
+        self.rendered_content = rendered_content
 
     def jsonify(self) -> dict[str, Any]:
         return {
-            "first_offset": self.first_offset,
-            "rendered_content": self.rendered_content,
             "grounding_chuncks": self.grounding_chuncks,
             "grounding_supports": [gsp.jsonify() for gsp in self.grounding_supports],
+            "first_offset": self.first_offset,
+            "rendered_content": self.rendered_content,
         }
 
     @staticmethod
     def from_jsonify(data: dict):
         return GroundingMetaData(
-            data.get("grounding_chuncks", None),
-            [
-                GroundingSupport.from_jsonify(sup)
-                for sup in data.get("grounding_supports", [])
-            ],
-            data.get("first_offset", 0),
-            data.get("rendered_content", ""),
+            grounding_chuncks=data["grounding_chuncks"],
+            grounding_supports=[GroundingSupport.from_jsonify(sup)for sup in data["grounding_supports"]],
+            first_offset=data["first_offset"],
+            rendered_content=data["rendered_content"],
         )
 
 
 class FunctionCall:
-    id: str = ""
+    id: str
     name: Optional[str]
     args: dict[str, Any]
     extra_data: dict[str, Any]
@@ -261,7 +278,7 @@ class FunctionCall:
     def __init__(
         self,
         id: Optional[str] = None,
-        name: Optional[str] = "",
+        name: Optional[str] = None,
         args: Optional[dict[str, Any]] = None,
         extra_data: Optional[dict[str, Any]] = None
     ):
@@ -278,12 +295,12 @@ class FunctionCall:
 
     @staticmethod
     def from_jsonify(data: dict[str, Any]) -> "FunctionCall":
-        return FunctionCall(data.get("id"), data.get("name"), data.get("args"), data.get("extra_data"))
+        return FunctionCall(**data)
 
 
 class FunctionResponce:
-    id: str = ""
-    name: Optional[str] = None
+    id: str
+    name: Optional[str]
     response: dict[str, Any]
     inline_data: list["Content"]
 
@@ -309,7 +326,7 @@ class FunctionResponce:
 
     @staticmethod
     def from_jsonify(data: dict[str, Any]) -> "FunctionResponce":
-        return FunctionResponce(data.get("id"), data.get("name", ""), data.get("response"), [Content.from_jsonify(_) for _ in data.get("inline_data", [])])
+        return FunctionResponce(data["id"], data["name"], data["response"], [Content.from_jsonify(_) for _ in data["inline_data"]])
 
 
 class Content:
@@ -342,7 +359,7 @@ class Content:
             parts = [types.Part(function_response=self.function_response.for_ai())]
             for content in self.function_response.inline_data:
                 if content.text:
-                    parts.append(content.for_ai(suport_tools, imagen_selected, msg)) # type: ignore
+                    parts.append(cast(types.Part, content.for_ai(suport_tools, imagen_selected, msg)))
                 elif content.attachment:
                     fai = content.for_ai(suport_tools, imagen_selected, msg)
                     if isinstance(fai, types.Part):
@@ -375,24 +392,16 @@ class Content:
     def from_jsonify(data: dict[str, Any]) -> "Content":
         return Content(
             text=data["text"],
-            attachment=(
-                File.from_jsonify(data["attachment"])
-                if data.get("attachment")
-                else None
-            ),
-            grounding_metadata=(
-                GroundingMetaData.from_jsonify(data["grounding_metadata"])
-                if data.get("grounding_metadata")
-                else None
-            ),
+            attachment=data["attachment"],
+            grounding_metadata=data["grounding_metadata"],
             function_call=(
                 FunctionCall.from_jsonify(data["function_call"])
-                if data.get("function_call")
+                if data["function_call"]
                 else None
             ),
             function_response=(
                 FunctionResponce.from_jsonify(data["function_response"])
-                if data.get("function_response")
+                if data["function_response"]
                 else None
             ),
         )
@@ -418,11 +427,7 @@ class Chat:
 
     @staticmethod
     def from_json(data: dict[str, Any]) -> "Chat":
-        return Chat(
-            name=data["name"],
-            id=data["id"],
-            parent_id=data.get("parent_id")
-        )
+        return Chat(**data)
 
 
 class Message:
@@ -455,12 +460,9 @@ class Message:
     def is_member(self, chat: Chat, chats: dict[str, Chat]) -> bool:
         if self.chat_id == chat.id:
             return True
-
-        # Check if the message belongs to any child chat
         for child in chats.values():
             if child.parent_id == chat.id and self.is_member(child, chats):
                 return True
-
         return False
 
     def delete(self) -> None:
@@ -562,12 +564,12 @@ class Message:
     @staticmethod
     def from_jsonify(data: dict):
         return Message(
-            content=[Content.from_jsonify(item) for item in data.get("content", [])],
+            content=[Content.from_jsonify(item) for item in data["content"]],
             role=data["role"],
-            chat_id=data.get("chat_id", "main"),
+            chat_id=data["chat_id"],
             time_stamp=datetime.datetime.fromisoformat(data["time_stamp"]),
-            id=data.get("id", ""),
-            thought=data.get("thought", ""),
+            id=data["id"],
+            thought=data["thought"],
         )
 
 
@@ -603,15 +605,15 @@ class ChatHistory:
     def __getitem__(self, idx: int):
         return self._messages[idx]
 
-    def getImage(self, ID: str) -> types.File:
+    def getImage(self, ID: str) -> tuple[types.Part, types.Part] | types.Part:
         for msg in self._messages:
             for content in msg.content:
                 if content.attachment and content.attachment.id == ID:
-                    return content.attachment.for_ai(True, Message([], "model")) # type: ignore
+                    return content.attachment.for_ai(True)
                 elif content.function_response and content.function_response.inline_data:
                     for content in content.function_response.inline_data:
                         if content.attachment and content.attachment.id == ID:
-                            return content.attachment.for_ai(True, Message([], "model")) # type: ignore
+                            return content.attachment.for_ai(True)
         raise ValueError(f"Image with ID: `{ID}` not found")
 
     def getMsg(self, ID: str) -> Message:
@@ -630,21 +632,13 @@ class ChatHistory:
 
     def trip_after(self, msg_id: str, chat_id: str) -> None:
         chat = self._chats[chat_id]
-
-        # Use dictionary lookup for faster index retrieval
         msg_index = {msg.id: i for i, msg in enumerate(self._messages)}
         idx = msg_index.get(msg_id, -1)
         if idx == -1:
             return  # Message not found, exit early
-
-        # Collect messages to delete using a set
         ids_to_del = {msg.id for msg in self._messages[idx + 1:] if msg.is_member(chat, self._chats)}
-
-        # Emit deletion events
         for msg_id in ids_to_del:
             emit_msg_del(msg_id)
-
-        # Use filter for in-place removal
         self._messages = list(filter(lambda msg: msg.id not in ids_to_del, self._messages))
 
     def for_ai(self, ai_msg: Message, suport_tools: bool, imagen_selected: bool, chat_id: str) -> list[types.Content]:
@@ -711,7 +705,6 @@ class ChatHistory:
             print(f"Error: New parent chat with ID {new_parent_id} not found.")
             return False
 
-        # --- Circular Dependency Check ---
         if new_parent_id and self._is_descendant(new_parent_id, chat_id):
              print(f"Error: Cannot move chat '{chat_id}' under its descendant '{new_parent_id}'.")
              return False
@@ -774,18 +767,13 @@ def complete_chat(message: str, chat_id: str, files: Optional[list[File]] = None
     """
     Appends user message to chat history, gets AI response, and handles grounding metadata.
     """
-    if files is None:
-        files = []
-
     # Append user message if there's content
     if message or files:
-        append_user_message(message, chat_id, files)
+        append_user_message(message, chat_id, files or [])
 
     # Get AI response and update chat history
     ai_response = get_ai_response(chat_id)
-
-    if ai_response:
-        emit_msg_update(ai_response)
+    emit_msg_update(ai_response)
 
 
 def append_user_message(message: str, chat_id: str, files: list[File]):
@@ -808,7 +796,7 @@ def get_ai_response(chat_id: str) -> Message:
     chat_history.append(Message([], "model", chat_id))
     msg = chat_history[len(chat_history) - 1]
     try:
-        return generate_content_with_retry(msg, chat_id)
+        return generate_content(msg, chat_id)
     except Exception as e:
         handle_generation_failure(msg, e)
         return msg
@@ -832,20 +820,7 @@ def emit_msg_del(msg_id: str):
 
 
 # region Gemini Model Interaction
-@utils.retry(
-    exceptions=(
-        ConnectionError,
-        TimeoutError,
-        ssl.SSLEOFError,
-        ssl.SSLError,
-        httplib2.error.ServerNotFoundError,
-        google.auth.exceptions.TransportError,
-        http.client.RemoteDisconnected,
-        urllib3.connection.HTTPSConnection,
-        urllib3.HTTPSConnectionPool,
-    )
-)
-def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
+def generate_content(msg: Message, chat_id: str) -> Message:
     """
     Generates content from Gemini, retrying on token limits or other errors.
 
@@ -962,7 +937,6 @@ def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
             )
 
         except Exception as e:
-            traceback.print_exc()
             # Add error response with detailed exception info
             error_msg = f"Error executing {func_call.name}: {str(e)}"
             msg.content.append(
@@ -974,23 +948,9 @@ def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
                     )
                 )
             )
-            print(error_msg)
         emit_msg_update(msg)
 
-    @utils.retry(
-        exceptions=(
-            ValueError,
-            AttributeError,
-            ConnectionError,
-            TimeoutError,
-            ssl.SSLEOFError,
-            ssl.SSLError,
-            httplib2.error.ServerNotFoundError,
-            google.auth.exceptions.TransportError,
-            http.client.RemoteDisconnected,
-            urllib3.connection.HTTPSConnection,
-        )
-    )
+    @utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)
     def get_model_and_tools() -> tuple[str, bool, list[types.Tool]]:
         """
         Determines which model and tools to use, with retry logic.
@@ -1246,120 +1206,80 @@ def generate_content_with_retry(msg: Message, chat_id: str) -> Message:
         print(error_msg)
 
     # Main execution flow
-    try:
-        msg.processing = True
-        emit_msg_update(msg)
-        # Get model and tools
-        selected_model, suports_tools, selected_tools_list = get_model_and_tools()
-        print(f"Using model: {selected_model} with tools: {selected_tools_list}")
+    msg.processing = True
+    emit_msg_update(msg)
+    # Get model and tools
+    selected_model, suports_tools, selected_tools_list = get_model_and_tools()
+    print(f"Using model: {selected_model} with tools: {selected_tools_list}")
 
-        # Main content generation loop
+    # Main content generation loop
+    @utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)
+    def generate_content_with_retry():
         while True:
-            try:
-                start_time = time.time()  # Record start time before request
-                # Generate streaming content
-                response = client.models.generate_content_stream(
-                    model=selected_model,
-                    contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list, chat_id), # type: ignore
-                    config=types.GenerateContentConfig(
-                        system_instruction=f"""{prompt.SYSTEM_INSTUNCTION}
-{tools.get_reminders() + lschedule.get_todo_list_string() if tools.ReminderTool in selected_tools_list else ""}
-{tools.space.CodeExecutionEnvironment.dir_tree() if tools.ComputerTool in selected_tools_list else ""}
-""",
-                        temperature=config.CHAT_AI_TEMP,
-                        tools=selected_tools_list, # type: ignore
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                            disable=True, maximum_remote_calls=None
-                        ),
-                        # thinking_config=types.ThinkingConfig(include_thoughts=True) # Not suported till now
+            start_time = time.time()  # Record start time before request
+            # Generate streaming content
+            response = client.models.generate_content_stream(
+                model=selected_model,
+                contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list, chat_id), # type: ignore
+                config=types.GenerateContentConfig(
+                    system_instruction=prompt.SYSTEM_INSTUNCTION.format(
+                        reminders=tools.get_reminders() + lschedule.get_todo_list_string() if tools.ReminderTool in selected_tools_list else "",
+                        dir_tree=tools.space.CodeExecutionEnvironment.dir_tree() if tools.ComputerTool in selected_tools_list else ""
                     ),
-                )
+                    temperature=config.CHAT_AI_TEMP,
+                    tools=selected_tools_list, # type: ignore
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                        disable=True, maximum_remote_calls=None
+                    ),
+                    # thinking_config=types.ThinkingConfig(include_thoughts=True) # Not suported yet
+                ),
+            )
 
-                # Process the streaming response
-                function_call_occurred = False
-                finish_region: types.FinishReason | None = None
-                for content in response:
-                    if (
-                        content.candidates
-                        and content.candidates[0].content
-                        and content.candidates[0].content.parts
-                    ):
-
-                        for part in content.candidates[0].content.parts:
-                            handle_part(part)
-                            if part.function_call:
-                                function_call_occurred = True
-                    if content.candidates and content.candidates[0].finish_reason:
-                        finish_region = content.candidates[0].finish_reason
-
-                    # Process additional metadata
-                    process_grounding_metadata(msg, content)
-                    emit_msg_update(msg)
-
-                # sleep for some time if needed
-                end_time = time.time()  # Record end time after response processing
-                elapsed_time = end_time - start_time  # Calculate elapsed time
-
+            # Process the streaming response
+            function_call_occurred = False
+            finish_region: types.FinishReason | None = None
+            for content in response:
                 if (
-                    function_call_occurred
-                    or finish_region == types.FinishReason.MAX_TOKENS
+                    content.candidates
+                    and content.candidates[0].content
+                    and content.candidates[0].content.parts
                 ):
-                    rpm_limit = config.model_RPM_map.get(
-                        selected_model, 1
-                    )  # Get RPM limit, default to 1 if not found
-                    target_delay_per_request_sec = (
-                        60.0 / rpm_limit
-                    )  # Calculate target delay in seconds
-                    sleep_duration = max(
-                        0, target_delay_per_request_sec - elapsed_time
-                    )  # Calculate sleep duration, ensure it's not negative
-                    if sleep_duration > 0:
-                        time.sleep(sleep_duration)  # Sleep to respect RPM limit
-                    continue
 
-                # Otherwise break the loop
-                break
+                    for part in content.candidates[0].content.parts:
+                        handle_part(part)
+                        if part.function_call:
+                            function_call_occurred = True
+                if content.candidates and content.candidates[0].finish_reason:
+                    finish_region = content.candidates[0].finish_reason
 
-            except Exception as e:
-                error_msg = f"Error during content generation: {str(e)}"
-                print(error_msg)
-                traceback.print_exc()
+                # Process additional metadata
+                process_grounding_metadata(msg, content)
+                emit_msg_update(msg)
 
-                # Add error message to content if appropriate
-                if not msg.content:
-                    msg.content.append(Content(text=f"An error occurred: {str(e)}"))
-                elif msg.content[-1].text is None:
-                    msg.content.append(Content(text=f"An error occurred: {str(e)}"))
-                else:
-                    msg.content[-1].text += f"\n\nAn error occurred: {str(e)}"
+            # sleep for some time if needed
+            end_time = time.time()  # Record end time after response processing
+            elapsed_time = end_time - start_time  # Calculate elapsed time
 
-                # Decide whether to retry based on error type
-                if isinstance(
-                    e,
-                    (
-                        ConnectionError,
-                        TimeoutError,
-                        ssl.SSLEOFError,
-                        ssl.SSLError,
-                        httplib2.error.ServerNotFoundError,
-                        google.auth.exceptions.TransportError,
-                        http.client.RemoteDisconnected,
-                        urllib3.connection.HTTPSConnection,
-                        urllib3.HTTPConnectionPool,
-                    ),
-                ):
-                    print(f"Retrying after error: {str(e)}")
-                    continue
-                else:
-                    # Non-retryable error
-                    break
+            if (
+                function_call_occurred
+                or finish_region == types.FinishReason.MAX_TOKENS
+            ):
+                rpm_limit = config.model_RPM_map.get(
+                    selected_model, 1
+                )  # Get RPM limit, default to 1 if not found
+                target_delay_per_request_sec = (
+                    60.0 / rpm_limit
+                )  # Calculate target delay in seconds
+                sleep_duration = max(
+                    0, target_delay_per_request_sec - elapsed_time
+                )  # Calculate sleep duration, ensure it's not negative
+                if sleep_duration > 0:
+                    time.sleep(sleep_duration)  # Sleep to respect RPM limit
+                continue
 
-    except Exception as e:
-        # Handle any unexpected errors in the overall process
-        error_msg = f"Fatal error in content generation: {str(e)}"
-        print(error_msg)
-
-        msg.content.append(Content(text=f"Failed to generate content: {str(e)}"))
+            # Otherwise break the loop
+            break
+    generate_content_with_retry()
 
     # Set timestamp and return message
     msg.time_stamp = datetime.datetime.now()
@@ -1376,22 +1296,14 @@ def process_grounding_metadata(msg: Message, content: types.GenerateContentRespo
         if msg.content[-1].grounding_metadata is None:
             msg.content[-1].grounding_metadata = GroundingMetaData([], [])
         if metadata.search_entry_point:
-            msg.content[-1].grounding_metadata.rendered_content = (
-                metadata.search_entry_point.rendered_content or ""
-            )
+            msg.content[-1].grounding_metadata.rendered_content = metadata.search_entry_point.rendered_content or ""
 
         if metadata.grounding_chunks:
             for chunk in metadata.grounding_chunks:
                 if chunk.web:
-                    msg.content[-1].grounding_metadata.grounding_chuncks.append(
-                        (chunk.web.title or "unknown", chunk.web.uri or "")
-                    )
+                    msg.content[-1].grounding_metadata.grounding_chuncks.append(GroundingChunck(chunk.web.title or "unknown", chunk.web.uri or ""))
 
-        if (
-            metadata.grounding_chunks
-            and metadata.grounding_supports
-            and metadata.web_search_queries
-        ):
+        if (metadata.grounding_chunks and metadata.grounding_supports and metadata.web_search_queries):
             process_grounding_supports(msg, metadata)
     emit_msg_update(msg)
 
@@ -1454,12 +1366,18 @@ def handle_generation_failure(msg: Message, error: Exception):
 # endregion
 
 # ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
-files: dict[str, tuple[dict[int, str], bool]] = {}
+class UploadFileParts(NamedTuple):
+    data: dict[
+        int, # data part idx
+        str  # b64 data part
+    ]
+    done: bool # whether file is complitly uploded or not
+files: dict[str, UploadFileParts] = {}
 
 
 @socketio.on("start_upload_file")
 def start_upload_file(id: str):
-    files[id] = ({}, False)
+    files[id] = UploadFileParts({}, False)
 
 
 @socketio.on("upload_file_chunck")
@@ -1467,12 +1385,12 @@ def upload_file_chunck(data: dict):
     id: str = data["id"]
     chunck: str = data["chunck"]
     idx: int = data["idx"]
-    files[id][0][idx] = chunck
+    files[id].data[idx] = chunck
 
 
 @socketio.on("end_upload_file")
 def end_upload_file(id: str):
-    files[id] = (files[id][0], True)
+    files[id] = UploadFileParts(files[id].data, True)
 
 
 # region Notification Handling
@@ -1620,14 +1538,8 @@ def handle_update_chat_parent(data):
     try:
         success = chat_history.update_chat_parent(chat_id, new_parent_id)
         if success:
-            # Save the changes
             chat_history.save_to_json(os.path.join(config.AI_DIR, "chat_history.json"))
-            # Broadcast the entire updated history structure
             socketio.emit("chat_update", chat_history.jsonify())
-        else:
-            # Optionally send an error back or just rely on server logs
-             print(f"Failed to update parent for chat {chat_id}.")
-            # Re-emit original state if needed? Less ideal, client should ideally prevent bad drops.
     except Exception as e:
         print(f"Error updating chat parent: {e}")
         traceback.print_exc()
@@ -1648,13 +1560,8 @@ def handle_delete_chat(data):
     try:
         success = chat_history.delete_chat(chat_id)
         if success:
-            # Save the changes
             chat_history.save_to_json(os.path.join(config.AI_DIR, "chat_history.json"))
-            # Broadcast the entire updated history structure
             socketio.emit("chat_update", chat_history.jsonify())
-        else:
-            print(f"Failed to delete chat {chat_id}.")
-            # Optionally re-emit current state if delete failed unexpectedly
     except Exception as e:
         print(f"Error deleting chat: {e}")
         traceback.print_exc()
@@ -1677,7 +1584,7 @@ def handle_delete_message(data):
 
 @socketio.on("get_schedule")
 def handle_get_schedule():
-    socketio.emit("schedule_update", lschedule.schedule.to_dict())
+    socketio.emit("schedule_update", lschedule.schedule.jsonify())
 
 
 @socketio.on("add_task")
@@ -1687,18 +1594,18 @@ def handle_add_task(task_data):
         lschedule.schedule.add_task(task)
         lschedule.schedule.save_to_json(
             config.AI_DIR / "schedule.json"
-        )  # Save after adding
-        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+        )
+        socketio.emit("schedule_update", lschedule.schedule.jsonify())
     except Exception as e:
         print(f"Error adding task: {e}")
-        socketio.emit("schedule_error", str(e))  # Send error to client
+        socketio.emit("schedule_error", str(e))
 
 
 @socketio.on("update_task")
 def handle_update_task(task_data):
     try:
         task = lschedule.Task.from_dict(task_data)
-        existing_task = lschedule.schedule.get_task(task.id)  # Get the existing task
+        existing_task = lschedule.schedule.get_task(task.id)
         # Update only the provided fields
         existing_task.title = task.title
         existing_task.start = task.start
@@ -1707,11 +1614,11 @@ def handle_update_task(task_data):
         existing_task.backgroundColor = task.backgroundColor
         existing_task.borderColor = task.borderColor
 
-        lschedule.schedule.update_task(existing_task)  # Update the task
+        lschedule.schedule.update_task(existing_task)
         lschedule.schedule.save_to_json(
             config.AI_DIR / "schedule.json"
-        )  # Save after updating
-        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+        )
+        socketio.emit("schedule_update", lschedule.schedule.jsonify())
     except Exception as e:
         print(f"Error updating task: {e}")
         socketio.emit("schedule_error", str(e))
@@ -1724,7 +1631,7 @@ def handle_complete_task(task_id):
         task.completed = True
         lschedule.schedule.update_task(task)
         lschedule.schedule.save_to_json(config.AI_DIR / "schedule.json")
-        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+        socketio.emit("schedule_update", lschedule.schedule.jsonify())
     except Exception as e:
         print(f"Error completing task: {e}")
         socketio.emit("schedule_error", str(e))
@@ -1737,7 +1644,7 @@ def handle_reopen_task(task_id):
         task.completed = False
         lschedule.schedule.update_task(task)
         lschedule.schedule.save_to_json(config.AI_DIR / "schedule.json")
-        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+        socketio.emit("schedule_update", lschedule.schedule.jsonify())
     except Exception as e:
         print(f"Error reopening task: {e}")
         socketio.emit("schedule_error", str(e))
@@ -1748,7 +1655,7 @@ def handle_delete_task(task_id):
     try:
         lschedule.schedule.delete_task(task_id)
         lschedule.schedule.save_to_json(config.AI_DIR / "schedule.json")
-        socketio.emit("schedule_update", lschedule.schedule.to_dict())
+        socketio.emit("schedule_update", lschedule.schedule.jsonify())
     except Exception as e:
         print(f"Error reopening task: {e}")
         socketio.emit("schedule_error", str(e))
@@ -1811,3 +1718,4 @@ if __name__ == "__main__":
         lschedule.schedule.save_to_json(config.AI_DIR / "schedule.json")
         tools.save_jobs()
         print("Chat history saved.")
+...

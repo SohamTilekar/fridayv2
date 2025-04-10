@@ -1,6 +1,6 @@
 from flask_socketio import SocketIO
 from google import genai
-from typing import Any, Optional, TypedDict, Callable, TYPE_CHECKING
+from typing import Any, TypedDict, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from main import ChatHistory, Content, File

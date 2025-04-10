@@ -18,6 +18,8 @@ To optimize performance, parts of the chat history, including messages and attac
 
 {"Here's some information about the user to help personalize your responses:" if config.ABOUT_YOU else ""}
 {config.ABOUT_YOU}
+{"{reminders}"}
+{"{dir_tree}"}
 """
 
 ModelAndToolSelectorSYSTEM_INSTUNCTION = """\

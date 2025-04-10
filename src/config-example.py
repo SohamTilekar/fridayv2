@@ -5,10 +5,10 @@ from typing import Literal, Optional
 # Remove the -example part
 GOOGLE_API: str = "Your-Google-API-Gose-Here"
 FIRECRAWL_API: str = "fc-..."
-FIRECRAWL_ENDPOINT: Optional[str] = None # None for public
+FIRECRAWL_ENDPOINT: Optional[str] = None # None for firecrawl.dev hosted endpoint (FIRECRAWL_API requires if None)
 AI_DIR: pathlib.Path = pathlib.Path("~/friday/")
 
-YOUR_NAME: str = "LastName FirstName" #e.g Musk Elon
+USR_NAME: str = "LastName FirstName" #e.g Musk Elon
 ABOUT_YOU: str = """\
 """
 # this is example update it as your liking
@@ -35,13 +35,14 @@ class Models(enum.Enum):
     Small15 = "gemini-1.5-flash-8b-001"
 
 model_RPM_map = {
-"gemini-2.0-pro-exp-02-05": 2,
-"gemini-2.0-flash-001": 15,
-"gemini-2.0-flash-thinking-exp-01-21": 10,
-"gemini-2.0-flash-lite-001": 30,
-"gemini-1.5-pro-002": 2,
-"gemini-1.5-flash-002": 15,
-"gemini-1.5-flash-8b-001": 15,
+    "gemini-2.5-pro-exp-03-25": 2,
+    "gemini-2.0-pro-exp-02-05": 2,
+    "gemini-2.0-flash-001": 15,
+    "gemini-2.0-flash-thinking-exp-01-21": 10,
+    "gemini-2.0-flash-lite-001": 30,
+    "gemini-1.5-pro-002": 2,
+    "gemini-1.5-flash-002": 15,
+    "gemini-1.5-flash-8b-001": 15,
 }
 
 type ModelsLiteral = Literal["Large25", "Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"]
@@ -95,8 +96,6 @@ ABOUT_MODELS = """\
 """
 
 CHAT_AI_TEMP: float = 0.2
-TOKEN_REDUCER_PLANER: str = "gemini-2.0-flash"
-SUMMARIZER_AI: str = "gemini-2.0-flash-lite"
 
 if("Your-Google-API-Gose-Here" == GOOGLE_API):
     raise AssertionError("Set Your Google API first")

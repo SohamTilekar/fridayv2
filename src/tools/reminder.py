@@ -4,7 +4,7 @@ import threading
 import time
 import schedule
 import config
-from typing import Any, Literal, Optional
+from typing import Literal, Optional, cast
 import os
 import datetime
 
@@ -12,16 +12,13 @@ from global_shares import global_shares
 from notification import Notification, Content, notifications
 
 def emit_reminders():
-    if global_shares["socketio"]:
-        global_shares["socketio"].emit("reminders_list_update", get_reminders_json())
-    else:
-        print(f"global_shares[\"socketio\"] is {global_shares["socketio"]}")
+    global_shares["socketio"].emit("reminders_list_update", get_reminders_json())
 
 class Reminder:
-    message: str
-    once: bool
-    skip_next: bool
-    re_remind: bool
+    message: str # reminder message
+    once: bool # whether to reminder only onece or repeat
+    skip_next: bool # whether to skip next reminder
+    re_remind: bool # whether to reremind
     id: int
 
     def __init__(self, message: str, once: bool) -> None:
@@ -125,13 +122,14 @@ def get_reminders() -> str:
             )
         else:
             frequency = f"Runs every {job.interval} {job.unit}"
-
+        if not job.job_func:
+            raise ValueError("job dont have function")
         reminder = (
-            f"- Reminder: Message: {job.job_func.func.message}, Once: {once}, "  # type: ignore
+            f"- Reminder: Message: {cast(Reminder, job.job_func.func).message}, Once: {once}, "
             f"{f'Last Run: {last_run}, ' if last_run else ''}"
-            f"Schedule: {frequency}, ID: {job.job_func.func.id}, "  # type: ignore
-            f"{'Skip Next: Yes, ' if job.job_func.func.skip_next else ''}"  # type: ignore
-            f"{'Re-Remind: Yes' if job.job_func.func.re_remind else ''}"  # type: ignore
+            f"Schedule: {frequency}, ID: {cast(Reminder, job.job_func.func).id}, "
+            f"{'Skip Next: Yes, ' if cast(Reminder, job.job_func.func).skip_next else ''}"
+            f"{'Re-Remind: Yes' if cast(Reminder, job.job_func.func).re_remind else ''}"
             "\n"
         )
         reminders += reminder
@@ -142,13 +140,15 @@ def get_reminders() -> str:
 def get_reminders_json() -> list[dict[str, None | int | str | bool]]:
     reminders: list[dict[str, None | int | str | bool]] = []
     for job in schedule.get_jobs():
+        if not job.job_func:
+            raise ValueError("job dont have function")
         reminders.append(
             {
-                "message": job.job_func.func.message, # type: ignore
+                "message": cast(Reminder, job.job_func.func).message,
                 "once": "once" in job.tags,
-                "id": job.job_func.func.id, # type: ignore
-                "skip_next": job.job_func.func.skip_next, # type: ignore
-                "re_remind": job.job_func.func.re_remind, # type: ignore
+                "id": cast(Reminder, job.job_func.func).id,
+                "skip_next": cast(Reminder, job.job_func.func).skip_next,
+                "re_remind": cast(Reminder, job.job_func.func).re_remind,
                 "interval": job.interval,
                 "latest": job.latest,
                 "unit": job.unit,
@@ -186,7 +186,7 @@ def CreateReminder(
     - int: The ID of the scheduled reminder.
     """
     reminder = Reminder(message, once or False)
-    
+
     if interval_type == "minute" and interval_int or 0 > 0:
         job = schedule.every(interval_int or 0).minutes.do(reminder).tag("once" if once else "")
     elif interval_type == "hour" and interval_int or 0 > 0:
@@ -201,12 +201,16 @@ def CreateReminder(
     elif interval_type == "week" and interval_list:
         for day in interval_list:
             job = schedule.every().__getattribute__(day).at(specific_time).do(reminder).tag("once" if once else "")
+            cast(Reminder, job.job_func.func).id = reminder.id
+        emit_reminders()
+        return reminder.id
     else:
         raise ValueError("Invalid interval type or parameters.")
-    
-    job.job_func.func.id = reminder.id  # type: ignore
+    if not job.job_func:
+        raise ValueError("job dont have function")
+    cast(Reminder, job.job_func.func).id = reminder.id
     emit_reminders()
-    return job.job_func.func.id  # type: ignore
+    return reminder.id
 
 def CancelReminder(
     reminder_id: int, forever_or_next: Optional[Literal["forever", "next"]] = None
@@ -219,21 +223,34 @@ def CancelReminder(
     - forever_or_next (Literal):
       - "forever": Permanently cancels the reminder.
       - "next": Skips the next scheduled occurrence, but keeps future ones.
-    
+
     Returns:
     - str: The status message after cancelling the reminder.
-    ```
     """
+    cancelled_count = 0
+    # There can be multiple reminders with the same ID (e.g., weekly reminders)
     for job in schedule.get_jobs():
-        if job.job_func.func.id == reminder_id:  # type: ignore
-            if forever_or_next or "forever" == "forever":
+        if not job.job_func:
+            raise ValueError("job dont have function")
+        if cast(Reminder, job.job_func.func).id == reminder_id:
+            if forever_or_next == "forever":
                 schedule.cancel_job(job)
-                emit_reminders()
-                return f"Reminder with ID {reminder_id} has been cancelled forever."
+                cancelled_count += 1
             elif forever_or_next == "next":
-                job.job_func.func.skip_next = True  # type: ignore
-                emit_reminders()
-                return f"Next occurrence of reminder with ID {reminder_id} has been cancelled."
+                cast(Reminder, job.job_func.func).skip_next = True
+                cancelled_count += 1
             else:
                 raise ValueError("Invalid value for 'forever_or_next'.")
-    raise Exception(f"Reminder with ID {reminder_id} not found, may have already been cancelled or expired.")
+
+    emit_reminders()
+
+    if cancelled_count == 0:
+        raise Exception(
+            f"Reminder with ID {reminder_id} not found, may have already been cancelled or expired."
+        )
+    elif forever_or_next == "forever":
+        return f"{cancelled_count} reminders with ID {reminder_id} have been cancelled forever."
+    elif forever_or_next == "next":
+        return f"Next occurrence of {cancelled_count} reminders with ID {reminder_id} have been cancelled."
+    else:
+        raise ValueError("Invalid value for 'forever_or_next'.")

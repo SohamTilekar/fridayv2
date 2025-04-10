@@ -3,18 +3,16 @@ import uuid
 import duckduckgo_search
 import duckduckgo_search.exceptions
 import concurrent.futures
-import threading
-import time
 import requests
 import traceback
 from rich import print
 from firecrawl import FirecrawlApp
-from typing import Any, Callable, Optional, TypedDict
+from typing import Any, Callable, Optional, TypedDict, cast
 from google.genai import types
 from global_shares import global_shares
 import config
 import prompt
-from utils import retry
+import utils
 
 class FetchModelMD(TypedDict):
     # "og:description": str
@@ -48,47 +46,6 @@ class FetchModel(TypedDict):
     # screenshot: str  # url of the website screenshot
     links: list[str]  # links in the website
     # metadata: FetchModelMD
-
-class FetchLimiter:
-    _instance: Optional["FetchLimiter"] = None
-    _lock: threading.Lock = threading.Lock()
-    _semaphore: threading.Semaphore = threading.Semaphore(2)  # Limit to 2 concurrent requests
-    calls: int = 0
-    period: int = 60  # seconds
-    max_calls: int = 10
-    last_reset: float = 0.0
-
-    def __new__(cls) -> "FetchLimiter":
-        with cls._lock:
-            if not cls._instance:
-                cls._instance = super().__new__(cls)
-                cls._instance.last_reset = time.time()
-            return cls._instance
-
-    def __call__(self, func: Callable) -> Callable:
-        def limited_func(*args, **kwargs):
-            with self._semaphore:  # Acquire semaphore to limit concurrent requets
-                with self._lock:
-                    now = time.time()
-                    if now - self.last_reset > self.period:
-                        self.calls = 0
-                        self.last_reset = now
-
-                    while self.calls >= self.max_calls:
-                        sleep_time = self.last_reset + self.period - now
-                        if sleep_time > 0:
-                            time.sleep(sleep_time)
-                        now = time.time()
-                        if now - self.last_reset > self.period:
-                            self.calls = 0
-                            self.last_reset = now
-
-                    self.calls += 1
-                try:
-                    return func(*args, **kwargs)
-                finally:
-                    pass
-        return limited_func
 
 class Topic:
     topic: str
@@ -239,7 +196,7 @@ class DeepResearcher:
 
     def _is_query_question(self) -> bool:
         return (
-            retry(max_retries=float("inf"))(global_shares["client"].models.generate_content)(
+            utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
                 model="tunedModels/question-detactor-e0adnas2gayt",
                 contents=[
                     types.Content(
@@ -257,7 +214,7 @@ class DeepResearcher:
             .content.parts[0]  # type: ignore
             .text
             == "Yes"
-        )  # type: ignore
+        )
 
     def analyse_add_topic(self, id: Optional[str] = None) -> str:
         def add_topic(parent_id: str, topic: str, sites: Optional[list[str]] = None, queries: Optional[list[str]] = None) -> str:
@@ -337,9 +294,9 @@ class DeepResearcher:
         ]
         text: str = ""
         while True:
-            result = retry(max_retries=float("inf"))(global_shares["client"].models.generate_content)(
+            result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
                 model="gemini-2.0-flash",
-                contents=contents,
+                contents=cast(types.ContentListUnion, contents),
                 config=types.GenerateContentConfig(
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(
                         disable=True, maximum_remote_calls=None
@@ -350,7 +307,8 @@ class DeepResearcher:
             )
             called: bool = False
             if (
-                result.candidates
+                result
+                and result.candidates
                 and result.candidates[0].content
                 and result.candidates[0].content.parts
             ):
@@ -449,7 +407,7 @@ class DeepResearcher:
             if not called:
                 break
             contents[0].parts[0].text = f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai(id)}"  #type: ignore
-            return text
+        return text
 
 
     def _generate_queries(self, topic: str) -> list[str]:
@@ -470,16 +428,18 @@ class DeepResearcher:
                 ]
             )
         ]
-        result = retry(max_retries=float("inf"))(global_shares["client"].models.generate_content)(
+        result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
             model="gemini-2.0-flash",
-            contents=contents,
+            contents=cast(types.ContentListUnion, contents),
             config=types.GenerateContentConfig(temperature=0.5, system_instruction=prompt.QUERY_GEN_SYS_INSTR),
         )
-        queries_str: str = result.candidates[0].content.parts[0].text  # type: ignore
+        queries_str: str = result.candidates[0].content.parts[0].text if result and result.candidates and result.candidates[0].content and result.candidates[0].content.parts and result.candidates[0].content.parts[0].text else ""
+        if not (result and result.candidates and result.candidates[0].content and result.candidates[0].content.parts and result.candidates[0].content.parts[0].text):
+            raise ValueError("Failed to generate queries.")
         queries = queries_str.splitlines()
         return [q.strip()[:-1] if i == 0 else q.strip()[1:-1] for i, q in enumerate(queries) if q.strip()]
 
-    @retry(max_retries=float("inf"))
+    @utils.retry(exceptions=utils.network_errors + (duckduckgo_search.exceptions.DuckDuckGoSearchException,), ignore_exceptions=utils.ignore_network_error)
     def _search_online(self, query: str) -> list[str]:
         """Searches DuckDuckGo for a query and returns a list of URLs."""
         results = self.ddgs.text(query, backend="lite", safesearch="off", max_results=self.max_search_results)
@@ -489,7 +449,7 @@ class DeepResearcher:
 
     def _search_and_fetch(self, unresearched_topic: Topic, visited_urls: set[str]):
 
-        def fetch_with_handling(url: str, executor) -> tuple[str, str, list[str]] | None:
+        def fetch_with_handling(url: str) -> tuple[str, str, list[str]] | None:
             try:
                 self.call_back({"action": "fetching_url", "url": url})
                 fetch_model = self.fetch_url(url)
@@ -499,43 +459,38 @@ class DeepResearcher:
                 traceback.print_exc()
                 return None
 
-        def search_and_fetch_query(query: str, executor: concurrent.futures.ThreadPoolExecutor):
-            urls = self._search_online(query)
+        def process_urls(urls: list[str]) -> list[tuple[str, str, list[str]]]:
             results = []
-            c_urls = []
             for url in urls:
                 if url not in visited_urls:
                     visited_urls.add(url)
-                    c_urls.append(url)
-            url_futures = [executor.submit(fetch_with_handling, url, executor) for url in c_urls]
-            for future in concurrent.futures.as_completed(url_futures):
-                result = future.result()
-                if result:
-                    results.append(result)
+                    result = fetch_with_handling(url)
+                    if result:
+                        results.append(result)
             return results
 
-        def fetch_urls(urls: list[str], executor: concurrent.futures.ThreadPoolExecutor):
-            results = []
-            c_urls = []
-            for url in urls:
-                if url not in visited_urls:
-                    visited_urls.add(url)
-                    c_urls.append(url)
-            url_futures = [executor.submit(fetch_with_handling, url, executor) for url in c_urls]
-            for future in concurrent.futures.as_completed(url_futures):
-                result = future.result()
-                if result:
-                    results.append(result)
-            return results
+        def search_and_fetch_query(query: str):
+            urls = self._search_online(query)
+            return process_urls(urls)
 
         if unresearched_topic.fetched_content is None:
             unresearched_topic.fetched_content = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=21 + len(unresearched_topic.queries or ())) as executor:
-            futures = [executor.submit(search_and_fetch_query, query, executor) for query in unresearched_topic.queries or ()]
-            futures.append(executor.submit(fetch_urls, unresearched_topic.urls, executor))
+
+        queries = unresearched_topic.queries or []
+        urls = unresearched_topic.urls or []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(queries) + len(urls))) as executor:  # Limit max workers
+
+            futures = [executor.submit(search_and_fetch_query, query) for query in queries]
+            futures.append(executor.submit(process_urls, urls))
+
             for future in concurrent.futures.as_completed(futures):
-                results = future.result()
-                unresearched_topic.fetched_content.extend(results)
+                try:
+                    results = future.result()
+                    unresearched_topic.fetched_content.extend(results)
+                except Exception as e:
+                    print(f"Error during concurrent execution: {e}")
+                    traceback.print_exc()
 
     def research(self) -> str:
         current_depth: int = 0
@@ -574,22 +529,23 @@ class DeepResearcher:
         ]
         report_str: str = ""
         while True:
-            result = retry(max_retries=float("inf"))(global_shares["client"].models.generate_content)(
+            result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
                 model="gemini-2.0-flash-thinking-exp-01-21",
-                contents=contents,
+                contents=cast(types.ContentListUnion, contents),
                 config=types.GenerateContentConfig(
                     temperature=0.4,
                     system_instruction=prompt.REPORT_GEN_SYS_INSTR),
             )
             if (
-                result.candidates
+                result
+                and result.candidates
                 and result.candidates[0].content
                 and result.candidates[0].content.parts
                 and result.candidates[0].content.parts[0].text
             ):
                 report_str += result.candidates[0].content.parts[0].text
                 if len(contents) == 1:
-                    contents[1].parts[0].text += result.candidates[0].content.parts[0].text # type: ignore
+                    contents.append(types.Content(role="model", parts=[types.Part(text=result.candidates[0].content.parts[0].text)]))
                 else:
                     contents[1].parts[0].text += result.candidates[0].content.parts[0].text # type: ignore
                 if result.candidates[0].finish_reason != types.FinishReason.MAX_TOKENS:
@@ -599,7 +555,7 @@ class DeepResearcher:
 
     def fetch_url(self, url: str, wait_for: int = 4000) -> FetchModel:
         while True:
-            scrape_result = retry(max_retries=float("inf"))(FetchLimiter()(self.app.scrape_url))(
+            scrape_result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(utils.FetchLimiter()(self.app.scrape_url))(
                 url,
                 params={
                     "formats": ["markdown", "links"], #, "screenshot@fullPage"],
@@ -610,7 +566,7 @@ class DeepResearcher:
                 },
             )
             if scrape_result: return scrape_result
-        img = retry(max_retries=float("inf"))(requests.get)(scrape_result["screenshot"]) if scrape_result.get("screenshot") else None
+        img = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(requests.get)(scrape_result["screenshot"]) if scrape_result.get("screenshot") else None
         contents: list[Any] = [
             types.Content(
                 role="user",
@@ -634,7 +590,7 @@ class DeepResearcher:
         ]
         md: str = ""
         while True:
-            result = retry(max_retries=float("inf"))(global_shares["client"].models.generate_content)(
+            result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
                 model="gemini-2.0-flash-lite-001",
                 contents=contents,
                 config=types.GenerateContentConfig(

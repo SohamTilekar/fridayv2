@@ -1,23 +1,29 @@
 # webfetch.py
-from selenium import webdriver
-from bs4 import BeautifulSoup
-from utils import retry
+import utils
+from firecrawl import FirecrawlApp
+import config
 
-@retry()
 def FetchWebsite(url: str) -> str:
-    """Fetch a Text From a Given Website URL"""
-    # Initialize Selenium WebDriver
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless")  # Run in headless mode (no GUI)
-    driver = webdriver.Chrome(options=options)
+    """
+    Fetches the content from a given website URL in Markdown format.
 
-    driver.get(url)  # Use the passed URL
+    Args:
+        url (str): The URL of the website to fetch.
 
-    # Get fully rendered HTML
-    html = driver.page_source
-    driver.quit()  # Close the browser
-
-    # Parse with BeautifulSoup
-    soup = BeautifulSoup(html, "html.parser")
-
-    return soup.get_text(separator=" ", strip=True)
+    Returns:
+        str: The Markdown format of the website.
+    """
+    app = FirecrawlApp(
+        api_key=config.FIRECRAWL_API, api_url=config.FIRECRAWL_ENDPOINT
+    )
+    scrape_result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(utils.FetchLimiter()(app.scrape_url))(
+        url,
+        params={
+            "formats": ["markdown"],
+            "waitFor": 15_000,
+            "proxy": "stealth",
+            "timeout": 30_000,
+            "removeBase64Images": True,
+        },
+    )
+    return scrape_result["markdown"]
