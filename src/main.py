@@ -9,8 +9,8 @@ from google.genai import types
 import prompt
 import config
 import uuid
-from io import BytesIO  # Import BytesIO
-from typing import Any, Literal, Optional, TypedDict, NamedTuple, overload, cast
+from io import BytesIO
+from typing import Any, Literal, Optional, TypedDict, NamedTuple, cast
 from mail import start_checking_mail
 from global_shares import global_shares
 import notification
@@ -22,6 +22,7 @@ import time
 import datetime
 import utils
 import threading
+import tools
 
 app = Flask("Friday")
 socketio = SocketIO(app)
@@ -29,7 +30,6 @@ global_shares["socketio"] = socketio
 
 client = genai.Client(api_key=config.GOOGLE_API)
 global_shares["client"] = client
-import tools
 
 model: Optional[str] = None  # None for Auto
 selected_tools: Optional[list[tools.ToolLiteral]] = None  # None for Auto
@@ -84,7 +84,7 @@ class File:
             client.files.delete(name=self.cloud_uri.name)
 
     @staticmethod
-    def _generate_valid_video_file_id():
+    def _generate_valid_file_id():
         """Generates a valid ID that conforms to the naming requirements."""
         base_id = str(uuid.uuid4()).lower()[:35]
         valid_id = re.sub(r"^[^a-z0-9]+|[^a-z0-9]+$", "", base_id)
@@ -95,10 +95,9 @@ class File:
         if expiration_time is None:
             return True
         now = datetime.datetime.now(datetime.timezone.utc)
-        ten_minutes_from_now = now + datetime.timedelta(minutes=10)
+        ten_minutes_from_now = now + datetime.timedelta(minutes=10) # 10 min buffer
 
         return expiration_time >= ten_minutes_from_now
-
 
     @utils.retry(exceptions=utils.network_errors + (ValueError,), ignore_exceptions=utils.ignore_network_error)
     def upload_file(self):
@@ -111,30 +110,22 @@ class File:
                 raise ValueError("Failed to Upload File")
         if self.cloud_uri.state == types.FileState.FAILED:
             raise ValueError(self.cloud_uri.state.name)
-        if not self.cloud_uri.uri or not self.cloud_uri.mime_type:
-            raise ValueError("file uri & mime type not available")
-
-    @overload
-    def for_ai(self, imagen_selected: Literal[True], msg: Optional["Message"] = ...) -> tuple[types.Part, types.Part]: ...
-
-    @overload
-    def for_ai(self, imagen_selected: Literal[False], msg: Optional["Message"] = ...) -> types.Part: ...
 
     def for_ai(self, imagen_selected: bool, msg: Optional["Message"] = None) -> types.Part | tuple[types.Part, types.Part]:
         """
-        Prepares the file for use with the AI model.
+            Prepares the file for use with the AI model.
 
-        Args:
-            imagen_selected (bool): Indicates if the image generation tool is selected.
-            msg (Optional["Message"]): The message object, used for updating the UI during file processing.
+            Args:
+                imagen_selected (bool): Indicates if the image generation tool is selected.
+                msg (Optional["Message"]): The message object, used for updating the UI during file processing.
 
-        Returns:
-            types.Part | tuple[types.Part, types.Part]: The file as a Part object, ready for AI processing.
-                                                        Returns a tuple of Parts if imagen_selected is True and the file is an image.
+            Returns:
+                types.Part | tuple[types.Part, types.Part]: The file as a Part object, ready for AI processing.
+                                                            Returns a tuple of Parts if imagen_selected is True and the file is an image.
 
-        Raises:
-            ValueError: If the file type is not supported.
-            Exception: If file upload fails or file URI/MIME type are not available.
+            Raises:
+                ValueError: If the file type is not supported.
+                Exception: If file upload fails or file URI/MIME type are not available.
         """
         # Check if the file type is supported
         if self.type.startswith("text/") or self.type.startswith(("image/", "video/")) or self.type == "application/pdf":
@@ -171,13 +162,9 @@ class File:
 
             # Prepare the file part for the AI model
             if imagen_selected and self.type.startswith("image/"):
-                # If the image generation tool is selected and the file is an image, attach image id with image
+                # If the image generation tool is selected and the file is an image, attach image id with image for the AI to also give access of the image to the Imageine tool
                 return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
-
-            # Otherwise, return a single Part object
             return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
-
-        # Raise an error if the file type is not supported
         raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
 
     def jsonify(self) -> dict:
@@ -369,9 +356,9 @@ class Content:
             return parts
         elif self.text:
             return types.Part(text=self.text)
-        elif self.attachment is not None:
+        elif self.attachment:
             return self.attachment.for_ai(imagen_selected, msg)
-        raise Exception("Empty Part")
+        return []
 
     def jsonify(self) -> dict[str, Any]:
         return {
@@ -517,9 +504,7 @@ class Message:
                     del self.content[idx]
                     return
 
-    def for_ai(
-        self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
-    ) -> list[types.Content]:
+    def for_ai(self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None) -> list[types.Content]:
         if msg is None:
             raise ValueError("msg parameter is required.")
 
@@ -1449,7 +1434,7 @@ def handle_send_message(data):
                 file_type,
                 filename,
                 None,
-                File._generate_valid_video_file_id(),
+                File._generate_valid_file_id(),
             )
         )
         del files[id]

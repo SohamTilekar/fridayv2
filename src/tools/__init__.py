@@ -151,7 +151,7 @@ For each model, consider its rate limit (RPM = requests per minute, req/day = re
     return config.Models[model].value
 
 def ToolSelector(tools: list[Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]) -> list[types.Tool]:
-    f"""\
+    """\
 Use this tool to choose which tools to should AI get accessed too.
 
 If No tools want to provided then pass tools as empty list/array

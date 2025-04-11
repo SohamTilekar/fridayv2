@@ -1,3 +1,5 @@
+# global_shares.py
+# This file is use to share py objects accross files without circular import
 from flask_socketio import SocketIO
 from google import genai
 from typing import Any, TypedDict, Callable, TYPE_CHECKING
