@@ -3,7 +3,14 @@ from google.genai import types
 from typing import Literal
 import config
 
-from .reminder import CreateReminder, save_jobs, run_reminders, get_reminders, get_reminders_json, CancelReminder
+from .reminder import (
+    CreateReminder,
+    save_jobs,
+    run_reminders,
+    get_reminders,
+    get_reminders_json,
+    CancelReminder,
+)
 from .webfetch import FetchWebsite
 from .space import CodeExecutionEnvironment
 from .imagen import Imagen
@@ -25,38 +32,81 @@ WriteFile = CodeExecutionEnvironment.WriteFile
 SendControlC = CodeExecutionEnvironment.SendControlC
 LinkAttachment = CodeExecutionEnvironment.LinkAttachment
 
-FetchTool = types.Tool(function_declarations=[
-    types.FunctionDeclaration.from_callable_with_api_option(callable=FetchWebsite),
-    types.FunctionDeclaration.from_callable_with_api_option(callable=DeepResearch),
-])
-ImagenTool = types.Tool(function_declarations=[types.FunctionDeclaration.from_callable_with_api_option(callable=Imagen)])
-ReminderTool = types.Tool(function_declarations=[
-    types.FunctionDeclaration.from_callable_with_api_option(callable=CreateReminder),
-    types.FunctionDeclaration.from_callable_with_api_option(callable=CancelReminder),
-    types.FunctionDeclaration.from_callable_with_api_option(callable=CreateTask),
-    types.FunctionDeclaration.from_callable_with_api_option(callable=UpdateTask)
-])
+FetchTool = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration.from_callable_with_api_option(callable=FetchWebsite),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=DeepResearch),
+    ]
+)
+ImagenTool = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration.from_callable_with_api_option(callable=Imagen)
+    ]
+)
+ReminderTool = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CreateReminder
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CancelReminder
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=CreateTask),
+        types.FunctionDeclaration.from_callable_with_api_option(callable=UpdateTask),
+    ]
+)
 SearchGrounding = types.Tool(google_search=types.GoogleSearch())
 ComputerTool = types.Tool(
     function_declarations=[
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.RunCommand),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.RunCommandBackground),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.SendSTDIn),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.GetSTDOut),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.CreateFile),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.CreateFolder),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.DeleteFile),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.DeleteFolder),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.IsProcessRunning),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.KillProcess),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.ReadFile),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.WriteFile),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.SendControlC),
-        types.FunctionDeclaration.from_callable_with_api_option(callable=CodeExecutionEnvironment.LinkAttachment),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.RunCommand
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.RunCommandBackground
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.SendSTDIn
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.GetSTDOut
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.CreateFile
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.CreateFolder
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.DeleteFile
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.DeleteFolder
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.IsProcessRunning
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.KillProcess
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.ReadFile
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.WriteFile
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.SendControlC
+        ),
+        types.FunctionDeclaration.from_callable_with_api_option(
+            callable=CodeExecutionEnvironment.LinkAttachment
+        ),
     ]
 )
 
-type ToolLiteral = Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
+type ToolLiteral = Literal[
+    "Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"
+]
+
 
 class Tools(enum.Enum):
     Imagen = ImagenTool
@@ -64,14 +114,33 @@ class Tools(enum.Enum):
     Reminder = ReminderTool
     ComputerTool = ComputerTool
     SearchGrounding = SearchGrounding
+
     @staticmethod
-    def tool_names() -> list[Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]:
+    def tool_names() -> (
+        list[
+            Literal[
+                "Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"
+            ]
+        ]
+    ):
         return ["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
 
+
 def ModelAndToolSelector(
-        model: Literal["Large25", "Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
-        tools: list[Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]
-    ) -> tuple[str, bool, list[types.Tool]]:
+    model: Literal[
+        "Large25",
+        "Large20",
+        "Medium20",
+        "MediumThinking20",
+        "Small20",
+        "Large15",
+        "Medium15",
+        "Small15",
+    ],
+    tools: list[
+        Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
+    ],
+) -> tuple[str, bool, list[types.Tool]]:
     f"""\
 Use this tool to choose the best AI model with tools to respond to the user's request, considering the model capabilities, rate limits, latency, benchmark scores, and tool requirements.
 
@@ -121,11 +190,25 @@ only {config.SearchGroundingSuportedModels} suports SearchGrounding.
             ftools.append(ComputerTool)
         else:
             raise Exception("Unknown Tool passed: " + tool)
-    return (config.Models[model].value, model in config.ToolSuportedModels and SearchGrounding not in ftools, ftools)
+    return (
+        config.Models[model].value,
+        model in config.ToolSuportedModels and SearchGrounding not in ftools,
+        ftools,
+    )
+
 
 def ModelSelector(
-        model: Literal["Large25", "Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"],
-    ) -> str:
+    model: Literal[
+        "Large25",
+        "Large20",
+        "Medium20",
+        "MediumThinking20",
+        "Small20",
+        "Large15",
+        "Medium15",
+        "Small15",
+    ],
+) -> str:
     f"""\
 Use this tool to choose the best AI model to respond to the user's request, considering the model capabilities, rate limits, latency, benchmark scores, and tool requirements.
 
@@ -150,7 +233,12 @@ For each model, consider its rate limit (RPM = requests per minute, req/day = re
 """
     return config.Models[model].value
 
-def ToolSelector(tools: list[Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]]) -> list[types.Tool]:
+
+def ToolSelector(
+    tools: list[
+        Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
+    ],
+) -> list[types.Tool]:
     """\
 Use this tool to choose which tools to should AI get accessed too.
 

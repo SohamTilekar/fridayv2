@@ -8,6 +8,7 @@ from global_shares import global_shares
 if TYPE_CHECKING:
     from main import Content
 
+
 def Imagen(prompt: str, references: Optional[list[str]] = None) -> list["Content"]:
     """\
 Generates or edits an image (or multiple images) based on a text prompt, optionally using reference images for guidance.
@@ -30,14 +31,18 @@ Args:
             images.extend(img)
         else:
             images.append(img)
-    contents = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares['client'].models.generate_content)(
+    contents = utils.retry(
+        exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error
+    )(global_shares["client"].models.generate_content)(
         model="gemini-2.0-flash-exp-image-generation",
         contents=[
             types.Content(
                 role="user",
                 parts=[
                     *images,
-                    types.Part.from_text(text="Generate 1 or multiple images, directly start generating images, dont write any text just generate Images, Dont ask any follow up question."),
+                    types.Part.from_text(
+                        text="Generate 1 or multiple images, directly start generating images, dont write any text just generate Images, Dont ask any follow up question."
+                    ),
                     types.Part.from_text(text=prompt),
                 ],
             ),
@@ -48,7 +53,7 @@ Args:
                 "text",
             ],
             response_mime_type="text/plain",
-        )
+        ),
     )
     if not contents:
         return []
@@ -58,12 +63,17 @@ Args:
     for candidate in contents.candidates:
         if candidate.content and candidate.content.parts:
             for part in candidate.content.parts:
-                if part.inline_data and part.inline_data.data and part.inline_data.mime_type:
+                if (
+                    part.inline_data
+                    and part.inline_data.data
+                    and part.inline_data.mime_type
+                ):
                     parts.append(
-                        global_shares["content"](attachment=global_shares["file"](
+                        global_shares["content"](
+                            attachment=global_shares["file"](
                                 base64.b64decode(part.inline_data.data),
                                 part.inline_data.mime_type,
-                                filename="image"
+                                filename="image",
                             )
                         )
                     )

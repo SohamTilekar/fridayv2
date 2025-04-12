@@ -7,6 +7,7 @@ from typing import Any, TypedDict, Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from main import ChatHistory, Content, File
 
+
 class Shared(TypedDict):
     socketio: SocketIO
     mail_service: Any
@@ -16,6 +17,7 @@ class Shared(TypedDict):
     file: type["File"]
     content: type["Content"]
 
+
 global_shares: Shared = {
     "socketio": None,
     "mail_service": None,
@@ -23,5 +25,5 @@ global_shares: Shared = {
     "take_permision": lambda x: False,
     "chat_history": None,
     "file": None,
-    "content": None
-} # type: ignore
+    "content": None,
+}  # type: ignore

@@ -8,8 +8,10 @@ from typing import Optional
 
 from global_shares import global_shares
 
+
 class Task:
     """Represents a task in the schedule."""
+
     id: str
     title: Optional[str]  # title of the task
     start: Optional[str]  # start time in iso format
@@ -70,6 +72,7 @@ class Task:
 
 class Schedule:
     """Manages a list of tasks."""
+
     tasks: list[Task]
 
     def __init__(self, tasks: Optional[list[Task]] = None):
@@ -131,6 +134,7 @@ class Schedule:
 
 schedule = Schedule()  # Create a global instance of the Schedule
 
+
 def get_todo_list_string() -> str:
     """
     Returns the TODO list in a string format, including start/end times, and completion status.
@@ -146,12 +150,13 @@ def get_todo_list_string() -> str:
         else:
             time_info = "[Not Planned]"
 
-        todo_list.append(f"- {status} Title: `{task.title}` {time_info}, ID: `{task.id}`")
+        todo_list.append(
+            f"- {status} Title: `{task.title}` {time_info}, ID: `{task.id}`"
+        )
 
     return (
         f"Todays Date & Current Time: {datetime.now().strftime('%Y-%m-%d %a, %H:%M')}\n"
-        f"Tasks:\n"
-        + ("\n".join(todo_list) or "No Tasks in todo list")
+        f"Tasks:\n" + ("\n".join(todo_list) or "No Tasks in todo list")
     )
 
 

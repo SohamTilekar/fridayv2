@@ -14,6 +14,7 @@ import config
 import prompt
 import utils
 
+
 class FetchModelMD(TypedDict):
     # "og:description": str
     # "og:image:width": str
@@ -47,19 +48,18 @@ class FetchModel(TypedDict):
     links: list[str]  # links in the website
     # metadata: FetchModelMD
 
+
 class Topic:
     topic: str
     id: str
     sub_topics: list["Topic"]
     queries: Optional[list[str]]
     urls: list[str] = []
-    fetched_content: Optional[list[
-        tuple[
-            str, # url
-            str, # fetched content
-            list[str] # linkes on site
-        ]]]
+    fetched_content: Optional[
+        list[tuple[str, str, list[str]]]  # url  # fetched content  # linkes on site
+    ]
     researched: bool
+
     def __init__(
         self,
         topic: str,
@@ -67,13 +67,10 @@ class Topic:
         sub_topics: Optional[list["Topic"]] = None,
         queries: Optional[list[str]] = None,
         sites: Optional[list[str]] = None,
-        fetched_content: Optional[list[
-            tuple[
-                str, # url
-                str, # fetched content
-                list[str] # linkes on site
-            ]]] = None,
-        researched: Optional[bool] = None
+        fetched_content: Optional[
+            list[tuple[str, str, list[str]]]  # url  # fetched content  # linkes on site
+        ] = None,
+        researched: Optional[bool] = None,
     ):
         self.topic = topic
         self.id = id if id else str(uuid.uuid4())
@@ -155,7 +152,7 @@ class Topic:
             "queries": self.queries,
             "urls": self.urls,
             "fetched_content": self.fetched_content,
-            "researched": self.researched
+            "researched": self.researched,
         }
 
     @staticmethod
@@ -170,18 +167,24 @@ class Topic:
             researched=data.get("researched"),
         )
 
+
 class DeepResearcher:
     app: FirecrawlApp
     query: str
     topic: Topic
-    max_topics: int | None # None for inf
+    max_topics: int | None  # None for inf
     max_search_queries: int | None  # None for inf
-    max_search_results: int | None   # None for any
+    max_search_results: int | None  # None for any
     call_back: Callable[[dict[str, Any] | None], None]
     ddgs: duckduckgo_search.DDGS
 
     def __init__(
-        self, query: str, max_topics: Optional[int] = None, max_search_queries: int = 5, max_search_results: Optional[int] = None, call_back: Callable[[dict[str, Any] | None], None] = lambda x: None
+        self,
+        query: str,
+        max_topics: Optional[int] = None,
+        max_search_queries: int = 5,
+        max_search_results: int = 7,
+        call_back: Callable[[dict[str, Any] | None], None] = lambda x: None,
     ):
         self.app = FirecrawlApp(
             api_key=config.FIRECRAWL_API, api_url=config.FIRECRAWL_ENDPOINT
@@ -196,14 +199,19 @@ class DeepResearcher:
 
     def _is_query_question(self) -> bool:
         return (
-            utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
+            utils.retry(
+                exceptions=utils.network_errors,
+                ignore_exceptions=utils.ignore_network_error,
+            )(global_shares["client"].models.generate_content)(
                 model="tunedModels/question-detactor-e0adnas2gayt",
                 contents=[
                     types.Content(
                         role="user",
                         parts=[
                             types.Part(
-                                text=prompt.QUESTION_DETECTOR_USR_INSTR.format(query=self.query)
+                                text=prompt.QUESTION_DETECTOR_USR_INSTR.format(
+                                    query=self.query
+                                )
                             )
                         ],
                     )
@@ -217,7 +225,12 @@ class DeepResearcher:
         )
 
     def analyse_add_topic(self, id: Optional[str] = None) -> str:
-        def add_topic(parent_id: str, topic: str, sites: Optional[list[str]] = None, queries: Optional[list[str]] = None) -> str:
+        def add_topic(
+            parent_id: str,
+            topic: str,
+            sites: Optional[list[str]] = None,
+            queries: Optional[list[str]] = None,
+        ) -> str:
             """
             Adds a new subtopic under an existing topic in the research tree.
 
@@ -251,24 +264,24 @@ class DeepResearcher:
 
         def add_site(id: str, site: str):
             """
-                Adds a specific external link to an existing topic for deeper or manual research follow-up.
+            Adds a specific external link to an existing topic for deeper or manual research follow-up.
 
-                You MUST use this when:
-                - A high-value external page (e.g., documentation, research paper, niche blog) is discovered
-                - The page contains **content not surfaced by existing search results** but important to the topic
-                - The link is highly relevant and deepens understanding of the associated topic
+            You MUST use this when:
+            - A high-value external page (e.g., documentation, research paper, niche blog) is discovered
+            - The page contains **content not surfaced by existing search results** but important to the topic
+            - The link is highly relevant and deepens understanding of the associated topic
 
-                Arguments:
-                - id (str, required): The ID of the topic this link belongs to
-                - site (str, required): The full URL of the external resource
+            Arguments:
+            - id (str, required): The ID of the topic this link belongs to
+            - site (str, required): The full URL of the external resource
 
-                🚫 Do NOT use this:
-                - For generic, low-value, or loosely related links
-                - When the content is already covered by search results
-                - Just to add links—only use when the link clearly supports research
+            🚫 Do NOT use this:
+            - For generic, low-value, or loosely related links
+            - When the content is already covered by search results
+            - Just to add links—only use when the link clearly supports research
 
-                ✅ You MAY use this without adding a new topic
-                ✅ Especially useful when researching documentation-heavy domains
+            ✅ You MAY use this without adding a new topic
+            ✅ Especially useful when researching documentation-heavy domains
             """
             self.topic.add_site(id, site)
             self.call_back({"action": "topic_updated", "topic": self.topic.jsonify()})
@@ -280,21 +293,34 @@ class DeepResearcher:
                 ),
                 types.FunctionDeclaration.from_callable_with_api_option(
                     callable=add_site
-                )
+                ),
             ]
         )
         contents = [
             types.Content(
                 role="user",
                 parts=[
-                    types.Part(text=f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai(id)}"),
-                    types.Part(text=prompt.ADD_TOPIC_USR_INSTR.format(breadth=f"less than {self.max_search_queries}" if self.max_search_queries else "2-4")),
+                    types.Part(
+                        text=f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai(id)}"
+                    ),
+                    types.Part(
+                        text=prompt.ADD_TOPIC_USR_INSTR.format(
+                            breadth=(
+                                f"less than {self.max_search_queries}"
+                                if self.max_search_queries
+                                else "2-4"
+                            )
+                        )
+                    ),
                 ],
             )
         ]
         text: str = ""
         while True:
-            result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
+            result = utils.retry(
+                exceptions=utils.network_errors,
+                ignore_exceptions=utils.ignore_network_error,
+            )(global_shares["client"].models.generate_content)(
                 model="gemini-2.0-flash",
                 contents=cast(types.ContentListUnion, contents),
                 config=types.GenerateContentConfig(
@@ -302,7 +328,13 @@ class DeepResearcher:
                         disable=True, maximum_remote_calls=None
                     ),
                     tools=[add_topic_tool],
-                    system_instruction=prompt.ADD_TOPIC_SYS_INSTR.format(breadth=f"less than {self.max_search_queries}" if self.max_search_queries else "2-4")
+                    system_instruction=prompt.ADD_TOPIC_SYS_INSTR.format(
+                        breadth=(
+                            f"less than {self.max_search_queries}"
+                            if self.max_search_queries
+                            else "2-4"
+                        )
+                    ),
                 ),
             )
             called: bool = False
@@ -315,9 +347,13 @@ class DeepResearcher:
                 for part in result.candidates[0].content.parts:
                     if part.text:
                         if contents[-1].role == "model":
-                            contents[-1].parts[-1].text += part.text # type: ignore
+                            contents[-1].parts[-1].text += part.text  # type: ignore
                         else:
-                            contents.append(types.Content(role="model", parts=[types.Part(text=part.text)]))
+                            contents.append(
+                                types.Content(
+                                    role="model", parts=[types.Part(text=part.text)]
+                                )
+                            )
                         text += part.text
                     elif part.function_call:
                         if (
@@ -325,39 +361,56 @@ class DeepResearcher:
                             and part.function_call.args
                         ):
                             try:
-                                added_topic_id = add_topic(part.function_call.args["parent_id"], part.function_call.args["topic"], part.function_call.args.get("sites"), part.function_call.args.get("queries"))
+                                added_topic_id = add_topic(
+                                    part.function_call.args["parent_id"],
+                                    part.function_call.args["topic"],
+                                    part.function_call.args.get("sites"),
+                                    part.function_call.args.get("queries"),
+                                )
                             except Exception as e:
                                 if contents[-1].role == "model":
-                                    contents[-1].parts.append(part) #type: ignore
+                                    contents[-1].parts.append(part)  # type: ignore
                                 else:
                                     contents.append(
-                                        types.Content(
-                                            role="model",
-                                            parts=[part]
-                                        )
+                                        types.Content(role="model", parts=[part])
                                     )
                                 contents.append(
                                     types.Content(
                                         role="user",
-                                        parts=[types.Part(function_response=types.FunctionResponse(name="add_topic", id=part.function_call.id, response={"error": str(e)}))]
+                                        parts=[
+                                            types.Part(
+                                                function_response=types.FunctionResponse(
+                                                    name="add_topic",
+                                                    id=part.function_call.id,
+                                                    response={"error": str(e)},
+                                                )
+                                            )
+                                        ],
                                     )
                                 )
                                 called = True
                                 text += f'$%fail call=`add topic` args=`parent_id="{part.function_call.args.get("parent_id")}", topic="{part.function_call.args.get("topic")}", sites={part.function_call.args.get("sites")}, queries={part.function_call.args.get("queries")}, error="{e}"`%$'
                                 continue
                             if contents[-1].role == "model":
-                                contents[-1].parts.append(part) #type: ignore
+                                contents[-1].parts.append(part)  # type: ignore
                             else:
                                 contents.append(
-                                    types.Content(
-                                        role="model",
-                                        parts=[part]
-                                    )
+                                    types.Content(role="model", parts=[part])
                                 )
                             contents.append(
                                 types.Content(
                                     role="user",
-                                    parts=[types.Part(function_response=types.FunctionResponse(name="add_topic", id=part.function_call.id, response={"output": f"Topic Added with ID {added_topic_id}"}))]
+                                    parts=[
+                                        types.Part(
+                                            function_response=types.FunctionResponse(
+                                                name="add_topic",
+                                                id=part.function_call.id,
+                                                response={
+                                                    "output": f"Topic Added with ID {added_topic_id}"
+                                                },
+                                            )
+                                        )
+                                    ],
                                 )
                             )
                             called = True
@@ -367,48 +420,62 @@ class DeepResearcher:
                             and part.function_call.args
                         ):
                             try:
-                                add_site(part.function_call.args["id"], part.function_call.args["site"])
+                                add_site(
+                                    part.function_call.args["id"],
+                                    part.function_call.args["site"],
+                                )
                             except Exception as e:
                                 if contents[-1].role == "model":
-                                    contents[-1].parts.append(part) #type: ignore
+                                    contents[-1].parts.append(part)  # type: ignore
                                 else:
                                     contents.append(
-                                        types.Content(
-                                            role="model",
-                                            parts=[part]
-                                        )
+                                        types.Content(role="model", parts=[part])
                                     )
                                 contents.append(
                                     types.Content(
                                         role="user",
-                                        parts=[types.Part(function_response=types.FunctionResponse(name="add_site", id=part.function_call.id, response={"error": str(e)}))]
+                                        parts=[
+                                            types.Part(
+                                                function_response=types.FunctionResponse(
+                                                    name="add_site",
+                                                    id=part.function_call.id,
+                                                    response={"error": str(e)},
+                                                )
+                                            )
+                                        ],
                                     )
                                 )
                                 called = True
                                 continue
                                 text += f'$%fail call=`add site` args=`id="{part.function_call.args.get("id")}", site={part.function_call.args.get("site")}, error="{e}"`%$'
                             if contents[-1].role == "model":
-                                contents[-1].parts.append(part) #type: ignore
+                                contents[-1].parts.append(part)  # type: ignore
                             else:
                                 contents.append(
-                                    types.Content(
-                                        role="model",
-                                        parts=[part]
-                                    )
+                                    types.Content(role="model", parts=[part])
                                 )
                             contents.append(
                                 types.Content(
                                     role="user",
-                                    parts=[types.Part(function_response=types.FunctionResponse(name="add_site", id=part.function_call.id, response={"output": f"Succesfully Added url to reseaearch for topic with id {part.function_call.args["id"]}"}))]
+                                    parts=[
+                                        types.Part(
+                                            function_response=types.FunctionResponse(
+                                                name="add_site",
+                                                id=part.function_call.id,
+                                                response={
+                                                    "output": f"Succesfully Added url to reseaearch for topic with id {part.function_call.args["id"]}"
+                                                },
+                                            )
+                                        )
+                                    ],
                                 )
                             )
                             called = True
                             text += f'$%successful call=`add site` args=`id="{part.function_call.args.get("id")}", site={part.function_call.args.get("site")}`%$'
             if not called:
                 break
-            contents[0].parts[0].text = f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai(id)}"  #type: ignore
+            contents[0].parts[0].text = f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai(id)}"  # type: ignore
         return text
-
 
     def _generate_queries(self, topic: str) -> list[str]:
         """Generates search queries for a given topic using AI."""
@@ -417,32 +484,63 @@ class DeepResearcher:
                 role="user",
                 parts=[
                     types.Part(
-                        text=prompt.QUERY_GEN_USR_INSTR.format(breadth=f"less than {self.max_search_queries}" if self.max_search_queries else "2-4", topic=topic)
+                        text=prompt.QUERY_GEN_USR_INSTR.format(
+                            breadth=(
+                                f"less than {self.max_search_queries}"
+                                if self.max_search_queries
+                                else "2-4"
+                            ),
+                            topic=topic,
+                        )
                     )
                 ],
             ),
-            types.Content(
-                role="model",
-                parts=[
-                    types.Part(text='Search Queries:\n"')
-                ]
-            )
+            types.Content(role="model", parts=[types.Part(text='Search Queries:\n"')]),
         ]
-        result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
+        result = utils.retry(
+            exceptions=utils.network_errors,
+            ignore_exceptions=utils.ignore_network_error,
+        )(global_shares["client"].models.generate_content)(
             model="gemini-2.0-flash",
             contents=cast(types.ContentListUnion, contents),
-            config=types.GenerateContentConfig(temperature=0.5, system_instruction=prompt.QUERY_GEN_SYS_INSTR),
+            config=types.GenerateContentConfig(
+                temperature=0.5, system_instruction=prompt.QUERY_GEN_SYS_INSTR
+            ),
         )
-        queries_str: str = result.candidates[0].content.parts[0].text if result and result.candidates and result.candidates[0].content and result.candidates[0].content.parts and result.candidates[0].content.parts[0].text else ""
-        if not (result and result.candidates and result.candidates[0].content and result.candidates[0].content.parts and result.candidates[0].content.parts[0].text):
+        queries_str: str = (
+            result.candidates[0].content.parts[0].text
+            if result
+            and result.candidates
+            and result.candidates[0].content
+            and result.candidates[0].content.parts
+            and result.candidates[0].content.parts[0].text
+            else ""
+        )
+        if not (
+            result
+            and result.candidates
+            and result.candidates[0].content
+            and result.candidates[0].content.parts
+            and result.candidates[0].content.parts[0].text
+        ):
             raise ValueError("Failed to generate queries.")
         queries = queries_str.splitlines()
-        return [q.strip()[:-1] if i == 0 else q.strip()[1:-1] for i, q in enumerate(queries) if q.strip()]
+        return [
+            q.strip()[:-1] if i == 0 else q.strip()[1:-1]
+            for i, q in enumerate(queries)
+            if q.strip()
+        ]
 
-    @utils.retry(exceptions=utils.network_errors + (duckduckgo_search.exceptions.DuckDuckGoSearchException,), ignore_exceptions=utils.ignore_network_error)
+    @utils.retry(
+        exceptions=utils.network_errors
+        + (duckduckgo_search.exceptions.DuckDuckGoSearchException,),
+        ignore_exceptions=utils.ignore_network_error,
+    )
     def _search_online(self, query: str) -> list[str]:
         """Searches DuckDuckGo for a query and returns a list of URLs."""
-        results = self.ddgs.text(query, backend="lite", safesearch="off", max_results=self.max_search_results)
+        results = self.ddgs.text(
+            query, backend="lite", safesearch="off", max_results=self.max_search_results
+        )
         linkes = [result["href"] for result in results]
         self.call_back({"action": "search", "query": query, "linkes": linkes})
         return linkes
@@ -479,9 +577,13 @@ class DeepResearcher:
         queries = unresearched_topic.queries or []
         urls = unresearched_topic.urls or []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(queries) + len(urls))) as executor:  # Limit max workers
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(32, len(queries) + len(urls))
+        ) as executor:  # Limit max workers
 
-            futures = [executor.submit(search_and_fetch_query, query) for query in queries]
+            futures = [
+                executor.submit(search_and_fetch_query, query) for query in queries
+            ]
             futures.append(executor.submit(process_urls, urls))
 
             for future in concurrent.futures.as_completed(futures):
@@ -501,7 +603,9 @@ class DeepResearcher:
                 break
 
             if not unresearched_topic.queries:
-                unresearched_topic.queries = self._generate_queries(unresearched_topic.topic)
+                unresearched_topic.queries = self._generate_queries(
+                    unresearched_topic.topic
+                )
                 self.call_back({})
 
             self._search_and_fetch(unresearched_topic, visited_urls)
@@ -510,7 +614,12 @@ class DeepResearcher:
             if current_depth >= (self.max_topics or float("inf")):
                 break
             current_depth += 1
-            self.call_back({"action": "thinking", "thoughts": self.analyse_add_topic(unresearched_topic.id)})
+            self.call_back(
+                {
+                    "action": "thinking",
+                    "thoughts": self.analyse_add_topic(unresearched_topic.id),
+                }
+            )
 
         report = self._generate_report()
         return report
@@ -522,19 +631,26 @@ class DeepResearcher:
             types.Content(
                 role="user",
                 parts=[
-                    types.Part(text=f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai()}"),
-                    types.Part(text=prompt.REPORT_GEN_USR_INSTR.format(topic=self.topic.topic))
+                    types.Part(
+                        text=f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai()}"
+                    ),
+                    types.Part(
+                        text=prompt.REPORT_GEN_USR_INSTR.format(topic=self.topic.topic)
+                    ),
                 ],
             )
         ]
         report_str: str = ""
         while True:
-            result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
+            result = utils.retry(
+                exceptions=utils.network_errors,
+                ignore_exceptions=utils.ignore_network_error,
+            )(global_shares["client"].models.generate_content)(
                 model="gemini-2.0-flash-thinking-exp-01-21",
                 contents=cast(types.ContentListUnion, contents),
                 config=types.GenerateContentConfig(
-                    temperature=0.4,
-                    system_instruction=prompt.REPORT_GEN_SYS_INSTR),
+                    temperature=0.4, system_instruction=prompt.REPORT_GEN_SYS_INSTR
+                ),
             )
             if (
                 result
@@ -545,9 +661,18 @@ class DeepResearcher:
             ):
                 report_str += result.candidates[0].content.parts[0].text
                 if len(contents) == 1:
-                    contents.append(types.Content(role="model", parts=[types.Part(text=result.candidates[0].content.parts[0].text)]))
+                    contents.append(
+                        types.Content(
+                            role="model",
+                            parts=[
+                                types.Part(
+                                    text=result.candidates[0].content.parts[0].text
+                                )
+                            ],
+                        )
+                    )
                 else:
-                    contents[1].parts[0].text += result.candidates[0].content.parts[0].text # type: ignore
+                    contents[1].parts[0].text += result.candidates[0].content.parts[0].text  # type: ignore
                 if result.candidates[0].finish_reason != types.FinishReason.MAX_TOKENS:
                     break
 
@@ -555,33 +680,49 @@ class DeepResearcher:
 
     def fetch_url(self, url: str, wait_for: int = 4000) -> FetchModel:
         while True:
-            scrape_result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(utils.FetchLimiter()(self.app.scrape_url))(
+            scrape_result = utils.retry(
+                exceptions=utils.network_errors,
+                ignore_exceptions=utils.ignore_network_error,
+            )(utils.FetchLimiter()(self.app.scrape_url))(
                 url,
                 params={
-                    "formats": ["markdown", "links"], #, "screenshot@fullPage"],
+                    "formats": ["markdown", "links"],  # , "screenshot@fullPage"],
                     "waitFor": wait_for,
                     "proxy": "stealth",
                     "timeout": 30_000,
                     "removeBase64Images": True,
                 },
             )
-            if scrape_result: return scrape_result
-        img = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(requests.get)(scrape_result["screenshot"]) if scrape_result.get("screenshot") else None
+            if scrape_result:
+                return scrape_result
+        img = (
+            utils.retry(
+                exceptions=utils.network_errors,
+                ignore_exceptions=utils.ignore_network_error,
+            )(requests.get)(scrape_result["screenshot"])
+            if scrape_result.get("screenshot")
+            else None
+        )
         contents: list[Any] = [
             types.Content(
                 role="user",
                 parts=[
                     *(
-                        (types.Part(inline_data=types.Blob(data=img.content, mime_type=img.headers.get("Content-Type"))),)
+                        (
+                            types.Part(
+                                inline_data=types.Blob(
+                                    data=img.content,
+                                    mime_type=img.headers.get("Content-Type"),
+                                )
+                            ),
+                        )
                         if img
                         else ()
                     ),
                     types.Part(
                         text=f"**Input Markdown:**\n\n```md\n{scrape_result['markdown']}\n```"
                     ),
-                    types.Part(
-                        text=prompt.FETCH_CLEANER_USR_INSTR
-                    ),
+                    types.Part(text=prompt.FETCH_CLEANER_USR_INSTR),
                 ],
             ),
             types.Content(
@@ -590,13 +731,16 @@ class DeepResearcher:
         ]
         md: str = ""
         while True:
-            result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
+            result = utils.retry(
+                exceptions=utils.network_errors,
+                ignore_exceptions=utils.ignore_network_error,
+            )(global_shares["client"].models.generate_content)(
                 model="gemini-2.0-flash-lite-001",
                 contents=contents,
                 config=types.GenerateContentConfig(
                     system_instruction=prompt.FETCH_CLEANER_SYS_INSTR,
                     temperature=0.1,
-                    http_options=types.HttpOptions(timeout=60_000)
+                    http_options=types.HttpOptions(timeout=60_000),
                 ),
             )
             if (
@@ -612,11 +756,18 @@ class DeepResearcher:
         scrape_result["markdown"] = md[:-3]
         return scrape_result
 
-def DeepResearch(query: str, max_topics: Optional[int] = None, max_search_queries: int = 5, max_search_results: Optional[int] = None) -> str:
+
+def DeepResearch(
+    query: str,
+    max_topics: Optional[int],
+    max_search_queries: Optional[int],
+    max_search_results: Optional[int],
+) -> str:
     """\
     Dose the Deep Research on given query, query can be question or topic to be reseatch on.
     """
-    ... # dummy function for AI refrence
+    ...  # dummy function for AI refrence
+
 
 # DeepResearcher(max_depth=10, query="list of presidents of india, some information about them, and their achievements").research()
 # exit(0)

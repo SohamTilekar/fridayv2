@@ -5,10 +5,12 @@ from typing import Literal, Optional
 # Remove the -example part
 GOOGLE_API: str = "Your-Google-API-Gose-Here"
 FIRECRAWL_API: str = "fc-..."
-FIRECRAWL_ENDPOINT: Optional[str] = None # None for firecrawl.dev hosted endpoint (FIRECRAWL_API requires if None)
+FIRECRAWL_ENDPOINT: Optional[str] = (
+    None  # None for firecrawl.dev hosted endpoint (FIRECRAWL_API requires if None)
+)
 AI_DIR: pathlib.Path = pathlib.Path("~/friday/")
 
-USR_NAME: str = "LastName FirstName" #e.g Musk Elon
+USR_NAME: str = "LastName FirstName"  # e.g Musk Elon
 ABOUT_YOU: str = """\
 """
 # this is example update it as your liking
@@ -24,6 +26,7 @@ RETRY_DELAY: int | float = 1  # seconds
 # Gemini AI's Only
 MODEL_TOOL_SELECTOR = "gemini-2.0-flash-lite"
 
+
 class Models(enum.Enum):
     Large25 = "gemini-2.5-pro-exp-03-25"
     Large20 = "gemini-2.0-pro-exp-02-05"
@@ -33,6 +36,7 @@ class Models(enum.Enum):
     Large15 = "gemini-1.5-pro-002"
     Medium15 = "gemini-1.5-flash-002"
     Small15 = "gemini-1.5-flash-8b-001"
+
 
 model_RPM_map = {
     "gemini-2.5-pro-exp-03-25": 2,
@@ -45,11 +49,43 @@ model_RPM_map = {
     "gemini-1.5-flash-8b-001": 15,
 }
 
-type ModelsLiteral = Literal["Large25", "Large20","Medium20","MediumThinking20","Small20","Large15","Medium15","Small15"]
+type ModelsLiteral = Literal[
+    "Large25",
+    "Large20",
+    "Medium20",
+    "MediumThinking20",
+    "Small20",
+    "Large15",
+    "Medium15",
+    "Small15",
+]
 
-SearchGroundingSuportedModels: list[str] = [Models.Large25.name, Models.Large20.name, Models.Large15.name, Models.Medium20.name, Models.Medium15.name]
-ToolSuportedModels: list[str] = [Models.Large25.name, Models.Large20.name, Models.Medium20.name, Models.Small20.name, Models.Large15.name, Models.Medium15.name, Models.Small15.name]
-ModelsSet: list[str] = [Models.Large25.name, Models.Large20.name, Models.Medium20.name, Models.MediumThinking20.name, Models.Small20.name, Models.Large15.name, Models.Medium15.name, Models.Small15.name]
+SearchGroundingSuportedModels: list[str] = [
+    Models.Large25.name,
+    Models.Large20.name,
+    Models.Large15.name,
+    Models.Medium20.name,
+    Models.Medium15.name,
+]
+ToolSuportedModels: list[str] = [
+    Models.Large25.name,
+    Models.Large20.name,
+    Models.Medium20.name,
+    Models.Small20.name,
+    Models.Large15.name,
+    Models.Medium15.name,
+    Models.Small15.name,
+]
+ModelsSet: list[str] = [
+    Models.Large25.name,
+    Models.Large20.name,
+    Models.Medium20.name,
+    Models.MediumThinking20.name,
+    Models.Small20.name,
+    Models.Large15.name,
+    Models.Medium15.name,
+    Models.Small15.name,
+]
 
 ABOUT_MODELS = """\
 *   **Large25:**
@@ -97,5 +133,5 @@ ABOUT_MODELS = """\
 
 CHAT_AI_TEMP: float = 0.2
 
-if("Your-Google-API-Gose-Here" == GOOGLE_API):
+if "Your-Google-API-Gose-Here" == GOOGLE_API:
     raise AssertionError("Set Your Google API first")

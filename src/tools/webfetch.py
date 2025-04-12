@@ -3,6 +3,7 @@ import utils
 from firecrawl import FirecrawlApp
 import config
 
+
 def FetchWebsite(url: str) -> str:
     """
     Fetches the content from a given website URL in Markdown format.
@@ -13,10 +14,10 @@ def FetchWebsite(url: str) -> str:
     Returns:
         str: The Markdown format of the website.
     """
-    app = FirecrawlApp(
-        api_key=config.FIRECRAWL_API, api_url=config.FIRECRAWL_ENDPOINT
-    )
-    scrape_result = utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)(utils.FetchLimiter()(app.scrape_url))(
+    app = FirecrawlApp(api_key=config.FIRECRAWL_API, api_url=config.FIRECRAWL_ENDPOINT)
+    scrape_result = utils.retry(
+        exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error
+    )(utils.FetchLimiter()(app.scrape_url))(
         url,
         params={
             "formats": ["markdown"],

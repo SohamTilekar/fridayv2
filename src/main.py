@@ -80,7 +80,11 @@ class File:
         self.cloud_uri = cloud_uri
 
     def delete(self):
-        if self.cloud_uri and self.is_file_valid(self.cloud_uri.expiration_time) and self.cloud_uri.name:
+        if (
+            self.cloud_uri
+            and self.is_file_valid(self.cloud_uri.expiration_time)
+            and self.cloud_uri.name
+        ):
             client.files.delete(name=self.cloud_uri.name)
 
     @staticmethod
@@ -95,13 +99,21 @@ class File:
         if expiration_time is None:
             return True
         now = datetime.datetime.now(datetime.timezone.utc)
-        ten_minutes_from_now = now + datetime.timedelta(minutes=10) # 10 min buffer
+        ten_minutes_from_now = now + datetime.timedelta(minutes=10)  # 10 min buffer
 
         return expiration_time >= ten_minutes_from_now
 
-    @utils.retry(exceptions=utils.network_errors + (ValueError,), ignore_exceptions=utils.ignore_network_error)
+    @utils.retry(
+        exceptions=utils.network_errors + (ValueError,),
+        ignore_exceptions=utils.ignore_network_error,
+    )
     def upload_file(self):
-        self.cloud_uri = client.files.upload(file=BytesIO(self.content), config=types.UploadFileConfig(display_name=self.filename, mime_type=self.type))
+        self.cloud_uri = client.files.upload(
+            file=BytesIO(self.content),
+            config=types.UploadFileConfig(
+                display_name=self.filename, mime_type=self.type
+            ),
+        )
         while self.cloud_uri.state == types.FileState.PROCESSING:
             time.sleep(0.3)
             if self.cloud_uri.name:
@@ -111,26 +123,33 @@ class File:
         if self.cloud_uri.state == types.FileState.FAILED:
             raise ValueError(self.cloud_uri.state.name)
 
-    def for_ai(self, imagen_selected: bool, msg: Optional["Message"] = None) -> types.Part | tuple[types.Part, types.Part]:
+    def for_ai(
+        self, imagen_selected: bool, msg: Optional["Message"] = None
+    ) -> types.Part | tuple[types.Part, types.Part]:
         """
-            Prepares the file for use with the AI model.
+        Prepares the file for use with the AI model.
 
-            Args:
-                imagen_selected (bool): Indicates if the image generation tool is selected.
-                msg (Optional["Message"]): The message object, used for updating the UI during file processing.
+        Args:
+            imagen_selected (bool): Indicates if the image generation tool is selected.
+            msg (Optional["Message"]): The message object, used for updating the UI during file processing.
 
-            Returns:
-                types.Part | tuple[types.Part, types.Part]: The file as a Part object, ready for AI processing.
-                                                            Returns a tuple of Parts if imagen_selected is True and the file is an image.
+        Returns:
+            types.Part | tuple[types.Part, types.Part]: The file as a Part object, ready for AI processing.
+                                                        Returns a tuple of Parts if imagen_selected is True and the file is an image.
 
-            Raises:
-                ValueError: If the file type is not supported.
-                Exception: If file upload fails or file URI/MIME type are not available.
+        Raises:
+            ValueError: If the file type is not supported.
+            Exception: If file upload fails or file URI/MIME type are not available.
         """
         # Check if the file type is supported
-        if self.type.startswith("text/") or self.type.startswith(("image/", "video/")) or self.type == "application/pdf":
+        if (
+            self.type.startswith(("text/", "image/", "video/"))
+            or self.type == "application/pdf"
+        ):
             # Check if the file needs to be uploaded to the cloud
-            if not self.cloud_uri or not self.is_file_valid(self.cloud_uri.expiration_time):
+            if not self.cloud_uri or not self.is_file_valid(
+                self.cloud_uri.expiration_time
+            ):
                 # Determine the processing prefix based on the file type
                 if self.type.startswith("image/"):
                     prefix = "Processing Image:"
@@ -163,8 +182,15 @@ class File:
             # Prepare the file part for the AI model
             if imagen_selected and self.type.startswith("image/"):
                 # If the image generation tool is selected and the file is an image, attach image id with image for the AI to also give access of the image to the Imageine tool
-                return (types.Part(text=f"Image ID: {self.id}"), types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type))
-            return types.Part.from_uri(file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type)
+                return (
+                    types.Part(text=f"Image ID: {self.id}"),
+                    types.Part.from_uri(
+                        file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type
+                    ),
+                )
+            return types.Part.from_uri(
+                file_uri=self.cloud_uri.uri, mime_type=self.cloud_uri.mime_type
+            )
         raise ValueError(f"Unsported File Type: {self.type} of file {self.filename}")
 
     def jsonify(self) -> dict:
@@ -183,16 +209,23 @@ class File:
             content=content,
             type=data["type"],
             filename=data["filename"],
-            cloud_uri=types.File.model_validate(data["cloud_uri"]) if data["cloud_uri"] else None,
+            cloud_uri=(
+                types.File.model_validate(data["cloud_uri"])
+                if data["cloud_uri"]
+                else None
+            ),
             id=data["id"],
         )
 
+
 global_shares["file"] = File
+
 
 class Segment(TypedDict):
     start_index: int
     end_index: int
     text: str
+
 
 class GroundingSupport:
     grounding_chunk_indices: list[int]
@@ -216,9 +249,11 @@ class GroundingSupport:
     def from_jsonify(data: dict):
         return GroundingSupport(**data)
 
+
 class GroundingChunck(NamedTuple):
     title: str
     uri: str
+
 
 class GroundingMetaData:
     grounding_chuncks: list[GroundingChunck]
@@ -250,7 +285,9 @@ class GroundingMetaData:
     def from_jsonify(data: dict):
         return GroundingMetaData(
             grounding_chuncks=data["grounding_chuncks"],
-            grounding_supports=[GroundingSupport.from_jsonify(sup)for sup in data["grounding_supports"]],
+            grounding_supports=[
+                GroundingSupport.from_jsonify(sup) for sup in data["grounding_supports"]
+            ],
             first_offset=data["first_offset"],
             rendered_content=data["rendered_content"],
         )
@@ -267,18 +304,25 @@ class FunctionCall:
         id: Optional[str] = None,
         name: Optional[str] = None,
         args: Optional[dict[str, Any]] = None,
-        extra_data: Optional[dict[str, Any]] = None
+        extra_data: Optional[dict[str, Any]] = None,
     ):
         self.id = id if id else str(uuid.uuid4())
         self.name = name
         self.args = args if args else {}
         self.extra_data = extra_data if extra_data else {}
 
-    def for_ai(self) -> types.FunctionCall:
-        return types.FunctionCall(id=self.id, name=self.name, args=self.args)
+    def for_ai(self) -> types.Part:
+        return types.Part(
+            function_call=types.FunctionCall(id=self.id, name=self.name, args=self.args)
+        )
 
     def jsonify(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name, "args": self.args, "extra_data": self.extra_data}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "args": self.args,
+            "extra_data": self.extra_data,
+        }
 
     @staticmethod
     def from_jsonify(data: dict[str, Any]) -> "FunctionCall":
@@ -296,24 +340,52 @@ class FunctionResponce:
         id: Optional[str] = None,
         name: Optional[str] = None,
         response: Optional[dict[str, Any]] = None,
-        inline_data: Optional[list["Content"]] = None
+        inline_data: Optional[list["Content"]] = None,
     ):
         self.id = id if id else str(uuid.uuid4())
         self.name = name
         self.response = response if response else {}
         self.inline_data = inline_data if inline_data else []
 
-    def for_ai(self) -> types.FunctionResponse:
-        return types.FunctionResponse(
-            id=self.id, name=self.name, response=self.response
-        )
+    def for_ai(
+        self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
+    ) -> list[types.Part]:
+        parts = [
+            types.Part(
+                function_response=types.FunctionResponse(
+                    id=self.id, name=self.name, response=self.response
+                )
+            )
+        ]
+        for content in self.inline_data:
+            if content.text:
+                parts.append(
+                    cast(types.Part, content.for_ai(suport_tools, imagen_selected, msg))
+                )
+            elif content.attachment:
+                fai = content.attachment.for_ai(imagen_selected, msg)
+                if isinstance(fai, types.Part):
+                    parts.append(fai)
+                else:
+                    parts.extend(fai)
+        return parts
 
     def jsonify(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name, "response": self.response, "inline_data": [_.jsonify() for _ in self.inline_data]}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "response": self.response,
+            "inline_data": [_.jsonify() for _ in self.inline_data],
+        }
 
     @staticmethod
     def from_jsonify(data: dict[str, Any]) -> "FunctionResponce":
-        return FunctionResponce(data["id"], data["name"], data["response"], [Content.from_jsonify(_) for _ in data["inline_data"]])
+        return FunctionResponce(
+            data["id"],
+            data["name"],
+            data["response"],
+            [Content.from_jsonify(_) for _ in data["inline_data"]],
+        )
 
 
 class Content:
@@ -339,26 +411,16 @@ class Content:
 
     def for_ai(
         self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
-    ) -> types.Part | tuple[types.Part, types.Part] | list[types.Part]:
+    ) -> types.Part | tuple[types.Part, types.Part] | list[types.Part] | None:
         if self.function_call and suport_tools:
-            return types.Part(function_call=self.function_call.for_ai())
+            return self.function_call.for_ai()
         elif self.function_response and suport_tools:
-            parts = [types.Part(function_response=self.function_response.for_ai())]
-            for content in self.function_response.inline_data:
-                if content.text:
-                    parts.append(cast(types.Part, content.for_ai(suport_tools, imagen_selected, msg)))
-                elif content.attachment:
-                    fai = content.for_ai(suport_tools, imagen_selected, msg)
-                    if isinstance(fai, types.Part):
-                        parts.append(fai)
-                    else:
-                        parts.extend(fai)
-            return parts
+            return self.function_response.for_ai(suport_tools, imagen_selected, msg)
         elif self.text:
             return types.Part(text=self.text)
         elif self.attachment:
             return self.attachment.for_ai(imagen_selected, msg)
-        return []
+        return None
 
     def jsonify(self) -> dict[str, Any]:
         return {
@@ -393,24 +455,24 @@ class Content:
             ),
         )
 
+
 global_shares["content"] = Content
+
 
 class Chat:
     name: str
     id: str
     parent_id: Optional[str]
 
-    def __init__(self, name: str, id: Optional[str] = None, parent_id: Optional[str] = None):
+    def __init__(
+        self, name: str, id: Optional[str] = None, parent_id: Optional[str] = None
+    ):
         self.name = name
         self.id = id if id else str(uuid.uuid4())
         self.parent_id = parent_id
 
     def jsonify(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "id": self.id,
-            "parent_id": self.parent_id
-        }
+        return {"name": self.name, "id": self.id, "parent_id": self.parent_id}
 
     @staticmethod
     def from_json(data: dict[str, Any]) -> "Chat":
@@ -434,7 +496,7 @@ class Message:
         time_stamp: Optional[datetime.datetime] = None,
         id: Optional[str] = None,
         thought: str = "",
-        processing: bool = False
+        processing: bool = False,
     ):
         self.time_stamp = time_stamp if time_stamp else datetime.datetime.now()
         self.content = content
@@ -504,7 +566,9 @@ class Message:
                     del self.content[idx]
                     return
 
-    def for_ai(self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None) -> list[types.Content]:
+    def for_ai(
+        self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
+    ) -> list[types.Content]:
         if msg is None:
             raise ValueError("msg parameter is required.")
 
@@ -512,24 +576,22 @@ class Message:
         parts_buffer = []
 
         for item in self.content:
-            if item.function_response:
+            if item.function_response and suport_tools:
                 if parts_buffer:
                     ai_contents.append(
                         types.Content(parts=parts_buffer, role=self.role)
                     )
                     parts_buffer = []
-                if part := item.for_ai(suport_tools, imagen_selected, msg):
-                    ai_contents.append(types.Content(parts=part, role="user")) # type: ignore
+                if part := item.function_response.for_ai(
+                    suport_tools, imagen_selected, msg
+                ):
+                    ai_contents.append(types.Content(parts=part, role="user"))
             elif part := item.for_ai(suport_tools, imagen_selected, msg):
                 if isinstance(part, types.Part):
                     parts_buffer.append(part)
-                elif isinstance(part, (tuple, list)):
+                elif isinstance(part, tuple):
                     parts_buffer.extend(part)
-                    ai_contents.append(
-                        types.Content(parts=parts_buffer, role=self.role)
-                    )
-                    parts_buffer = []
-
+                # list not posible cz it is oly when `function_response`
 
         if parts_buffer:
             ai_contents.append(types.Content(parts=parts_buffer, role=self.role))
@@ -543,7 +605,7 @@ class Message:
             "chat_id": self.chat_id,
             "time_stamp": self.time_stamp.isoformat(),
             "thought": self.thought,
-            "processing": self.processing
+            "processing": self.processing,
         }
 
     @staticmethod
@@ -595,7 +657,9 @@ class ChatHistory:
             for content in msg.content:
                 if content.attachment and content.attachment.id == ID:
                     return content.attachment.for_ai(True)
-                elif content.function_response and content.function_response.inline_data:
+                elif (
+                    content.function_response and content.function_response.inline_data
+                ):
                     for content in content.function_response.inline_data:
                         if content.attachment and content.attachment.id == ID:
                             return content.attachment.for_ai(True)
@@ -621,12 +685,20 @@ class ChatHistory:
         idx = msg_index.get(msg_id, -1)
         if idx == -1:
             return  # Message not found, exit early
-        ids_to_del = {msg.id for msg in self._messages[idx + 1:] if msg.is_member(chat, self._chats)}
+        ids_to_del = {
+            msg.id
+            for msg in self._messages[idx + 1 :]
+            if msg.is_member(chat, self._chats)
+        }
         for msg_id in ids_to_del:
             emit_msg_del(msg_id)
-        self._messages = list(filter(lambda msg: msg.id not in ids_to_del, self._messages))
+        self._messages = list(
+            filter(lambda msg: msg.id not in ids_to_del, self._messages)
+        )
 
-    def for_ai(self, ai_msg: Message, suport_tools: bool, imagen_selected: bool, chat_id: str) -> list[types.Content]:
+    def for_ai(
+        self, ai_msg: Message, suport_tools: bool, imagen_selected: bool, chat_id: str
+    ) -> list[types.Content]:
         result: list[types.Content] = []
         for msg in self._messages:
             if msg.is_member(self._chats[chat_id], self._chats):
@@ -653,9 +725,11 @@ class ChatHistory:
                     self._messages.append(msg)
                 for chat in data.get("chats", ()):
                     self._chats[chat["id"]] = Chat.from_json(chat)
-                if 'main' not in self._chats.keys():
-                    print("Creating default 'main' chat as it was not found in the loaded data.")
-                    self._chats['main'] = Chat(name="Main Chat", id="main")
+                if "main" not in self._chats.keys():
+                    print(
+                        "Creating default 'main' chat as it was not found in the loaded data."
+                    )
+                    self._chats["main"] = Chat(name="Main Chat", id="main")
         except FileNotFoundError:
             print("Chat history file not found. Starting with an empty chat.")
         except json.JSONDecodeError:
@@ -664,23 +738,23 @@ class ChatHistory:
     def _is_descendant(self, potential_child_id: str, potential_parent_id: str) -> bool:
         """Checks if potential_child_id is a descendant of potential_parent_id."""
         if not potential_parent_id or potential_child_id == potential_parent_id:
-            return False # Cannot be a descendant of null or itself
+            return False  # Cannot be a descendant of null or itself
 
         current_id = potential_child_id
         while current_id:
             chat = self._chats.get(current_id)
             if not chat:
-                return False # Should not happen if data is consistent
+                return False  # Should not happen if data is consistent
             if chat.parent_id == potential_parent_id:
-                return True # Found the potential parent in the ancestry
-            current_id = chat.parent_id # Move up the chain
-        return False # Reached the root without finding the parent
+                return True  # Found the potential parent in the ancestry
+            current_id = chat.parent_id  # Move up the chain
+        return False  # Reached the root without finding the parent
 
     def update_chat_parent(self, chat_id: str, new_parent_id: Optional[str]) -> bool:
         """Updates the parent of a chat, preventing circular dependencies."""
-        if chat_id == 'main':
-             print("Error: Cannot change the parent of the 'main' chat.")
-             return False # Prevent moving the main chat
+        if chat_id == "main":
+            print("Error: Cannot change the parent of the 'main' chat.")
+            return False  # Prevent moving the main chat
 
         if chat_id not in self._chats:
             print(f"Error: Chat with ID {chat_id} not found for parent update.")
@@ -691,54 +765,54 @@ class ChatHistory:
             return False
 
         if new_parent_id and self._is_descendant(new_parent_id, chat_id):
-             print(f"Error: Cannot move chat '{chat_id}' under its descendant '{new_parent_id}'.")
-             return False
+            print(
+                f"Error: Cannot move chat '{chat_id}' under its descendant '{new_parent_id}'."
+            )
+            return False
         # Also check if trying to move to itself
         if chat_id == new_parent_id:
-             print(f"Error: Cannot move chat '{chat_id}' under itself.")
-             return False
-
+            print(f"Error: Cannot move chat '{chat_id}' under itself.")
+            return False
 
         # Update the parent ID
         chat_to_update = self._chats[chat_id]
         old_parent_id = chat_to_update.parent_id
         chat_to_update.parent_id = new_parent_id
-        print(f"Updated parent of chat '{chat_id}' from '{old_parent_id}' to '{new_parent_id}'")
+        print(
+            f"Updated parent of chat '{chat_id}' from '{old_parent_id}' to '{new_parent_id}'"
+        )
         return True
 
-    def delete_chat(self, chat_id_to_delete: str) -> bool:
+    def delete_chat(self, chat_id_to_delete: str):
         """Deletes a chat and reparents its children."""
-        if chat_id_to_delete == 'main':
-            print("Error: Cannot delete the 'main' chat.")
-            return False
+        if chat_id_to_delete == "main":
+            raise Exception("Error: Cannot delete the 'main' chat.")
 
         if chat_id_to_delete not in self._chats:
-            print(f"Error: Chat with ID {chat_id_to_delete} not found for deletion.")
-            return False
+            raise Exception(
+                f"Error: Chat with ID {chat_id_to_delete} not found for deletion."
+            )
 
-        chat_to_delete = self._chats[chat_id_to_delete]
-        parent_id_for_children = chat_to_delete.parent_id # Parent to assign to orphaned children
+        messages_to_del = []
 
-        # Reparent children
-        children_reparented = []
+        for idx, msg in enumerate(self._messages):
+            if msg.is_member(self._chats[chat_id_to_delete], self._chats):
+                messages_to_del.append(msg)
+
+        for msg in messages_to_del:
+            self._messages.remove(msg)
+
         # Iterate over a copy of keys because we might modify the dict size implicitly if we delete the chat first
         for chat_id in list(self._chats.keys()):
-             # Check if the chat exists (might have been deleted in a recursive call if we change strategy later)
+            # Check if the chat exists (might have been deleted in a recursive call if we change strategy later)
             chat = self._chats.get(chat_id)
             if chat and chat.parent_id == chat_id_to_delete:
-                chat.parent_id = parent_id_for_children
-                children_reparented.append(chat.id)
+                self.delete_chat(chat.id)
+                break
 
         # Delete the chat
         del self._chats[chat_id_to_delete]
 
-        print(f"Deleted chat '{chat_id_to_delete}'. Reparented children {children_reparented} to parent '{parent_id_for_children}'.")
-
-        # Note: Messages associated with the deleted chat_id remain but won't be
-        # directly reachable unless the user navigates to a parent that includes them.
-        # Consider adding message cleanup later if needed.
-
-        return True
 
 # endregion
 
@@ -747,6 +821,7 @@ class ChatHistory:
 chat_history: ChatHistory = ChatHistory()
 
 global_shares["chat_history"] = chat_history
+
 
 def complete_chat(message: str, chat_id: str, files: Optional[list[File]] = None):
     """
@@ -848,8 +923,8 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 )
             )
         )
-        fc: FunctionCall = msg.content[-1].function_call # type: ignore
-        id: str = msg.content[-1].function_call.id # type: ignore
+        fc: FunctionCall = msg.content[-1].function_call  # type: ignore
+        id: str = msg.content[-1].function_call.id  # type: ignore
         emit_msg_update(msg)
 
         try:
@@ -858,6 +933,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 raise ValueError("Function with no name specified")
             if func_call.name == "DeepResearch":
                 if func_call.args:
+
                     def call_back(data: Optional[dict[str, Any]]) -> None:
                         if not data:
                             emit_msg_update(msg)
@@ -873,7 +949,10 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                         elif data.get("action") == "generating_report":
                             fc.extra_data["steps"].append(data)
                         emit_msg_update(msg)
-                    researcher = tools.DeepResearcher(**func_call.args, call_back=call_back)
+
+                    researcher = tools.DeepResearcher(
+                        **func_call.args, call_back=call_back
+                    )
                     fc.extra_data["topic"] = researcher.topic.jsonify()
                     fc.extra_data["steps"] = []
                     func_response: Any = researcher.research()
@@ -892,7 +971,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             id=id,
                             name=func_call.name,
                             response={"output": "Images are Linked Below"},
-                            inline_data=func_response
+                            inline_data=func_response,
                         )
                     )
                 )
@@ -904,7 +983,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             id=id,
                             name=func_call.name,
                             response={"output": "Files are Linked Below"},
-                            inline_data=func_response
+                            inline_data=func_response,
                         )
                     )
                 )
@@ -935,7 +1014,9 @@ def generate_content(msg: Message, chat_id: str) -> Message:
             )
         emit_msg_update(msg)
 
-    @utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)
+    @utils.retry(
+        exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error
+    )
     def get_model_and_tools() -> tuple[str, bool, list[types.Tool]]:
         """
         Determines which model and tools to use, with retry logic.
@@ -1077,11 +1158,11 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 # Make selection request to tool selector model
                 selector_response = client.models.generate_content(
                     model=config.MODEL_TOOL_SELECTOR,
-                    contents=chat, # type: ignore
+                    contents=chat,  # type: ignore
                     config=types.GenerateContentConfig(
                         system_instruction=prompt.ModelAndToolSelectorSYSTEM_INSTUNCTION,
                         temperature=0.1,
-                        tools=tools_list, # type: ignore
+                        tools=tools_list,  # type: ignore
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(
                             disable=True, maximum_remote_calls=None
                         ),
@@ -1198,21 +1279,31 @@ def generate_content(msg: Message, chat_id: str) -> Message:
     print(f"Using model: {selected_model} with tools: {selected_tools_list}")
 
     # Main content generation loop
-    @utils.retry(exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error)
+    @utils.retry(
+        exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error
+    )
     def generate_content_with_retry():
         while True:
             start_time = time.time()  # Record start time before request
             # Generate streaming content
             response = client.models.generate_content_stream(
                 model=selected_model,
-                contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list, chat_id), # type: ignore
+                contents=chat_history.for_ai(msg, suports_tools, tools.ImagenTool in selected_tools_list, chat_id),  # type: ignore
                 config=types.GenerateContentConfig(
                     system_instruction=prompt.SYSTEM_INSTUNCTION.format(
-                        reminders=tools.get_reminders() + lschedule.get_todo_list_string() if tools.ReminderTool in selected_tools_list else "",
-                        dir_tree=tools.space.CodeExecutionEnvironment.dir_tree() if tools.ComputerTool in selected_tools_list else ""
+                        reminders=(
+                            tools.get_reminders() + lschedule.get_todo_list_string()
+                            if tools.ReminderTool in selected_tools_list
+                            else ""
+                        ),
+                        dir_tree=(
+                            tools.space.CodeExecutionEnvironment.dir_tree()
+                            if tools.ComputerTool in selected_tools_list
+                            else ""
+                        ),
                     ),
                     temperature=config.CHAT_AI_TEMP,
-                    tools=selected_tools_list, # type: ignore
+                    tools=selected_tools_list,  # type: ignore
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(
                         disable=True, maximum_remote_calls=None
                     ),
@@ -1245,10 +1336,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
             end_time = time.time()  # Record end time after response processing
             elapsed_time = end_time - start_time  # Calculate elapsed time
 
-            if (
-                function_call_occurred
-                or finish_region == types.FinishReason.MAX_TOKENS
-            ):
+            if function_call_occurred or finish_region == types.FinishReason.MAX_TOKENS:
                 rpm_limit = config.model_RPM_map.get(
                     selected_model, 1
                 )  # Get RPM limit, default to 1 if not found
@@ -1264,6 +1352,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
 
             # Otherwise break the loop
             break
+
     generate_content_with_retry()
 
     # Set timestamp and return message
@@ -1281,14 +1370,24 @@ def process_grounding_metadata(msg: Message, content: types.GenerateContentRespo
         if msg.content[-1].grounding_metadata is None:
             msg.content[-1].grounding_metadata = GroundingMetaData([], [])
         if metadata.search_entry_point:
-            msg.content[-1].grounding_metadata.rendered_content = metadata.search_entry_point.rendered_content or ""
+            msg.content[-1].grounding_metadata.rendered_content = (
+                metadata.search_entry_point.rendered_content or ""
+            )
 
         if metadata.grounding_chunks:
             for chunk in metadata.grounding_chunks:
                 if chunk.web:
-                    msg.content[-1].grounding_metadata.grounding_chuncks.append(GroundingChunck(chunk.web.title or "unknown", chunk.web.uri or ""))
+                    msg.content[-1].grounding_metadata.grounding_chuncks.append(
+                        GroundingChunck(
+                            chunk.web.title or "unknown", chunk.web.uri or ""
+                        )
+                    )
 
-        if (metadata.grounding_chunks and metadata.grounding_supports and metadata.web_search_queries):
+        if (
+            metadata.grounding_chunks
+            and metadata.grounding_supports
+            and metadata.web_search_queries
+        ):
             process_grounding_supports(msg, metadata)
     emit_msg_update(msg)
 
@@ -1318,7 +1417,9 @@ def process_grounding_supports(msg: Message, metadata: types.GroundingMetadata):
                     continue
 
             if first:
-                msg.content[-1].grounding_metadata.first_offset = start_index - (support.segment.start_index or 0)
+                msg.content[-1].grounding_metadata.first_offset = start_index - (
+                    support.segment.start_index or 0
+                )
                 first = False
 
             msg.content[-1].grounding_metadata.grounding_supports.append(
@@ -1350,13 +1451,13 @@ def handle_generation_failure(msg: Message, error: Exception):
 
 # endregion
 
+
 # ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
 class UploadFileParts(NamedTuple):
-    data: dict[
-        int, # data part idx
-        str  # b64 data part
-    ]
-    done: bool # whether file is complitly uploded or not
+    data: dict[int, str]  # data part idx  # b64 data part
+    done: bool  # whether file is complitly uploded or not
+
+
 files: dict[str, UploadFileParts] = {}
 
 
@@ -1486,6 +1587,7 @@ def get_model_compatibility() -> dict:
         "searchGroundingSupportedModels": config.SearchGroundingSuportedModels,
     }
 
+
 @socketio.on("create_chat")
 def handle_create_chat(data):
     """Handles request to create a new chat branch."""
@@ -1497,24 +1599,27 @@ def handle_create_chat(data):
         return
 
     if parent_id and parent_id not in chat_history._chats:
-         print(f"Error: Cannot create chat. Parent chat ID '{parent_id}' not found.")
-         return
+        print(f"Error: Cannot create chat. Parent chat ID '{parent_id}' not found.")
+        return
 
     try:
         new_chat = Chat(name=new_name, parent_id=parent_id)
         chat_history.add_chat(new_chat)
-        print(f"Created new chat: ID={new_chat.id}, Name='{new_name}', Parent={parent_id}")
+        print(
+            f"Created new chat: ID={new_chat.id}, Name='{new_name}', Parent={parent_id}"
+        )
         socketio.emit("chat_update", chat_history.jsonify())
         chat_history.save_to_json(os.path.join(config.AI_DIR, "chat_history.json"))
     except Exception as e:
         print(f"Error creating chat: {e}")
         traceback.print_exc()
 
+
 @socketio.on("update_chat_parent")
 def handle_update_chat_parent(data):
     """Handles request to update a chat's parent."""
     chat_id = data.get("chat_id")
-    new_parent_id = data.get("new_parent_id") # This can be None/null
+    new_parent_id = data.get("new_parent_id")  # This can be None/null
 
     if not chat_id:
         print("Error: chat_id missing in update_chat_parent request.")
@@ -1529,6 +1634,7 @@ def handle_update_chat_parent(data):
         print(f"Error updating chat parent: {e}")
         traceback.print_exc()
 
+
 @socketio.on("delete_chat")
 def handle_delete_chat(data):
     """Handles request to delete a chat."""
@@ -1538,18 +1644,18 @@ def handle_delete_chat(data):
         print("Error: chat_id missing in delete_chat request.")
         return
 
-    if chat_id == 'main':
-         print("Attempted to delete 'main' chat from client. Denied.")
-         return
+    if chat_id == "main":
+        print("Attempted to delete 'main' chat from client. Denied.")
+        return
 
     try:
-        success = chat_history.delete_chat(chat_id)
-        if success:
-            chat_history.save_to_json(os.path.join(config.AI_DIR, "chat_history.json"))
-            socketio.emit("chat_update", chat_history.jsonify())
+        chat_history.delete_chat(chat_id)
+        chat_history.save_to_json(os.path.join(config.AI_DIR, "chat_history.json"))
+        socketio.emit("chat_update", chat_history.jsonify())
     except Exception as e:
         print(f"Error deleting chat: {e}")
         traceback.print_exc()
+
 
 @socketio.on("get_chat_history")
 def handle_get_chat_history():
@@ -1577,9 +1683,7 @@ def handle_add_task(task_data):
     try:
         task = lschedule.Task.from_dict(task_data)
         lschedule.schedule.add_task(task)
-        lschedule.schedule.save_to_json(
-            config.AI_DIR / "schedule.json"
-        )
+        lschedule.schedule.save_to_json(config.AI_DIR / "schedule.json")
         socketio.emit("schedule_update", lschedule.schedule.jsonify())
     except Exception as e:
         print(f"Error adding task: {e}")
@@ -1600,9 +1704,7 @@ def handle_update_task(task_data):
         existing_task.borderColor = task.borderColor
 
         lschedule.schedule.update_task(existing_task)
-        lschedule.schedule.save_to_json(
-            config.AI_DIR / "schedule.json"
-        )
+        lschedule.schedule.save_to_json(config.AI_DIR / "schedule.json")
         socketio.emit("schedule_update", lschedule.schedule.jsonify())
     except Exception as e:
         print(f"Error updating task: {e}")

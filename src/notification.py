@@ -8,6 +8,7 @@ import uuid
 
 ContentType = Literal["text", "html", "image"]
 
+
 class Content:
     """
     Represents the content of a notification.
@@ -18,12 +19,19 @@ class Content:
         html (Optional[str]): The HTML content, if type is "html".
         img (Optional[str]): The base64 encoded image data, if type is "image".
     """
-    type: ContentType # type of the Content
-    text: Optional[str] # if content is text
-    html: Optional[str] # if content is html
-    img: Optional[str] # base64 encoded image
 
-    def __init__(self, type: ContentType = "text", text: Optional[str] = None, html: Optional[str] = None, img: Optional[str] = None):
+    type: ContentType  # type of the Content
+    text: Optional[str]  # if content is text
+    html: Optional[str]  # if content is html
+    img: Optional[str]  # base64 encoded image
+
+    def __init__(
+        self,
+        type: ContentType = "text",
+        text: Optional[str] = None,
+        html: Optional[str] = None,
+        img: Optional[str] = None,
+    ):
         """Initializes a Content object."""
         self.type = type
         self.text = text
@@ -48,7 +56,9 @@ class Content:
         """
         return Content(**data)
 
+
 NotificationType = Literal["Mail", "Reminder", "General"]
+
 
 class Notification:
     """
@@ -64,14 +74,15 @@ class Notification:
         reminder (bool): Indicates if this is a reminder notification.
         personal (bool): Indicates if the content contains personal information.
     """
-    id: str # id of notification
+
+    id: str  # id of notification
     type: NotificationType
-    content: list[Content] # complete content
-    snipit: Content # content snipit to display
-    time: datetime.datetime # time of the notification
-    sevarity: Literal["Low", "Mid", "High"] # importance of the notification
-    reminder: bool # is notification reminder
-    personal: bool # is notification content personal
+    content: list[Content]  # complete content
+    snipit: Content  # content snipit to display
+    time: datetime.datetime  # time of the notification
+    sevarity: Literal["Low", "Mid", "High"]  # importance of the notification
+    reminder: bool  # is notification reminder
+    personal: bool  # is notification content personal
 
     def __init__(
         self,
@@ -82,7 +93,7 @@ class Notification:
         time: Optional[datetime.datetime] = None,
         sevarity: Literal["Low", "Mid", "High"] = "Low",
         reminder: bool = False,
-        personal: bool = False
+        personal: bool = False,
     ):
         """Initializes a Notification object."""
         self.id = id if id else str(uuid.uuid4())
@@ -118,12 +129,15 @@ class Notification:
             notification_type=data.get("type", "General"),
             id=data["id"],
             content=[Content.from_jsonify(c) for c in data["content"]],
-            snipit=Content.from_jsonify(data["snipit"]) if data["snipit"] else Content(),
+            snipit=(
+                Content.from_jsonify(data["snipit"]) if data["snipit"] else Content()
+            ),
             time=datetime.datetime.fromisoformat(data["time"]),
             sevarity=data["sevarity"],
             reminder=data["reminder"],
             personal=data["personal"],
         )
+
 
 class EmailNotification(Notification):
     """
@@ -134,9 +148,10 @@ class EmailNotification(Notification):
         sender (str): The email address of the sender.
         body (list[Content]): The main content of the email.
     """
-    subject: str # subject of the email
-    sender: str # email address of the sender of the email
-    body: list[Content] # body of the mail
+
+    subject: str  # subject of the email
+    sender: str  # email address of the sender of the email
+    body: list[Content]  # body of the mail
 
     def __init__(
         self,
@@ -148,10 +163,18 @@ class EmailNotification(Notification):
         time: Optional[datetime.datetime] = None,
         sevarity: Literal["Low", "Mid", "High"] = "Low",
         reminder: bool = False,
-        personal: bool = False
+        personal: bool = False,
     ):
         """Initializes an EmailNotification object."""
-        super().__init__(notification_type="Mail", id=id, snipit=snipit, time=time, sevarity=sevarity, reminder=reminder, personal=personal)
+        super().__init__(
+            notification_type="Mail",
+            id=id,
+            snipit=snipit,
+            time=time,
+            sevarity=sevarity,
+            reminder=reminder,
+            personal=personal,
+        )
         self.subject = subject if subject else "No Subject"
         self.sender = sender if sender else "Unknown Sender"
         self.body = body if body else []
@@ -161,11 +184,13 @@ class EmailNotification(Notification):
         Converts the EmailNotification object to a JSON-serializable dictionary.
         """
         base_json = super().jsonify()
-        base_json.update({
-            "subject": self.subject,
-            "sender": self.sender,
-            "body": [c.jsonify() for c in self.body],
-        })
+        base_json.update(
+            {
+                "subject": self.subject,
+                "sender": self.sender,
+                "body": [c.jsonify() for c in self.body],
+            }
+        )
         return base_json
 
     @staticmethod
@@ -194,6 +219,7 @@ class Notifications:
     Attributes:
         notifications (list[Notification]): The list of Notification objects.
     """
+
     _instance: Optional["Notifications"] = None
 
     def __new__(cls, *args, **kwargs):
@@ -204,7 +230,7 @@ class Notifications:
 
     def __init__(self, notifications: Optional[list[Notification]] = None):
         """Initializes a Notifications object."""
-        if not hasattr(self, 'notifications'):  # Only initialize once
+        if not hasattr(self, "notifications"):  # Only initialize once
             self.notifications = notifications if notifications else []
 
     def append(self, notification: Notification):
@@ -223,31 +249,37 @@ class Notifications:
             if notification.id == id:
                 if notification.type == "Mail":
                     import mail
+
                     mail.mark_as_read(notification.id)
                 del self.notifications[idx]
 
     def save_to_json(self, filepath: str):
         """Saves the notifications to a JSON file."""
         data = [notification.jsonify() for notification in self.notifications]
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(data, f, indent=4)
 
     def load_from_json(self, filepath) -> None:
         """Loads notifications from a JSON file."""
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 data: list[dict[str, Any]] = json.load(f)
                 self.notifications = []
                 for item in data:
                     notif_type = item.get("type")
                     if notif_type == "Mail":
                         self.notifications.append(EmailNotification.from_jsonify(item))
-                    else: # Fallback to default Notification for unknown types
+                    else:  # Fallback to default Notification for unknown types
                         self.notifications.append(Notification.from_jsonify(item))
         except FileNotFoundError:
-            print("Notification file not found. Starting with an empty notifications list.")
+            print(
+                "Notification file not found. Starting with an empty notifications list."
+            )
         except json.JSONDecodeError:
-            print("Error decoding notification file. Starting with an empty notifications list.")
+            print(
+                "Error decoding notification file. Starting with an empty notifications list."
+            )
+
 
 # Global instance to store all notifications
 notifications: Notifications = Notifications()

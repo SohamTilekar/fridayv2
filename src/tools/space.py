@@ -16,11 +16,14 @@ space_path: pathlib.Path = AI_DIR / "friday_space"
 if TYPE_CHECKING:
     from main import Content
 
+
 class PermisionError(Exception):
     """
     Raise When User declines permision for perticular task
     """
+
     ...
+
 
 class CodeExecutionEnvironment:
     """
@@ -51,10 +54,17 @@ class CodeExecutionEnvironment:
         Returns:
             tuple[str, str, int]: A tuple containing stdout, stderr, and the return code.
         """
-        if not global_shares["take_permision"](f"Permission for running following command: `{command}`"):
+        if not global_shares["take_permision"](
+            f"Permission for running following command: `{command}`"
+        ):
             raise PermisionError("User Declined Permission to run command.")
         result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, cwd=space_path, timeout=timeout
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=space_path,
+            timeout=timeout,
         )
         return result.stdout, result.stderr, result.returncode
 
@@ -67,7 +77,9 @@ class CodeExecutionEnvironment:
             relative_path (str): The relative path to the file.
             content (Optional[str]): The content to write to the file.
         """
-        if not global_shares["take_permision"](f"Permission for Creating file: `{relative_path}`"):
+        if not global_shares["take_permision"](
+            f"Permission for Creating file: `{relative_path}`"
+        ):
             raise PermisionError("User Declined Permission to create file.")
         full_path: pathlib.Path = space_path / relative_path
         with open(full_path, "w") as f:
@@ -81,7 +93,9 @@ class CodeExecutionEnvironment:
         Args:
             relative_path (str): The relative path to the folder.
         """
-        if not global_shares["take_permision"](f"Permission for Creating folder: `{relative_path}`"):
+        if not global_shares["take_permision"](
+            f"Permission for Creating folder: `{relative_path}`"
+        ):
             raise PermisionError("User Declined Permission to create folder.")
         full_path: pathlib.Path = space_path / relative_path
         os.makedirs(full_path, exist_ok=True)
@@ -94,7 +108,9 @@ class CodeExecutionEnvironment:
         Args:
             relative_path (str): The relative path to the file.
         """
-        if not global_shares["take_permision"](f"Permission for Deleting file: `{relative_path}`"):
+        if not global_shares["take_permision"](
+            f"Permission for Deleting file: `{relative_path}`"
+        ):
             raise PermisionError("User Declined Permission to delete file.")
         full_path: pathlib.Path = space_path / relative_path
         os.remove(str(full_path))
@@ -107,7 +123,9 @@ class CodeExecutionEnvironment:
         Args:
             relative_path (str): The relative path to the folder.
         """
-        if not global_shares["take_permision"](f"Permission for Deleting folder: `{relative_path}`"):
+        if not global_shares["take_permision"](
+            f"Permission for Deleting folder: `{relative_path}`"
+        ):
             raise PermisionError("User Declined Permission to delete folder")
         full_path: pathlib.Path = space_path / relative_path
         shutil.rmtree(full_path)
@@ -123,7 +141,9 @@ class CodeExecutionEnvironment:
         Returns:
             str: The process ID.
         """
-        if not global_shares["take_permision"](f"Permission for running background command: `{command}`"):
+        if not global_shares["take_permision"](
+            f"Permission for running background command: `{command}`"
+        ):
             raise PermisionError("User Declined Permission to run background command")
         process_id: str = str(uuid.uuid4())
         cmd_queue: queue.Queue[Optional[str]] = queue.Queue()
@@ -183,7 +203,9 @@ class CodeExecutionEnvironment:
             process_id (str): The ID of the process.
             input_str (str): The input string to send.
         """
-        if not global_shares["take_permision"](f"Permission for sending input to process: `{process_id}`"):
+        if not global_shares["take_permision"](
+            f"Permission for sending input to process: `{process_id}`"
+        ):
             raise PermisionError("User Declined Permission to send input")
         if process_id not in CodeExecutionEnvironment.processes:
             raise ValueError("Process not found")
@@ -200,7 +222,7 @@ class CodeExecutionEnvironment:
 
         Args:
             process_id (str): The ID of the process.
-        
+
         Return:
             list[str]: STDOut of the peocess
         """
@@ -242,7 +264,9 @@ class CodeExecutionEnvironment:
         Args:
             process_id (str): The ID of the process.
         """
-        if not global_shares["take_permision"](f"Permission for killing process: `{process_id}`"):
+        if not global_shares["take_permision"](
+            f"Permission for killing process: `{process_id}`"
+        ):
             raise PermisionError("User Declined Permission to kill process")
         if process_id not in CodeExecutionEnvironment.processes:
             raise ValueError("Process not found")
@@ -250,7 +274,7 @@ class CodeExecutionEnvironment:
         process = CodeExecutionEnvironment.processes[process_id]
         process.terminate()
         process.wait()
-    
+
     @staticmethod
     def SendControlC(process_id: str):
         """
@@ -259,7 +283,9 @@ class CodeExecutionEnvironment:
         Args:
             process_id (str): The ID of the process.
         """
-        if not global_shares["take_permision"](f"Permission for sending Ctrl+C to process: `{process_id}`"):
+        if not global_shares["take_permision"](
+            f"Permission for sending Ctrl+C to process: `{process_id}`"
+        ):
             raise PermisionError("User Declined Permission to send Ctrl+C")
         if process_id not in CodeExecutionEnvironment.processes:
             raise ValueError("Process not found")
@@ -281,7 +307,9 @@ class CodeExecutionEnvironment:
         Returns:
             Optional[str]: File content.
         """
-        if not global_shares["take_permision"](f"Permission for reading file: `{relative_path}`"):
+        if not global_shares["take_permision"](
+            f"Permission for reading file: `{relative_path}`"
+        ):
             raise PermisionError("User Declined Permission to read file")
         full_path: pathlib.Path = space_path / relative_path
         with open(full_path, "r") as f:
@@ -297,7 +325,9 @@ class CodeExecutionEnvironment:
             relative_path (str): The relative path to the file.
             content (str): The content to write to the file.
         """
-        if not global_shares["take_permision"](f"Permission for writing file: `{relative_path}`"):
+        if not global_shares["take_permision"](
+            f"Permission for writing file: `{relative_path}`"
+        ):
             raise PermisionError("User Declined Permission to write file")
         full_path: pathlib.Path = space_path / relative_path
         with open(full_path, "w") as f:
@@ -317,8 +347,24 @@ class CodeExecutionEnvironment:
         **Parameters:**
         - `relative_paths` (list[str]): A list of relative file paths to be linked.
         """
-        supported_image_types = ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]
-        supported_video_types = ["video/mp4", "video/mpeg", "video/quicktime", "video/x-msvideo", "video/x-flv", "video/mpeg", "video/webm", "video/x-ms-wmv", "video/3gpp"]
+        supported_image_types = [
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+        ]
+        supported_video_types = [
+            "video/mp4",
+            "video/mpeg",
+            "video/quicktime",
+            "video/x-msvideo",
+            "video/x-flv",
+            "video/mpeg",
+            "video/webm",
+            "video/x-ms-wmv",
+            "video/3gpp",
+        ]
         attachments: list["Content"] = []
         if not global_shares["content"] or not global_shares["file"]:
             raise ValueError("content or file not set yet")
@@ -330,13 +376,28 @@ class CodeExecutionEnvironment:
             mime_type, _ = mimetypes.guess_type(file_path)
 
             if not mime_type:
-                raise ValueError(f"Could not determine MIME type for file `{relative_path}`")
+                raise ValueError(
+                    f"Could not determine MIME type for file `{relative_path}`"
+                )
 
-            if not mime_type.startswith("text/") or not mime_type in supported_image_types or not mime_type in supported_video_types or not mime_type == "application/pdf":
-                raise ValueError(f"File type `{mime_type}` for file `{relative_path}` is not supported")
+            if (
+                not mime_type.startswith("text/")
+                or not mime_type in supported_image_types
+                or not mime_type in supported_video_types
+                or not mime_type == "application/pdf"
+            ):
+                raise ValueError(
+                    f"File type `{mime_type}` for file `{relative_path}` is not supported"
+                )
             with open(file_path, "rb") as f:
                 content: bytes = f.read()
-            attachments.append(global_shares["content"](attachment=global_shares["file"](content, mime_type, filename=os.path.basename(file_path))))
+            attachments.append(
+                global_shares["content"](
+                    attachment=global_shares["file"](
+                        content, mime_type, filename=os.path.basename(file_path)
+                    )
+                )
+            )
         return attachments
 
     @staticmethod
@@ -354,7 +415,9 @@ class CodeExecutionEnvironment:
 
         tree_str += f"{root_path.name}\n"
 
-        def generate_tree(directory: pathlib.Path, prefix: str = "", is_last: bool = False) -> str:
+        def generate_tree(
+            directory: pathlib.Path, prefix: str = "", is_last: bool = False
+        ) -> str:
             nonlocal tree_str
 
             items = sorted(list(directory.iterdir()), key=lambda x: x.name)
@@ -363,7 +426,7 @@ class CodeExecutionEnvironment:
                 return ""
 
             for index, item in enumerate(items):
-                is_item_last = (index == len(items) - 1)
+                is_item_last = index == len(items) - 1
                 if item.is_dir():
                     if is_item_last:
                         tree_str += f"{prefix}└── {item.name}\n"

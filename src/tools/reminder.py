@@ -11,14 +11,16 @@ import datetime
 from global_shares import global_shares
 from notification import Notification, Content, notifications
 
+
 def emit_reminders():
     global_shares["socketio"].emit("reminders_list_update", get_reminders_json())
 
+
 class Reminder:
-    message: str # reminder message
-    once: bool # whether to reminder only onece or repeat
-    skip_next: bool # whether to skip next reminder
-    re_remind: bool # whether to reremind
+    message: str  # reminder message
+    once: bool  # whether to reminder only onece or repeat
+    skip_next: bool  # whether to skip next reminder
+    re_remind: bool  # whether to reremind
     id: int
 
     def __init__(self, message: str, once: bool) -> None:
@@ -26,7 +28,7 @@ class Reminder:
         self.once = once
         self.skip_next = False
         self.re_remind = False
-        self.id = hash(self) # Generate ID here
+        self.id = hash(self)  # Generate ID here
 
     def __call__(self):
         if self.skip_next:
@@ -39,7 +41,7 @@ class Reminder:
             content=[Content("text", self.message)],
             snipit=Content(text=self.message),
             time=datetime.datetime.now(),
-            sevarity="Mid", # Or "Low" or "High" as appropriate
+            sevarity="Mid",  # Or "Low" or "High" as appropriate
             reminder=True,
             personal=True,
         )
@@ -51,12 +53,13 @@ class Reminder:
             threading.Timer(0.1, emit_reminders).start()
             return schedule.CancelJob
 
+
 # Function to save the schedule jobs to a file
 def save_jobs() -> None:
     """
     Save the scheduled jobs to a file using pickle.
     """
-    with open(config.AI_DIR/"reminders.pkl", "wb") as f:
+    with open(config.AI_DIR / "reminders.pkl", "wb") as f:
         pickle.dump(schedule.default_scheduler, f)
 
 
@@ -65,8 +68,8 @@ def load_jobs() -> None:
     """
     Load the scheduled jobs from a file using pickle, if it exists.
     """
-    if os.path.exists(config.AI_DIR/"reminders.pkl"):
-        with open(config.AI_DIR/"reminders.pkl", "rb") as f:
+    if os.path.exists(config.AI_DIR / "reminders.pkl"):
+        with open(config.AI_DIR / "reminders.pkl", "rb") as f:
             schedule.default_scheduler = pickle.load(f)
 
 
@@ -137,6 +140,7 @@ def get_reminders() -> str:
         return "\n- No reminders set\n"
     return reminders
 
+
 def get_reminders_json() -> list[dict[str, None | int | str | bool]]:
     reminders: list[dict[str, None | int | str | bool]] = []
     for job in schedule.get_jobs():
@@ -156,16 +160,31 @@ def get_reminders_json() -> list[dict[str, None | int | str | bool]]:
                 "last_run": job.last_run.isoformat() if job.last_run else None,
                 "next_run": job.next_run.isoformat() if job.next_run else None,
                 "start_day": job.start_day,
-                "cancel_after": job.cancel_after.isoformat() if job.cancel_after else None,
+                "cancel_after": (
+                    job.cancel_after.isoformat() if job.cancel_after else None
+                ),
             }
         )
     return reminders
+
 
 def CreateReminder(
     message: str,
     interval_type: Literal["minute", "hour", "day", "week"],
     interval_int: Optional[int] = None,
-    interval_list: Optional[list[Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]]] = None,
+    interval_list: Optional[
+        list[
+            Literal[
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
+            ]
+        ]
+    ] = None,
     specific_time: Optional[str] = None,
     once: Optional[bool] = None,
 ) -> int:
@@ -188,19 +207,42 @@ def CreateReminder(
     reminder = Reminder(message, once or False)
 
     if interval_type == "minute" and interval_int or 0 > 0:
-        job = schedule.every(interval_int or 0).minutes.do(reminder).tag("once" if once else "")
+        job = (
+            schedule.every(interval_int or 0)
+            .minutes.do(reminder)
+            .tag("once" if once else "")
+        )
     elif interval_type == "hour" and interval_int or 0 > 0:
-        job = schedule.every(interval_int or 0).hours.do(reminder).tag("once" if once else "")
+        job = (
+            schedule.every(interval_int or 0)
+            .hours.do(reminder)
+            .tag("once" if once else "")
+        )
     elif interval_type == "day":
         if specific_time:
-            job = schedule.every().day.at(specific_time).do(reminder).tag("once" if once else "")
+            job = (
+                schedule.every()
+                .day.at(specific_time)
+                .do(reminder)
+                .tag("once" if once else "")
+            )
         elif interval_int or 0 > 0:
-            job = schedule.every(interval_int or 0).days.do(reminder).tag("once" if once else "")
+            job = (
+                schedule.every(interval_int or 0)
+                .days.do(reminder)
+                .tag("once" if once else "")
+            )
         else:
             raise ValueError("Invalid interval for 'day'.")
     elif interval_type == "week" and interval_list:
         for day in interval_list:
-            job = schedule.every().__getattribute__(day).at(specific_time).do(reminder).tag("once" if once else "")
+            job = (
+                schedule.every()
+                .__getattribute__(day)
+                .at(specific_time)
+                .do(reminder)
+                .tag("once" if once else "")
+            )
             cast(Reminder, job.job_func.func).id = reminder.id
         emit_reminders()
         return reminder.id
@@ -211,6 +253,7 @@ def CreateReminder(
     cast(Reminder, job.job_func.func).id = reminder.id
     emit_reminders()
     return reminder.id
+
 
 def CancelReminder(
     reminder_id: int, forever_or_next: Optional[Literal["forever", "next"]] = None
