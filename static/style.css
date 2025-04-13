@@ -10,7 +10,7 @@ body {
     scroll-behavior: smooth;
     background-color: var(--background);
     color: var(--foreground);
-    font-family: 'Roboto', sans-serif;
+    font-family: "Roboto", sans-serif;
     /* Modern, clean font */
     font-weight: 400;
     line-height: 1.6;
@@ -242,7 +242,9 @@ body {
     cursor: pointer;
     border-radius: var(--border-radius);
     font-size: 0.9rem;
-    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    transition:
+        background-color 0.2s ease-in-out,
+        color 0.2s ease-in-out;
     outline: none !important;
     /* Override bootstrap outline */
     box-shadow: none !important;
@@ -344,7 +346,7 @@ body {
     padding: var(--padding-md);
     background-color: var(--gray-800);
     color: var(--foreground);
-    font-family: 'Roboto', sans-serif;
+    font-family: "Roboto", sans-serif;
     font-size: 0.9rem;
     border: 1px solid var(--gray-700);
     display: flex;
@@ -359,7 +361,12 @@ body {
 /* Placeholder text effect */
 .fn-call-box .placeholder-text {
     display: inline-block;
-    background: linear-gradient(90deg, var(--gray-600) 25%, var(--gray-500) 50%, var(--gray-600) 75%);
+    background: linear-gradient(
+        90deg,
+        var(--gray-600) 25%,
+        var(--gray-500) 50%,
+        var(--gray-600) 75%
+    );
     background-size: 200% 100%;
     animation: shimmer-text 1.5s infinite linear;
     color: transparent;
@@ -429,7 +436,7 @@ body {
 .fn-argv {
     color: var(--code-text);
     /* Code text color for argument values (JSON) */
-    font-family: 'monospace';
+    font-family: "monospace";
     /* Monospace for JSON values */
 }
 
@@ -994,7 +1001,9 @@ pre {
     font-size: 0.75rem;
     padding: 0.3rem 0.6rem;
     cursor: pointer;
-    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    transition:
+        background-color 0.2s ease-in-out,
+        color 0.2s ease-in-out;
     margin-top: 0.5rem;
     outline: none !important;
     /* Override bootstrap outline */
@@ -1051,7 +1060,9 @@ pre {
     color: var(--gray-100);
     font-size: 0.8rem;
     padding: 0.4rem 0.75rem;
-    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    transition:
+        background-color 0.2s ease-in-out,
+        color 0.2s ease-in-out;
     margin-left: 0;
     /* Removed left margin from buttons */
     margin-right: 0.5rem;
@@ -1114,7 +1125,9 @@ pre {
     color: var(--gray-100);
     border: none;
     cursor: pointer;
-    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    transition:
+        background-color 0.2s ease-in-out,
+        color 0.2s ease-in-out;
     font-size: 0.9rem;
     outline: none !important;
     /* Override bootstrap outline */
@@ -1182,9 +1195,11 @@ pre {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: linear-gradient(45deg,
-            var(--scrollbar-thumb-start),
-            var(--scrollbar-thumb-end));
+    background: linear-gradient(
+        45deg,
+        var(--scrollbar-thumb-start),
+        var(--scrollbar-thumb-end)
+    );
     border-radius: 0.625rem;
 }
 
@@ -1334,12 +1349,12 @@ pre {
 /* Optional: Connector Lines (Basic Example) */
 /* Creates a vertical line for nested items */
 .chat-tree-level > .chat-tree-item {
-     padding-left: 20px; /* Indentation space */
-     position: relative;
+    padding-left: 20px; /* Indentation space */
+    position: relative;
 }
 
 .chat-tree-level > .chat-tree-item::before {
-    content: '';
+    content: "";
     position: absolute;
     left: 8px; /* Position line within the padding */
     top: -4px; /* Start slightly above the item */
@@ -1351,7 +1366,7 @@ pre {
 
 /* Horizontal line connecting item to vertical line */
 .chat-tree-level > .chat-tree-item::after {
-    content: '';
+    content: "";
     position: absolute;
     left: 8px; /* Align with vertical line */
     top: 15px; /* Adjust vertical position */
@@ -1362,9 +1377,8 @@ pre {
 
 /* Adjust line for the last item in a level */
 .chat-tree-level > .chat-tree-item:last-child::before {
-     height: 19px; /* Stop line at the item's connection point */
+    height: 19px; /* Stop line at the item's connection point */
 }
-
 
 .chat-item-content {
     display: flex;
@@ -1380,8 +1394,8 @@ pre {
 ul.chat-tree-level {
     min-height: 5px; /* Very small min-height just to ensure it exists for Sortable */
     /* Add padding/margin if needed for visual spacing when empty */
-     /* padding-top: 2px; */
-     /* margin-left: 1.5rem; /* Corresponds to indentation */
+    /* padding-top: 2px; */
+    /* margin-left: 1.5rem; /* Corresponds to indentation */
 }
 
 .chat-tree-item:not(.no-drag):hover > .chat-item-content {
@@ -1403,16 +1417,15 @@ ul.chat-tree-level {
     cursor: default; /* No grab cursor for non-draggable items */
 }
 
-
 .chat-tree-item.active-chat > .chat-item-content {
     background-color: var(--primary); /* Brighter highlight for active */
     color: var(--gray-900);
 }
 
 .chat-tree-item.active-chat > .chat-item-content .chat-item-name {
-     color: var(--gray-900);
-     font-weight: 500;
-     cursor: default; /* No grab cursor when active */
+    color: var(--gray-900);
+    font-weight: 500;
+    cursor: default; /* No grab cursor when active */
 }
 
 /* Action Buttons Styling */
@@ -1424,7 +1437,9 @@ ul.chat-tree-level {
     gap: 0.2rem;
     opacity: 0; /* Hide actions by default */
     visibility: hidden; /* Hide completely */
-    transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+    transition:
+        opacity 0.2s ease-in-out,
+        visibility 0.2s ease-in-out;
 }
 /* Make actions visible on item hover, not just content hover */
 .chat-tree-item:hover .chat-item-actions,
@@ -1432,7 +1447,6 @@ ul.chat-tree-level {
     opacity: 1;
     visibility: visible; /* Make visible */
 }
-
 
 .chat-item-actions .btn {
     padding: 0.15rem 0.4rem;
@@ -1450,11 +1464,10 @@ ul.chat-tree-level {
 
 /* Specific style for delete button hover */
 .chat-item-actions .delete-chat-btn:hover {
-     background-color: rgba(220, 53, 69, 0.8); /* Slightly transparent danger */
-     color: var(--gray-100);
-     border-color: var(--danger);
+    background-color: rgba(220, 53, 69, 0.8); /* Slightly transparent danger */
+    color: var(--gray-100);
+    border-color: var(--danger);
 }
-
 
 .chat-tree-item.active-chat > .chat-item-content .chat-item-actions .btn {
     color: var(--gray-800); /* Darker icons on active background */
@@ -1464,10 +1477,13 @@ ul.chat-tree-level {
     border-color: rgba(0, 0, 0, 0.2);
     color: var(--gray-900);
 }
-.chat-tree-item.active-chat > .chat-item-content .chat-item-actions .delete-chat-btn:hover {
-     background-color: var(--danger); /* Solid danger color */
-     border-color: var(--danger);
-     color: var(--gray-100); /* Keep text white on red background */
+.chat-tree-item.active-chat
+    > .chat-item-content
+    .chat-item-actions
+    .delete-chat-btn:hover {
+    background-color: var(--danger); /* Solid danger color */
+    border-color: var(--danger);
+    color: var(--gray-100); /* Keep text white on red background */
 }
 
 /* SortableJS Drag Styles */
@@ -1481,7 +1497,7 @@ ul.chat-tree-level {
 .sortable-chosen {
     /* Style for the element actively being dragged - often same as ghost */
     opacity: 0.7;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.3); /* Add shadow while dragging */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* Add shadow while dragging */
 }
 
 .chat-item-name:active {
@@ -1489,7 +1505,8 @@ ul.chat-tree-level {
 }
 
 /* Ensure history pane allows scrolling */
-#history-pane .p-3 { /* Target the specific padding div if it exists */
+#history-pane .p-3 {
+    /* Target the specific padding div if it exists */
     flex-grow: 1;
     overflow-y: auto;
     padding: 0 !important; /* Remove padding here if #chat-history-list has it */
@@ -1508,15 +1525,15 @@ ul.chat-tree-level {
 
 .tab-pane {
     height: 100%;
-    display: flex;
-    flex-direction: column;
     overflow: hidden;
 }
 
-/* Ensure the history pane itself allows its content (#chat-history-list) to grow */
-#history-pane {
-    flex-grow: 1;
-    display: flex; /* Use flexbox */
-    flex-direction: column; /* Stack children vertically */
-    overflow: hidden; /* Prevent pane itself from scrolling */
+.tab-pane.active > .p-3 {
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--padding-md);
+}
+
+#history-pane .p-3 {
+    padding: 0 !important;
 }
