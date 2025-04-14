@@ -1,4 +1,6 @@
 # main.py
+import faulthandler
+faulthandler.enable()
 import re
 import traceback
 from rich import print
@@ -35,8 +37,6 @@ model: Optional[str] = None  # None for Auto
 selected_tools: Optional[list[tools.ToolLiteral]] = None  # None for Auto
 
 permission: Optional[bool] = None
-
-# region
 
 
 @socketio.on("set_permission")
@@ -441,8 +441,8 @@ class Content:
     def from_jsonify(data: dict[str, Any]) -> "Content":
         return Content(
             text=data["text"],
-            attachment=data["attachment"],
-            grounding_metadata=data["grounding_metadata"],
+            attachment=File.from_jsonify(data["attachment"]) if data["attachment"] else None,
+            grounding_metadata=GroundingMetaData.from_jsonify(data["grounding_metadata"]) if data["grounding_metadata"] else None,
             function_call=(
                 FunctionCall.from_jsonify(data["function_call"])
                 if data["function_call"]
@@ -622,7 +622,7 @@ class Message:
 
 class ChatHistory:
     _messages: list[Message] = []
-    _chats: dict[str, Chat] = {}
+    _chats: dict[str, Chat] = {"main": Chat("Main Chat", "main")}
 
     def add_chat(self, chat: Chat):
         """Adds a new chat definition."""
@@ -814,10 +814,6 @@ class ChatHistory:
         del self._chats[chat_id_to_delete]
 
 
-# endregion
-
-# region Chat History Management
-
 chat_history: ChatHistory = ChatHistory()
 
 global_shares["chat_history"] = chat_history
@@ -876,10 +872,6 @@ def emit_msg_del(msg_id: str):
     socketio.emit("delete_message", msg_id)
 
 
-# endregion
-
-
-# region Gemini Model Interaction
 def generate_content(msg: Message, chat_id: str) -> Message:
     """
     Generates content from Gemini, retrying on token limits or other errors.
@@ -933,31 +925,154 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 raise ValueError("Function with no name specified")
             if func_call.name == "DeepResearch":
                 if func_call.args:
-
-                    def call_back(data: Optional[dict[str, Any]]) -> None:
-                        if not data:
-                            emit_msg_update(msg)
+                    def research_callback(update_data: Optional[dict[str, Any]]) -> None:
+                        if not update_data:
+                            # No specific update, maybe just a state check internally
                             return
-                        if data.get("action") == "thinking":
-                            fc.extra_data["steps"].append(data)
-                        elif data.get("action") == "topic_updated":
-                            fc.extra_data["topic"] = data["topic"]
-                        elif data.get("action") == "fetching_url":
-                            fc.extra_data["steps"].append(data)
-                        elif data.get("action") == "search":
-                            fc.extra_data["steps"].append(data)
-                        elif data.get("action") == "generating_report":
-                            fc.extra_data["steps"].append(data)
-                        emit_msg_update(msg)
+
+                        # Prepare data for the frontend event
+                        event_payload = {
+                            "function_id": id, # Pass the function call ID
+                            "update_type": update_data.get("action"),
+                            "data": update_data # Send the original data payload
+                        }
+                        # Map actions to update types if needed, or use action directly
+                        if update_data.get("action") == "thinking":
+                            event_payload["update_type"] = "step" # More specific type
+                            event_payload["data"] = {"type": "thinking", "content": update_data.get("thoughts")}
+                            fc.extra_data["steps"].append(event_payload)
+                        elif update_data.get("action") == "topic_updated":
+                            event_payload["update_type"] = "topic_tree"
+                            event_payload["data"] = update_data.get("topic")
+                            fc.extra_data["topic"] = researcher.topic.jsonify()
+                        elif update_data.get("action") == "fetching_url":
+                            event_payload["update_type"] = "step"
+                            event_payload["data"] = {"type": "fetch", "url": update_data.get("url")}
+                            fc.extra_data["steps"].append(event_payload)
+                        elif update_data.get("action") == "search":
+                            event_payload["update_type"] = "step"
+                            event_payload["data"] = {"type": "search", "query": update_data.get("query"), "links": update_data.get("links")}
+                            fc.extra_data["steps"].append(event_payload)
+                        elif update_data.get("action") == "generating_report":
+                            event_payload["update_type"] = "step"
+                            event_payload["data"] = {"type": "report_gen"}
+                            fc.extra_data["steps"].append(event_payload)
+
+                        if event_payload["update_type"]: # Only emit if there's a valid type
+                            socketio.emit('research_update', event_payload)
+                            emit_msg_update(msg) # cz fc is updated but the content in the message is not get to the website
+                        else:
+                            print(f"Warning: Unhandled research callback action: {update_data.get('action')}")
+
 
                     researcher = tools.DeepResearcher(
-                        **func_call.args, call_back=call_back
+                        **func_call.args, call_back=research_callback # Use the new callback
                     )
+                    # Store initial state in extra_data (no change here)
                     fc.extra_data["topic"] = researcher.topic.jsonify()
-                    fc.extra_data["steps"] = []
-                    func_response: Any = researcher.research()
+                    fc.extra_data["steps"] = [] # Steps will be added via events
+                    fc.extra_data["max_topics"] = researcher.max_topics
+                    fc.extra_data["max_search_queries"] = researcher.max_search_queries
+                    fc.extra_data["max_search_results"] = researcher.max_search_results
+                    fc.extra_data["stop"] = False
+                    fc.extra_data["status"] = "running" # Add initial status
+
+                    # --- Modify Config Update Handlers ---
+                    def update_max_topics(max_topics: Optional[int]):
+                        researcher.max_topics = max_topics
+                        fc.extra_data["max_topics"] = max_topics
+                        # Emit config update event
+                        socketio.emit('research_update', {
+                            "function_id": id,
+                            "update_type": "config",
+                            "data": {"max_topics": max_topics}
+                        })
+
+                    def update_max_search_queries(max_search_queries: Optional[int]):
+                        researcher.max_search_queries = max_search_queries
+                        fc.extra_data["max_search_queries"] = max_search_queries
+                        socketio.emit('research_update', {
+                            "function_id": id,
+                            "update_type": "config",
+                            "data": {"max_search_queries": max_search_queries}
+                        })
+
+                    def update_max_search_results(max_search_results: Optional[int]):
+                        researcher.max_search_results = max_search_results
+                        fc.extra_data["max_search_results"] = max_search_results
+                        socketio.emit('research_update', {
+                            "function_id": id,
+                            "update_type": "config",
+                            "data": {"max_search_results": max_search_results}
+                        })
+
+                    def stop_research():
+                        researcher.stop = True
+                        fc.extra_data["stop"] = True
+                        fc.extra_data["status"] = "stopping"
+                        socketio.emit('research_update', {
+                            "function_id": id,
+                            "update_type": "status",
+                            "data": {"stopped": True, "status": "stopping"}
+                        })
+
+                    # Store handlers for later removal (no change here)
+                    registered_events = {}
+                    def make_event(event_name, handler_func):
+                        # Use unique event names per research instance
+                        full_event_name = f"{event_name}_{id}"
+                        socketio.on(full_event_name)(handler_func)
+                        registered_events[full_event_name] = handler_func # Store the full name
+
+                    make_event("research-update_max_topics", update_max_topics)
+                    make_event("research-update_max_queries", update_max_search_queries)
+                    make_event("research-update_max_results", update_max_search_results)
+                    make_event("research-stop", stop_research)
+
+                    # --- Run Research and Handle Completion/Error ---
+                    # Emit initial state update (optional, but good practice)
+                    socketio.emit('research_update', {
+                        "function_id": id,
+                        "update_type": "initial_state",
+                        "data": fc.extra_data
+                    })
+                    # Emit the initial message update *once* to show the call box
+                    emit_msg_update(msg)
+                    try:
+                        response_payload = {"output": researcher.research()}
+                    except Exception:
+                        response_payload = {"error": traceback.format_exc()}
+                    fc.extra_data["status"] = "finished"
+
+                    # Add the final response/error to the message *content*
+                    msg.content.append(
+                        Content(
+                            function_response=FunctionResponce(
+                                id=id,
+                                name=func_call.name,
+                                response=response_payload,
+                            )
+                        )
+                    )
+                    # Emit the final message update to include the response box
+                    emit_msg_update(msg)
+
+                    # Emit a final status update event
+                    socketio.emit('research_update', {
+                        "function_id": id,
+                        "update_type": "status",
+                        "data": {"status": fc.extra_data["status"], "stopped": fc.extra_data["stop"]}
+                    })
+                    # Emit a specific event to signal frontend cleanup is safe
+                    socketio.emit('research_finished', {"function_id": id})
+
+                    # Return from handle_function_call (important!)
+                    # Since research runs synchronously here, we don't return early.
+                    # The final message update happens after research completes.
+                    return # Explicitly return after handling
+
                 else:
-                    raise ValueError("DeepResearch call withoout")
+                    raise ValueError("DeepResearch call without args")
             else:
                 # Call the appropriate tool function and add response
                 if func_call.args:
@@ -1449,9 +1564,6 @@ def handle_generation_failure(msg: Message, error: Exception):
     emit_msg_update(msg)
 
 
-# endregion
-
-
 # ID & [its chuncks with their idx & is fully uploded (true if video is fully uploded otherwise false)]
 class UploadFileParts(NamedTuple):
     data: dict[int, str]  # data part idx  # b64 data part
@@ -1479,7 +1591,6 @@ def end_upload_file(id: str):
     files[id] = UploadFileParts(files[id].data, True)
 
 
-# region Notification Handling
 @socketio.on("get_notifications")
 def handle_get_notifications():
     socketio.emit(
@@ -1502,9 +1613,6 @@ def handle_mark_read(data):
         )  # Save the updated notifications
     else:
         print("Error: notification_id not provided for mark_read")
-
-
-# endregion
 
 
 @socketio.on("send_message")
@@ -1668,11 +1776,6 @@ def handle_delete_message(data):
     chat_history.delete_message(msg_id)
 
 
-# endregion
-
-# region Schedule
-
-
 @socketio.on("get_schedule")
 def handle_get_schedule():
     socketio.emit("schedule_update", lschedule.schedule.jsonify())
@@ -1768,11 +1871,6 @@ def cancel_reminder_manual(data: dict[str, Any]):
         socketio.emit("reminders_error", str(e))
 
 
-# endregion
-
-# region Flask Routes
-
-
 @app.route("/favicon.ico")
 def favicon():
     return redirect(url_for("static", filename="favicon.ico"), code=302)
@@ -1782,8 +1880,6 @@ def favicon():
 def root():
     return render_template("index.html")
 
-
-# endregion
 
 if __name__ == "__main__":
     chat_history_file = os.path.join(config.AI_DIR, "chat_history.json")

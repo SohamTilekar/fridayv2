@@ -8,6 +8,7 @@ import socket
 from typing import Callable, Optional, ParamSpec, TypeVar
 
 import google.auth.exceptions
+import google.genai.errors
 import googleapiclient.errors
 import httplib2
 import requests
@@ -48,7 +49,9 @@ def retry(
         @functools.wraps(func)
         def wrapper_retry(*args: P.args, **kwargs: P.kwargs) -> R:
             attempt = 0  # Number of *counted* attempts
+            back_off = 0.5
             while attempt < max_retries:
+                back_off *= 2
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
@@ -86,8 +89,7 @@ def retry(
 
                         # Calculate backoff based on *new* counted attempts
                         # Use attempt-1 because attempt was just incremented
-                        backoff_exponent = attempt - 1
-                        backoff_time = min(delay * (2**backoff_exponent), 128)
+                        backoff_time = min(delay * (back_off), 128)
                         print(
                             f"Waiting {backoff_time:.2f} seconds before next attempt..."
                         )
@@ -96,10 +98,7 @@ def retry(
                     elif should_ignore_and_retry:
                         # Calculate backoff based on the *current* number of counted attempts (or initial delay if 0)
                         # This prevents rapid retries for ignored exceptions but doesn't escalate delay based on them.
-                        current_backoff_exponent = (
-                            max(0, attempt - 1) if attempt > 0 else 0
-                        )
-                        backoff_time = min(delay * (2**current_backoff_exponent), 128)
+                        backoff_time = min(delay * (back_off), 128)
                         print(
                             f"Waiting {backoff_time:.2f} seconds before next attempt (ignored exception)..."
                         )
@@ -191,6 +190,14 @@ class FetchLimiter:
                     self.calls += 1
                 try:
                     return func(*args, **kwargs)
+                except requests.exceptions.HTTPError as e:
+                    print(*args, {**kwargs})
+                    traceback.print_exc()
+                    print(e)
+                    print(e.response.json())
+                    print("-------------------------------")
+                    if e.response.json()["error"].startswith("This website is no longer supported"):
+                        return None
                 finally:
                     pass
 
@@ -239,6 +246,9 @@ network_errors: tuple[type[Exception], ...] = (
     # googleapiclient errors
     googleapiclient.errors.HttpError,
     googleapiclient.errors.ResumableUploadError,
+    # genai
+    google.genai.errors.ServerError,
+    google.genai.errors.ClientError
 )
 
 ignore_network_error: tuple[type[Exception], ...] = (

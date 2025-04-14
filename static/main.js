@@ -8,6 +8,8 @@ let messages = [];
 let chats = {};
 let current_chat_id = "main";
 let sortableInstances = [];
+let activeResearchListeners = {}; // To keep track of listeners for cleanup
+const socket = io();
 // ==========================================================================
 // --- Helper Functions ---
 // ==========================================================================
@@ -63,7 +65,706 @@ function handleChatBoxUpdate(updateFunction) {
     return result;
   };
 }
+// --- Function to render Topic Tree Recursively ---
+function renderTopicTree(topicData, parentElement, level = 0) {
+  const topicDiv = document.createElement("div");
+  topicDiv.style.marginLeft = `${level * 1.5}rem`;
+  topicDiv.classList.add("topic-node");
 
+  const topicHeader = document.createElement("strong");
+  topicHeader.textContent = topicData.topic;
+  topicDiv.appendChild(topicHeader);
+
+  const topicDetails = document.createElement("div");
+  topicDetails.classList.add("topic-details", "ms-2"); // Add some margin
+  topicDetails.innerHTML = `
+        <small class="text-muted">(ID: ${topicData.id}, Researched: ${topicData.researched ? "Yes" : "No"})</small><br>
+        ${topicData.queries ? `<strong>Queries:</strong><pre>${topicData.queries.join("\n")}</pre>` : ""}
+        ${topicData.urls && topicData.urls.length > 0 ? `<strong>Sites:</strong><ul>${topicData.urls.map((url) => `<li><a href="${url}" target="_blank">${url}</a></li>`).join("")}</ul>` : ""}
+        ${topicData.fetched_content && topicData.fetched_content.length > 0 ? `<strong>Fetched:</strong> ${topicData.fetched_content.length} items` : ""}
+    `;
+  topicDiv.appendChild(topicDetails);
+
+  parentElement.appendChild(topicDiv);
+
+  if (topicData.sub_topics && topicData.sub_topics.length > 0) {
+    topicData.sub_topics.forEach((subTopic) => {
+      renderTopicTree(subTopic, parentElement, level + 1);
+    });
+  }
+}
+
+// --- Helper function to render a single step ---
+function renderStep(stepData, index, container, functionId) {
+  // Added functionId
+  const stepDiv = document.createElement("div");
+  stepDiv.classList.add("research-step", "mb-2", "pb-2", "border-bottom");
+  let stepContent = `<strong>Step ${index + 1}: ${stepData.type}</strong>`;
+
+  if (stepData.type === "thinking" && stepData.content) {
+    const thinkingCollapseId = `thinking-collapse-${functionId}-${index}`;
+    // Add a toggle button for thinking content
+    stepContent += `
+            <button class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" type="button" data-bs-toggle="collapse" data-bs-target="#${thinkingCollapseId}" aria-expanded="false" aria-controls="${thinkingCollapseId}">
+                <i class="bi bi-arrows-expand"></i> Toggle Thoughts
+            </button>
+            <div class="collapse" id="${thinkingCollapseId}">
+                <div class="mt-1 mb-0 p-2 bg-dark text-light rounded small border border-secondary">
+                    ${marked.parse(stepData.content)}
+                </div>
+            </div>
+        `;
+  } else if (stepData.type === "fetch" && stepData.url) {
+    stepContent += `<br><small>URL: <a href="${stepData.url}" target="_blank">${stepData.url}</a></small>`;
+  } else if (stepData.type === "search" && stepData.query) {
+    stepContent += `<br><small>Query: <code>${stepData.query}</code></small>`;
+    if (stepData.links && stepData.links.length > 0) {
+      stepContent += `<br><small>Found Links:</small><ul class="list-unstyled small mb-0">${stepData.links.map((l) => `<li><a href="${l}" target="_blank">${l}</a></li>`).join("")}</ul>`;
+    }
+  } else if (stepData.type === "report_gen") {
+    stepContent += `<br><small>Generating final report...</small>`;
+  }
+  // Add more conditions for other step types if needed
+
+  stepDiv.innerHTML = stepContent;
+  container.appendChild(stepDiv);
+}
+
+function displayDeepResearchDetails(functionId) {
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    ?.closest(".message");
+  if (!msgDiv) {
+    console.error(`Message div for function ID ${functionId} not found.`);
+    return;
+  }
+  // --- Get Message Data ---
+  const msg = messages.find((m) => m.id === msgDiv.id); // Use global messages array
+  if (!msg) {
+    console.error(
+      `Message data for ID ${msgDiv.id} not found in global array.`,
+    );
+    return;
+  }
+
+  const contentItemCall = msg.content.find(
+    (c) => c.function_call && c.function_call.id === functionId,
+  );
+  const contentItemResponse = msg.content.find(
+    (c) => c.function_response && c.function_response.id === functionId,
+  );
+
+  if (!contentItemCall || !contentItemCall.function_call) {
+    console.error(`Function call for ID ${functionId} not found in message.`);
+    // Still display response/error if available
+    if (contentItemResponse) {
+      displayFunctionErrorOrOutput(functionId, contentItemResponse); // You might need this helper
+    }
+    return;
+  }
+
+  const extraData = contentItemCall.function_call.extra_data || {};
+  const functionName = contentItemCall.function_call.name;
+  const status =
+    extraData.status || (contentItemResponse ? "finished" : "running"); // Infer status
+  const isRunning = status === "running";
+  const isStopping = status === "stopping";
+  const isFinished = status === "finished";
+  const isStopped = status === "stopped";
+  const isError = status === "error";
+  const isEditable = isRunning; // Config is editable only when running
+
+  const rightPanel = document.querySelector(".right-panel");
+  const attachmentDisplayArea = document.getElementById(
+    "attachment-display-area",
+  );
+
+  if (rightPanel.classList.contains("d-none")) {
+    rightPanel.classList.remove("d-none");
+  }
+  attachmentDisplayArea.innerHTML = ""; // Clear previous content
+
+  // --- Render Configuration (Foldable) ---
+  const configSectionDiv = document.createElement("div");
+  configSectionDiv.classList.add(
+    "research-section",
+    "mb-3",
+    "p-3", // Increased padding
+    "border",
+    "rounded",
+    "bg-dark", // Darker background for section
+  );
+
+  const configHeader = document.createElement("div");
+  configHeader.classList.add(
+    "d-flex",
+    "justify-content-between",
+    "align-items-center",
+    "mb-2", // Margin below header
+  );
+  configHeader.innerHTML = `<h5 class="mb-0 text-light">Configuration</h5>`; // Adjusted header style
+  const configToggleButton = createButton(
+    "btn btn-sm btn-outline-secondary py-0 px-1",
+    '<i class="bi bi-arrows-expand"></i> Toggle',
+  );
+  configToggleButton.setAttribute("data-bs-toggle", "collapse");
+  configToggleButton.setAttribute(
+    "data-bs-target",
+    `#research-config-collapse-${functionId}`,
+  );
+  configToggleButton.setAttribute("aria-expanded", "false"); // Start collapsed
+  configToggleButton.setAttribute(
+    "aria-controls",
+    `research-config-collapse-${functionId}`,
+  );
+  configHeader.appendChild(configToggleButton);
+  configSectionDiv.appendChild(configHeader);
+
+  const configCollapseDiv = document.createElement("div");
+  configCollapseDiv.classList.add("collapse"); // Default closed
+  configCollapseDiv.id = `research-config-collapse-${functionId}`;
+
+  // --- Configuration Inputs ---
+  const createInputGroup = (
+    labelText,
+    inputId,
+    currentValue,
+    placeholder,
+    disabled,
+  ) => {
+    const group = document.createElement("div");
+    group.classList.add("input-group", "input-group-sm", "mb-2");
+    group.innerHTML = `
+            <span class="input-group-text bg-secondary text-light border-secondary">${labelText}</span>
+            <input type="number" min="1" class="form-control bg-dark text-light border-secondary" id="${inputId}" value="${currentValue || ""}" placeholder="${placeholder}" ${disabled ? "disabled" : ""}>
+        `;
+    return group;
+  };
+
+  const maxTopicsGroup = createInputGroup(
+    "Max Topics",
+    `research-max-topics-${functionId}`,
+    extraData.max_topics,
+    "None",
+    !isEditable,
+  );
+  configCollapseDiv.appendChild(maxTopicsGroup);
+
+  const maxQueriesGroup = createInputGroup(
+    "Max Queries/Topic",
+    `research-max-queries-${functionId}`,
+    extraData.max_search_queries,
+    "5",
+    !isEditable,
+  );
+  configCollapseDiv.appendChild(maxQueriesGroup);
+
+  const maxResultsGroup = createInputGroup(
+    "Max Results/Query",
+    `research-max-results-${functionId}`,
+    extraData.max_search_results,
+    "7",
+    !isEditable,
+  );
+  configCollapseDiv.appendChild(maxResultsGroup);
+
+  // --- Stop Button and Status ---
+  const stopGroup = document.createElement("div");
+  stopGroup.classList.add("d-flex", "align-items-center", "mt-3"); // Added margin top
+
+  let stopButtonClass = "btn-secondary"; // Default
+  let stopButtonIcon = "bi-slash-circle-fill";
+  let stopButtonText = "Stopped";
+  let stopButtonDisabled = true;
+
+  if (isRunning) {
+    stopButtonClass = "btn-danger";
+    stopButtonIcon = "bi-stop-circle";
+    stopButtonText = "Stop";
+    stopButtonDisabled = false;
+  } else if (isStopping) {
+    stopButtonClass = "btn-warning";
+    stopButtonIcon = "bi-hourglass-split";
+    stopButtonText = "Stopping";
+    stopButtonDisabled = true;
+  } else if (isFinished) {
+    stopButtonClass = "btn-success";
+    stopButtonIcon = "bi-check-circle-fill";
+    stopButtonText = "Finished";
+    stopButtonDisabled = true;
+  } else if (isError) {
+    stopButtonClass = "btn-danger";
+    stopButtonIcon = "bi-exclamation-octagon-fill";
+    stopButtonText = "Error";
+    stopButtonDisabled = true;
+  } // 'stopped' uses the default btn-secondary
+
+  const stopButton = createButton(
+    `btn btn-sm ${stopButtonClass}`,
+    `<i class="bi ${stopButtonIcon}"></i> ${stopButtonText}`,
+  );
+  stopButton.id = `research-stop-button-${functionId}`;
+  stopButton.disabled = stopButtonDisabled;
+
+  const stopStatusSpan = document.createElement("span");
+  stopStatusSpan.classList.add("ms-2", "text-muted", "small");
+  stopStatusSpan.id = `research-status-text-${functionId}`;
+  stopStatusSpan.textContent = `(${status})`;
+
+  stopGroup.appendChild(stopButton);
+  stopGroup.appendChild(stopStatusSpan);
+  configCollapseDiv.appendChild(stopGroup);
+
+  configSectionDiv.appendChild(configCollapseDiv);
+  attachmentDisplayArea.appendChild(configSectionDiv);
+
+  // --- Render Topic Tree (Foldable) ---
+  const topicTreeDiv = document.createElement("div");
+  topicTreeDiv.classList.add(
+    "research-section",
+    "mb-3",
+    "p-3",
+    "border",
+    "rounded",
+    "bg-dark",
+  );
+  const topicHeader = document.createElement("div");
+  topicHeader.classList.add(
+    "d-flex",
+    "justify-content-between",
+    "align-items-center",
+    "mb-2",
+  );
+  topicHeader.innerHTML = `<h5 class="mb-0 text-light">Topic Tree</h5>`;
+  const topicToggleButton = createButton(
+    "btn btn-sm btn-outline-secondary py-0 px-1",
+    '<i class="bi bi-arrows-expand"></i> Toggle',
+  );
+  topicToggleButton.setAttribute("data-bs-toggle", "collapse");
+  topicToggleButton.setAttribute(
+    "data-bs-target",
+    `#research-topic-collapse-${functionId}`,
+  );
+  topicToggleButton.setAttribute("aria-expanded", "true"); // Start expanded
+  topicToggleButton.setAttribute(
+    "aria-controls",
+    `research-topic-collapse-${functionId}`,
+  );
+  topicHeader.appendChild(topicToggleButton);
+  topicTreeDiv.appendChild(topicHeader);
+
+  const topicCollapseDiv = document.createElement("div");
+  topicCollapseDiv.classList.add("collapse", "show"); // Start expanded
+  topicCollapseDiv.id = `research-topic-collapse-${functionId}`;
+  const topicTreeContainer = document.createElement("div");
+  topicTreeContainer.id = `research-topic-container-${functionId}`;
+  topicTreeContainer.classList.add("mt-2"); // Add margin top to container
+  if (extraData.topic) {
+    renderTopicTree(extraData.topic, topicTreeContainer);
+  } else {
+    topicTreeContainer.innerHTML =
+      '<p class="text-muted small">Topic tree not available yet.</p>';
+  }
+  topicCollapseDiv.appendChild(topicTreeContainer);
+  topicTreeDiv.appendChild(topicCollapseDiv);
+  attachmentDisplayArea.appendChild(topicTreeDiv);
+
+  // --- Render Steps (Foldable) ---
+  const stepsSectionDiv = document.createElement("div");
+  stepsSectionDiv.classList.add(
+    "research-section",
+    "mb-3",
+    "p-3",
+    "border",
+    "rounded",
+    "bg-dark",
+  );
+  const stepsHeader = document.createElement("div");
+  stepsHeader.classList.add(
+    "d-flex",
+    "justify-content-between",
+    "align-items-center",
+    "mb-2",
+  );
+  stepsHeader.innerHTML = `<h5 class="mb-0 text-light">Steps</h5>`;
+  const stepsToggleButton = createButton(
+    "btn btn-sm btn-outline-secondary py-0 px-1",
+    '<i class="bi bi-arrows-expand"></i> Toggle',
+  );
+  stepsToggleButton.setAttribute("data-bs-toggle", "collapse");
+  stepsToggleButton.setAttribute(
+    "data-bs-target",
+    `#research-steps-collapse-${functionId}`,
+  );
+  stepsToggleButton.setAttribute("aria-expanded", "true"); // Start expanded
+  stepsToggleButton.setAttribute(
+    "aria-controls",
+    `research-steps-collapse-${functionId}`,
+  );
+  stepsHeader.appendChild(stepsToggleButton);
+  stepsSectionDiv.appendChild(stepsHeader);
+
+  const stepsCollapseDiv = document.createElement("div");
+  stepsCollapseDiv.classList.add("collapse", "show"); // Start expanded
+  stepsCollapseDiv.id = `research-steps-collapse-${functionId}`;
+  const stepsContainer = document.createElement("div");
+  stepsContainer.id = `research-steps-container-${functionId}`;
+  stepsContainer.classList.add("mt-2"); // Add margin top
+  if (extraData.steps && extraData.steps.length > 0) {
+    extraData.steps.forEach((step, index) => {
+      renderStep(step.data, index, stepsContainer, functionId);
+    });
+  } else {
+    stepsContainer.innerHTML =
+      '<p class="text-muted small">No steps recorded yet.</p>';
+  }
+  stepsCollapseDiv.appendChild(stepsContainer);
+  stepsSectionDiv.appendChild(stepsCollapseDiv);
+  attachmentDisplayArea.appendChild(stepsSectionDiv);
+
+  // --- Render Final Response (Rendered as Markdown) ---
+  const responseDiv = document.createElement("div");
+  responseDiv.id = `research-response-container-${functionId}`;
+  responseDiv.classList.add(
+    "research-section",
+    "p-3",
+    "border",
+    "rounded",
+    "bg-dark",
+  ); // Consistent section styling
+  responseDiv.innerHTML = `<h5 class="mb-2 text-light">Final Report</h5>`; // Header
+
+  if (contentItemResponse && contentItemResponse.function_response) {
+    if (contentItemResponse.function_response.response?.output) {
+      const outputContainer = document.createElement("div");
+      outputContainer.classList.add("text-attachment-panel", "bg-darker"); // Reuse style, maybe darker bg
+      outputContainer.innerHTML = marked.parse(
+        contentItemResponse.function_response.response.output,
+      );
+      responseDiv.appendChild(outputContainer);
+      const copyButton = createCopyButton(
+        contentItemResponse.function_response.response.output,
+      );
+      copyButton.classList.add("mt-2"); // Add margin top to copy button
+      responseDiv.appendChild(copyButton);
+    } else if (contentItemResponse.function_response.response?.error) {
+      const errorContainer = document.createElement("div");
+      errorContainer.classList.add("terminal-error", "p-2", "rounded"); // Style error
+      errorContainer.textContent =
+        contentItemResponse.function_response.response.error;
+      responseDiv.appendChild(errorContainer);
+    } else if (!isRunning && !isStopping) {
+      // Show placeholder only if not running/stopping and no output/error yet
+      responseDiv.innerHTML +=
+        '<p class="text-muted small mt-2">Report not generated or research stopped early.</p>';
+    }
+  } else if (!isRunning && !isStopping) {
+    // Add placeholder if response object doesn't exist and not running/stopping
+    responseDiv.innerHTML +=
+      '<p class="text-muted small mt-2">Report not generated yet.</p>';
+  }
+  attachmentDisplayArea.appendChild(responseDiv);
+
+  // --- Add Event Listeners Conditionally ---
+  if (isEditable) {
+    // Only add listeners if the research is running
+    const maxTopicsInput = document.getElementById(
+      `research-max-topics-${functionId}`,
+    );
+    const maxQueriesInput = document.getElementById(
+      `research-max-queries-${functionId}`,
+    );
+    const maxResultsInput = document.getElementById(
+      `research-max-results-${functionId}`,
+    );
+    const stopBtn = document.getElementById(
+      `research-stop-button-${functionId}`,
+    );
+
+    const handleMaxTopicsChange = (e) => {
+      const value = e.target.value ? parseInt(e.target.value, 10) : null;
+      if (value === null || value >= 1) {
+        socket.emit(`research-update_max_topics_${functionId}`, value);
+      } else {
+        e.target.value = extraData.max_topics || ""; // Revert if invalid
+      }
+    };
+    const handleMaxQueriesChange = (e) => {
+      const value = e.target.value ? parseInt(e.target.value, 10) : null;
+      if (value === null || value >= 1) {
+        socket.emit(`research-update_max_queries_${functionId}`, value);
+      } else {
+        e.target.value = extraData.max_search_queries || ""; // Revert
+      }
+    };
+    const handleMaxResultsChange = (e) => {
+      const value = e.target.value ? parseInt(e.target.value, 10) : null;
+      if (value === null || value >= 1) {
+        socket.emit(`research-update_max_results_${functionId}`, value);
+      } else {
+        e.target.value = extraData.max_search_results || ""; // Revert
+      }
+    };
+    const handleStopClick = () => {
+      socket.emit(`research-stop_${functionId}`);
+      // Disable button immediately for responsiveness
+      stopBtn.disabled = true;
+      stopBtn.classList.remove("btn-danger");
+      stopBtn.classList.add("btn-warning"); // Indicate stopping
+      stopBtn.innerHTML = `<i class="bi bi-hourglass-split"></i> Stopping`;
+      const statusSpan = document.getElementById(
+        `research-status-text-${functionId}`,
+      );
+      if (statusSpan) statusSpan.textContent = `(stopping)`;
+    };
+
+    maxTopicsInput?.addEventListener("change", handleMaxTopicsChange);
+    maxQueriesInput?.addEventListener("change", handleMaxQueriesChange);
+    maxResultsInput?.addEventListener("change", handleMaxResultsChange);
+    stopBtn?.addEventListener("click", handleStopClick);
+
+    // Store listeners for cleanup
+    activeResearchListeners[functionId] = {
+      maxTopics: handleMaxTopicsChange,
+      maxQueries: handleMaxQueriesChange,
+      maxResults: handleMaxResultsChange,
+      stop: handleStopClick,
+      cleanup: () => {
+        maxTopicsInput?.removeEventListener("change", handleMaxTopicsChange);
+        maxQueriesInput?.removeEventListener("change", handleMaxQueriesChange);
+        maxResultsInput?.removeEventListener("change", handleMaxResultsChange);
+        stopBtn?.removeEventListener("click", handleStopClick);
+        delete activeResearchListeners[functionId];
+        console.log(`Cleaned up listeners for research ${functionId}`);
+      },
+    };
+  } else {
+    // Ensure no listeners are active if not editable
+    if (activeResearchListeners[functionId]) {
+      activeResearchListeners[functionId].cleanup();
+    }
+  }
+
+  // Activate the content tab
+  const contentTab = new bootstrap.Tab(document.getElementById("content-tab"));
+  contentTab.show();
+}
+
+// --- Update Socket listener for incremental updates ---
+socket.on("research_update", (payload) => {
+  const { function_id, update_type, data } = payload;
+  // --- Update Configuration Inputs (Keep disabled if viewing details) ---
+  // No need to update values if they are disabled when viewing details.
+  // The initial display function handles setting the values.
+
+  // --- Update Topic Tree ---
+  if (update_type === "topic_tree") {
+    const container = document.getElementById(
+      `research-topic-container-${function_id}`,
+    );
+    if (container) {
+      container.innerHTML = ""; // Clear previous tree
+      renderTopicTree(data, container); // Render the new tree structure
+    }
+  }
+  // --- Append New Step ---
+  else if (update_type === "step") {
+    const container = document.getElementById(
+      `research-steps-container-${function_id}`,
+    );
+    if (container) {
+      const noStepsMsg = container.querySelector("p.text-muted");
+      if (noStepsMsg) noStepsMsg.remove();
+
+      const currentStepCount =
+        container.querySelectorAll(".research-step").length;
+      // Pass function_id to renderStep
+      renderStep(data, currentStepCount, container, function_id);
+    }
+  }
+  // --- Update Status (Stop Button, Status Text) ---
+  else if (update_type === "status") {
+    const stopButton = document.getElementById(
+      `research-stop-button-${function_id}`,
+    );
+    const stopStatus = document.getElementById(
+      `research-stop-status-${function_id}`,
+    );
+    const isStopped =
+      data.stopped ||
+      data.status === "stopped" ||
+      data.status === "finished" ||
+      data.status === "error";
+
+    // Update button appearance even if disabled
+    if (stopButton) {
+      stopButton.disabled = true; // Keep it disabled
+      stopButton.classList.remove("btn-danger", "btn-secondary"); // Remove existing color classes
+      stopButton.classList.add("btn-secondary"); // Always use disabled style
+      const statusText = data.status
+        ? data.status.charAt(0).toUpperCase() + data.status.slice(1)
+        : "Stopped";
+      stopButton.innerHTML = `<i class="bi bi-check-circle-fill"></i> ${statusText}`;
+    }
+    if (stopStatus) {
+      stopStatus.textContent = `(${data.status || (isStopped ? "stopped" : "running")})`;
+    }
+  }
+  // --- Update Final Response Area (Render as Markdown) ---
+  else if (update_type === "final_response") {
+    const responseContainer = document.getElementById(
+      `research-response-container-${function_id}`,
+    );
+    if (responseContainer) {
+      responseContainer.classList.remove("d-none");
+      responseContainer.innerHTML = `<h5>Final Report</h5>`;
+      if (data.output) {
+        const outputDiv = document.createElement("div");
+        outputDiv.classList.add("text-attachment-panel");
+        // *** Use marked.parse here ***
+        outputDiv.innerHTML = marked.parse(data.output);
+        responseContainer.appendChild(outputDiv);
+        // Add copy button for the original markdown source
+        const copyBtn = createCopyButton(data.output);
+        responseContainer.appendChild(copyBtn);
+      } else if (data.error) {
+        const errorDiv = document.createElement("div");
+        errorDiv.classList.add("terminal-error");
+        errorDiv.textContent = data.error;
+        responseContainer.appendChild(errorDiv);
+      }
+    }
+  }
+});
+
+// --- Socket listener for cleanup ---
+// Keep the existing research_finished listener as is
+socket.on("research_finished", (data) => {
+  const functionId = data.functionId;
+  // Clean up listeners on the client side
+  if (
+    activeResearchListeners[functionId] &&
+    activeResearchListeners[functionId].cleanup
+  ) {
+    activeResearchListeners[functionId].cleanup(); // Call the stored cleanup function
+  } else {
+    console.warn(
+      `No active listeners found to cleanup for research ${functionId}`,
+    );
+  }
+
+  // Ensure final button state is set (redundant if status update worked, but safe)
+  const stopButton = document.getElementById(
+    `research-stop-button-${functionId}`,
+  );
+  const stopStatus = document.getElementById(
+    `research-stop-status-${functionId}`,
+  );
+  if (stopButton) {
+    stopButton.disabled = true;
+    if (
+      !stopButton.innerHTML.includes("Finished") &&
+      !stopButton.innerHTML.includes("Stopped") &&
+      !stopButton.innerHTML.includes("Error")
+    ) {
+      stopButton.classList.remove("btn-danger");
+      stopButton.classList.add("btn-secondary");
+      stopButton.innerHTML =
+        '<i class="bi bi-check-circle-fill"></i> Finished/Stopped';
+    }
+  }
+  if (
+    stopStatus &&
+    !stopStatus.textContent.includes("finished") &&
+    !stopStatus.textContent.includes("stopped") &&
+    !stopStatus.textContent.includes("error")
+  ) {
+    stopStatus.textContent = "(Finished/Stopped)";
+  }
+});
+
+document.getElementById("chat-box").addEventListener("click", function (event) {
+  const clickableTarget = event.target.closest(".fn-call-box-clickable");
+  const errorTarget = event.target.closest(".fn-call-box-error");
+
+  if (clickableTarget && !errorTarget) {
+    const functionName = clickableTarget.dataset.functionName;
+    const functionId = clickableTarget.dataset.functionId;
+
+    if (functionName === "CreateFile") {
+      displayCreateFileContent(functionId);
+    } else if (functionName === "RunCommand") {
+      displayRunCommandOutput(functionId);
+    } else if (functionName === "FetchWebsite") {
+      displayFetchWebsiteOutput(functionId);
+    } else if (functionName === "GetSTDOut") {
+      displayGetSTDOutOutput(functionId);
+    } else if (functionName === "ReadFile") {
+      displayReadFileContent(functionId);
+    } else if (functionName === "WriteFile") {
+      displayWriteFileContent(functionId);
+    } else if (functionName === "DeepResearch") {
+      displayDeepResearchDetails(functionId);
+    }
+  } else if (errorTarget) {
+    const functionId = errorTarget.dataset.functionId;
+    const functionName = errorTarget.dataset.functionName;
+    if (functionName === "DeepResearch") {
+      // Also display details even on error for DeepResearch
+      displayDeepResearchDetails(functionId);
+    } else {
+      displayFunctionError(functionId);
+    }
+  }
+});
+
+socket.on("research_finished", (data) => {
+  const functionId = data.functionId;
+  // Clean up listeners on the client side
+  if (activeResearchListeners[functionId]) {
+    const maxTopicsInput = document.getElementById(
+      `research-max-topics-${functionId}`,
+    );
+    const maxQueriesInput = document.getElementById(
+      `research-max-queries-${functionId}`,
+    );
+    const maxResultsInput = document.getElementById(
+      `research-max-results-${functionId}`,
+    );
+    const stopBtn = document.getElementById(
+      `research-stop-button-${functionId}`,
+    );
+
+    maxTopicsInput?.removeEventListener(
+      "change",
+      activeResearchListeners[functionId].maxTopics,
+    );
+    maxQueriesInput?.removeEventListener(
+      "change",
+      activeResearchListeners[functionId].maxQueries,
+    );
+    maxResultsInput?.removeEventListener(
+      "change",
+      activeResearchListeners[functionId].maxResults,
+    );
+    stopBtn?.removeEventListener(
+      "click",
+      activeResearchListeners[functionId].stop,
+    );
+
+    // Update button state if it exists
+    if (stopBtn) {
+      stopBtn.disabled = true;
+      stopBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Finished';
+      const stopStatus = document.getElementById(
+        `research-stop-status-${functionId}`,
+      );
+      if (stopStatus) stopStatus.textContent = "(Finished/Stopped)";
+    }
+
+    delete activeResearchListeners[functionId];
+  }
+});
 // --------------------------------------------------------------------------
 // --- Notification Display ---
 // --------------------------------------------------------------------------
@@ -214,12 +915,6 @@ function deleteNotification(notificationId) {
 // ==========================================================================
 
 // --------------------------------------------------------------------------
-// --- Socket Communication ---
-// --------------------------------------------------------------------------
-
-const socket = io();
-
-// --------------------------------------------------------------------------
 // --- File Handling ---
 // --------------------------------------------------------------------------
 
@@ -356,8 +1051,6 @@ function initializeSortableForElement(ulElement, allChatsMap) {
         );
         return;
       }
-
-      console.log(`Chat ${chatId} moved. Target Parent ID: ${newParentId}`);
 
       // Send update to backend
       socket.emit("update_chat_parent", {
@@ -526,7 +1219,6 @@ function deleteChat(chatId, chatName) {
     `Are you sure you want to delete the chat "${chatName || chatId}"?\n\nChildren of this chat will be moved to its parent.\nThis action cannot be undone.`,
   );
   if (confirmation) {
-    console.log(`Requesting deletion of chat: ${chatId}`);
     socket.emit("delete_chat", { chat_id: chatId });
     // UI update will happen via 'chat_update' broadcast
   }
@@ -556,7 +1248,6 @@ function isDescendant(childId, potentialParentId, allChatsMap) {
 function switchChat(chatId) {
   if (current_chat_id === chatId) return;
 
-  console.log(`Switching to chat: ${chatId}`);
   const oldChatId = current_chat_id;
   current_chat_id = chatId;
   localStorage.setItem("current_chat_id", current_chat_id); // Save selection
@@ -873,8 +1564,6 @@ const updateMessageInChatBox = handleChatBoxUpdate((msg) => {
 const updateChatDisplay = handleChatBoxUpdate((messagesToDisplay) => {
   const chatBox = document.getElementById("chat-box");
   chatBox.innerHTML = ""; // Clear the chat box first
-
-  console.log(`Updating chat display for branch: ${current_chat_id}`);
 
   // Filter messages based on the current chat branch
   const filteredMessages = messagesToDisplay.filter((msg) =>
@@ -1415,8 +2104,8 @@ function renderFunctionCall(functionCall) {
     displayText = `<span class="fn-name">${name}</span> to <span class="fn-argv">${args.process_id}</span>`;
     // No response needed inline
   } else if (name === "DeepResearch") {
-    steps = extra_data["steps"];
-    displayText = `<span class="fn-name">${name}</span>`;
+    steps = extra_data.steps;
+    displayText = `<span class="fn-name">${name}</span> <span class="fn-argv">${extra_data.topic.topic}</span>`;
     steps.forEach((step) => {
       if (step.thoughts) displayText += step.thoughts;
     });
@@ -1587,7 +2276,6 @@ document.getElementById("chat-box").addEventListener("click", function (event) {
   const errorTarget = event.target.closest(".fn-call-box-error");
 
   if (clickableTarget && !errorTarget) {
-    // Handle non-error clicks first
     const functionName = clickableTarget.dataset.functionName;
     const functionId = clickableTarget.dataset.functionId;
 
@@ -1596,20 +2284,24 @@ document.getElementById("chat-box").addEventListener("click", function (event) {
     } else if (functionName === "RunCommand") {
       displayRunCommandOutput(functionId);
     } else if (functionName === "FetchWebsite") {
-      displayFetchWebsiteOutput(functionId); // New handler
-    } else if (functionName === "GetSTDOut") {
-      displayGetSTDOutOutput(functionId); // New handler
-    } else if (functionName === "ReadFile") {
-      displayReadFileContent(functionId); // New handler
-    } else if (functionName === "WriteFile") {
-      displayWriteFileContent(functionId); // New handler
-    } else if (functionName === "DeepResearch") {
       displayFetchWebsiteOutput(functionId);
+    } else if (functionName === "GetSTDOut") {
+      displayGetSTDOutOutput(functionId);
+    } else if (functionName === "ReadFile") {
+      displayReadFileContent(functionId);
+    } else if (functionName === "WriteFile") {
+      displayWriteFileContent(functionId);
+    } else if (functionName === "DeepResearch") {
+      displayDeepResearchDetails(functionId);
     }
   } else if (errorTarget) {
-    // Handle error clicks
     const functionId = errorTarget.dataset.functionId;
-    displayFunctionError(functionId);
+    const functionName = errorTarget.dataset.functionName;
+    if (functionName === "DeepResearch") {
+      displayDeepResearchDetails(functionId);
+    } else {
+      displayFunctionError(functionId);
+    }
   }
 });
 
@@ -2532,7 +3224,6 @@ const sendMessage = async () => {
 
   // Don't send empty messages unless files are attached
   if (!message && fileContents.length === 0) {
-    console.log("Empty message and no files. Not sending.");
     return;
   }
 
@@ -2565,7 +3256,6 @@ const sendMessage = async () => {
     updateTextareaRows();
 
     // Emit the message *after* potential file uploads
-    console.log(`Sending message to chat: ${current_chat_id}`);
     socket.emit("send_message", {
       message: message,
       files: filesData,
@@ -2603,7 +3293,6 @@ socket.on("connect", () => {
 });
 
 socket.on("chat_update", (data) => {
-  console.log("Received chat_update:", data);
   messages = data.messages || [];
   chats = (data.chats || []).reduce((acc, chat) => {
     acc[chat.id] = chat;

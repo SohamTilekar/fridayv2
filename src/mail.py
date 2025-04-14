@@ -81,11 +81,14 @@ def load_last_mail_checked():
     If the file doesn't exist, returns the current time.
     """
     last_checked_file = config.AI_DIR / "mail_last_checked.json"
-    if os.path.exists(last_checked_file):
-        with open(last_checked_file, "r") as f:
-            data = json.load(f)
-            if "last_checked" in data:
-                return datetime.datetime.fromisoformat(data["last_checked"])
+    try:
+        if os.path.exists(last_checked_file):
+            with open(last_checked_file, "r") as f:
+                data = json.load(f)
+                if "last_checked" in data:
+                    return datetime.datetime.fromisoformat(data["last_checked"])
+    except json.decoder.JSONDecodeError:
+        pass
     return datetime.datetime.now()  # Use current time if file doesn't exist
 
 

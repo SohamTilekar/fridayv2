@@ -12,6 +12,7 @@ from google.genai import types
 from global_shares import global_shares
 import config
 import prompt
+import threading
 import utils
 
 
@@ -56,7 +57,7 @@ class Topic:
     queries: Optional[list[str]]
     urls: list[str] = []
     fetched_content: Optional[
-        list[tuple[str, str, list[str]]]  # url  # fetched content  # linkes on site
+        list[tuple[str, str, list[str]]]  # url  # fetched content  # links on site
     ]
     researched: bool
 
@@ -68,7 +69,7 @@ class Topic:
         queries: Optional[list[str]] = None,
         sites: Optional[list[str]] = None,
         fetched_content: Optional[
-            list[tuple[str, str, list[str]]]  # url  # fetched content  # linkes on site
+            list[tuple[str, str, list[str]]]  # url  # fetched content  # links on site
         ] = None,
         researched: Optional[bool] = None,
     ):
@@ -108,10 +109,14 @@ class Topic:
         return details
 
     def get_unresearched_topic(self) -> "Topic | None":
-        """Recursively find the first unresearched topic."""
+        """
+        Recursively find the deepest unresearched topic in the topic tree,
+        prioritizing subtopics over the current topic.
+        """
         for topic in self.sub_topics:
-            if not topic.researched:
-                return topic.get_unresearched_topic() or topic
+            ut = topic.get_unresearched_topic()
+            if ut:
+                return ut
         if not self.researched:
             return self
         return None
@@ -177,6 +182,8 @@ class DeepResearcher:
     max_search_results: int | None  # None for any
     call_back: Callable[[dict[str, Any] | None], None]
     ddgs: duckduckgo_search.DDGS
+    class StopResearch(Exception):
+        ...
 
     def __init__(
         self,
@@ -196,6 +203,16 @@ class DeepResearcher:
         self.max_search_results = max_search_results
         self.ddgs = duckduckgo_search.DDGS()
         self.topic = Topic(topic=query)
+        self._stop_event = threading.Event()
+
+    @property
+    def stop(self):
+        return self._stop_event.is_set()
+
+    @stop.setter
+    def stop(self, value: bool):
+        if value:
+            self._stop_event.set()
 
     def _is_query_question(self) -> bool:
         return (
@@ -252,7 +269,8 @@ class DeepResearcher:
 
             🚫 Do NOT use if:
             - The tree is already complete or near-complete
-            - The idea is vague, redundant, or unsupported by content
+            - The idea is vague, redundant, or
+            unsupported by content
             - There are more than two existing unresearched subtopics *unless* this one adds essential clarity
 
             ✅ You MAY call this multiple times if each new subtopic meets all quality criteria
@@ -474,6 +492,7 @@ class DeepResearcher:
                             text += f'$%successful call=`add site` args=`id="{part.function_call.args.get("id")}", site={part.function_call.args.get("site")}`%$'
             if not called:
                 break
+            if self.stop: raise DeepResearcher.StopResearch()
             contents[0].parts[0].text = f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai(id)}"  # type: ignore
         return text
 
@@ -541,9 +560,9 @@ class DeepResearcher:
         results = self.ddgs.text(
             query, backend="lite", safesearch="off", max_results=self.max_search_results
         )
-        linkes = [result["href"] for result in results]
-        self.call_back({"action": "search", "query": query, "linkes": linkes})
-        return linkes
+        links = [result["href"] for result in results]
+        self.call_back({"action": "search", "query": query, "links": links})
+        return links
 
     def _search_and_fetch(self, unresearched_topic: Topic, visited_urls: set[str]):
 
@@ -551,6 +570,8 @@ class DeepResearcher:
             try:
                 self.call_back({"action": "fetching_url", "url": url})
                 fetch_model = self.fetch_url(url)
+                if not fetch_model:
+                    return None
                 return (url, fetch_model["markdown"], fetch_model["links"])
             except Exception as e:
                 print(f"Error fetching URL {url}: {e}")
@@ -577,49 +598,73 @@ class DeepResearcher:
         queries = unresearched_topic.queries or []
         urls = unresearched_topic.urls or []
 
+        # Somewhere in your method:
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=min(32, len(queries) + len(urls))
-        ) as executor:  # Limit max workers
+        ) as executor:
 
             futures = [
                 executor.submit(search_and_fetch_query, query) for query in queries
             ]
             futures.append(executor.submit(process_urls, urls))
 
-            for future in concurrent.futures.as_completed(futures):
+            completed = set()
+
+            while len(completed) < len(futures):
+                if self.stop:
+                    raise DeepResearcher.StopResearch("Research was manually stopped.")
+
                 try:
-                    results = future.result()
-                    unresearched_topic.fetched_content.extend(results)
-                except Exception as e:
-                    print(f"Error during concurrent execution: {e}")
-                    traceback.print_exc()
+                    for future in concurrent.futures.as_completed(futures, timeout=0.1):
+                        if future in completed:
+                            continue
+
+                        if self.stop:
+                            raise DeepResearcher.StopResearch("Research was manually stopped.")
+
+                        completed.add(future)
+
+                        try:
+                            results = future.result()
+                            unresearched_topic.fetched_content.extend(results)
+                        except Exception as e:
+                            print(f"Error during concurrent execution: {e}")
+                            traceback.print_exc()
+                except concurrent.futures.TimeoutError:
+                    # No futures completed during this 0.1s window; check self.stop again
+                    continue
 
     def research(self) -> str:
         current_depth: int = 0
         visited_urls: set[str] = set()
-        while True:
-            unresearched_topic = self.topic.get_unresearched_topic()
-            if not unresearched_topic:
-                break
+        try:
+            while not self.stop:
+                unresearched_topic = self.topic.get_unresearched_topic()
+                if not unresearched_topic:
+                    break
 
-            if not unresearched_topic.queries:
-                unresearched_topic.queries = self._generate_queries(
-                    unresearched_topic.topic
+                if not unresearched_topic.queries:
+                    unresearched_topic.queries = self._generate_queries(
+                        unresearched_topic.topic
+                    )
+                    self.call_back({})
+                if self.stop: raise DeepResearcher.StopResearch()
+
+                self._search_and_fetch(unresearched_topic, visited_urls)
+
+                unresearched_topic.researched = True
+                if current_depth >= (self.max_topics or float("inf")):
+                    break
+                current_depth += 1
+                if self.stop: raise DeepResearcher.StopResearch()
+                self.call_back(
+                    {
+                        "action": "thinking",
+                        "thoughts": self.analyse_add_topic(unresearched_topic.id),
+                    }
                 )
-                self.call_back({})
-
-            self._search_and_fetch(unresearched_topic, visited_urls)
-
-            unresearched_topic.researched = True
-            if current_depth >= (self.max_topics or float("inf")):
-                break
-            current_depth += 1
-            self.call_back(
-                {
-                    "action": "thinking",
-                    "thoughts": self.analyse_add_topic(unresearched_topic.id),
-                }
-            )
+        except DeepResearcher.StopResearch:
+            pass # Dont care abot how much reacsher has complited
 
         report = self._generate_report()
         return report
@@ -638,9 +683,17 @@ class DeepResearcher:
                         text=prompt.REPORT_GEN_USR_INSTR.format(topic=self.topic.topic)
                     ),
                 ],
-            )
+            ),
+            types.Content(
+                role="model",
+                parts=[
+                    types.Part(
+                        text="# "
+                    )
+                ],
+            ),
         ]
-        report_str: str = ""
+        report_str: str = "# "
         while True:
             result = utils.retry(
                 exceptions=utils.network_errors,
@@ -678,7 +731,7 @@ class DeepResearcher:
 
         return report_str
 
-    def fetch_url(self, url: str, wait_for: int = 4000) -> FetchModel:
+    def fetch_url(self, url: str, wait_for: int = 4000) -> Optional[FetchModel]:
         while True:
             scrape_result = utils.retry(
                 exceptions=utils.network_errors,
@@ -695,6 +748,8 @@ class DeepResearcher:
             )
             if scrape_result:
                 return scrape_result
+            else:
+                return None
         img = (
             utils.retry(
                 exceptions=utils.network_errors,
@@ -759,14 +814,33 @@ class DeepResearcher:
 
 def DeepResearch(
     query: str,
-    max_topics: Optional[int],
-    max_search_queries: Optional[int],
-    max_search_results: Optional[int],
+    max_topics: Optional[int] = None,
+    max_search_queries: Optional[int] = None,
+    max_search_results: Optional[int] = None,
 ) -> str:
     """\
-    Dose the Deep Research on given query, query can be question or topic to be reseatch on.
+    Performs comprehensive research on a given topic or question by automatically:
+    1. Searching for relevant information online
+    2. Analyzing and categorizing the search results
+    3. Generating focused subtopics
+    4. Gathering detailed information for each subtopic
+    5. Creating a well-structured, in-depth final report/answer
+
+    Args:
+        query (Required[str]): The research topic or question to investigate. Can be a broad subject
+                    or a specific question.
+        max_topics (Optional[int]): Maximum number of subtopics to explore during research.
+                    Defaults to None (unlimited topics).
+        max_search_queries (Optional[int]): Maximum number of search queries to generate per topic.
+                    Defaults to None (system will use a reasonable default, usually 5).
+        max_search_results (Optional[int]): Maximum number of search results to process per query.
+                    Defaults to None (system will use a reasonable default, usually 7).
+
+    Returns:
+        str: A comprehensive research report containing all findings organized by topic,
+             with citations, relevant links, and structured analysis.
     """
-    ...  # dummy function for AI refrence
+    ...  # dummy function for AI reference
 
 
 # DeepResearcher(max_depth=10, query="list of presidents of india, some information about them, and their achievements").research()
