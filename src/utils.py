@@ -153,7 +153,7 @@ class FetchLimiter:
                 cls._instance.last_reset = time.time()
             return cls._instance
 
-    def __call__(self, func: Callable[P, R]) -> Callable[P, R]:
+    def __call__(self, func: Callable[P, R]) -> Callable[P, R | None]:
         """
         Wraps the given function to limit its execution rate.
 
@@ -165,11 +165,11 @@ class FetchLimiter:
         """
 
         @functools.wraps(func)
-        def limited_func(*args: P.args, **kwargs: P.kwargs) -> R:
+        def limited_func(*args: P.args, **kwargs: P.kwargs) -> R | None:
             """
             The wrapped function that enforces the rate limits.
             """
-            with self._semaphore:  # Acquire semaphore to limit concurrent requets
+            with self._semaphore:  # Acquire semaphore to limit concurrent requests
                 with self._lock:
                     now = time.time()
                     # Reset the call count if the period has elapsed
@@ -202,7 +202,6 @@ class FetchLimiter:
                     pass
 
         return limited_func
-
 
 network_errors: tuple[type[Exception], ...] = (
     # Built-in exceptions

@@ -65,25 +65,115 @@ function handleChatBoxUpdate(updateFunction) {
     return result;
   };
 }
+
 // --- Function to render Topic Tree Recursively ---
 function renderTopicTree(topicData, parentElement, level = 0) {
   const topicDiv = document.createElement("div");
   topicDiv.style.marginLeft = `${level * 1.5}rem`;
-  topicDiv.classList.add("topic-node");
+  topicDiv.classList.add("topic-node", "mb-2"); // Add margin bottom for spacing
 
-  const topicHeader = document.createElement("strong");
-  topicHeader.textContent = topicData.topic;
+  const topicHeader = document.createElement("div");
+  topicHeader.classList.add("d-flex", "align-items-center");
+  topicHeader.innerHTML = `
+        <strong class="me-2">${topicData.topic}</strong>
+        <small class="text-muted">(ID: ${topicData.id}, Researched: ${topicData.researched ? '<span class="text-success">Yes</span>' : '<span class="text-warning">No</span>'})</small>
+    `;
   topicDiv.appendChild(topicHeader);
 
+  const detailsCollapseId = `topic-details-collapse-${topicData.id}-${level}`;
+  const detailsButton = createButton(
+    "btn btn-sm btn-outline-secondary ms-2 py-0 px-1",
+    '<i class="bi bi-arrows-expand"></i> Details',
+  );
+  detailsButton.setAttribute("data-bs-toggle", "collapse");
+  detailsButton.setAttribute("data-bs-target", `#${detailsCollapseId}`);
+  detailsButton.setAttribute("aria-expanded", "false");
+  detailsButton.setAttribute("aria-controls", detailsCollapseId);
+  topicHeader.appendChild(detailsButton); // Add button to header
+
+  const topicDetailsCollapse = document.createElement("div");
+  topicDetailsCollapse.classList.add("collapse");
+  topicDetailsCollapse.id = detailsCollapseId;
+
   const topicDetails = document.createElement("div");
-  topicDetails.classList.add("topic-details", "ms-2"); // Add some margin
-  topicDetails.innerHTML = `
-        <small class="text-muted">(ID: ${topicData.id}, Researched: ${topicData.researched ? "Yes" : "No"})</small><br>
-        ${topicData.queries ? `<strong>Queries:</strong><pre>${topicData.queries.join("\n")}</pre>` : ""}
-        ${topicData.urls && topicData.urls.length > 0 ? `<strong>Sites:</strong><ul>${topicData.urls.map((url) => `<li><a href="${url}" target="_blank">${url}</a></li>`).join("")}</ul>` : ""}
-        ${topicData.fetched_content && topicData.fetched_content.length > 0 ? `<strong>Fetched:</strong> ${topicData.fetched_content.length} items` : ""}
-    `;
-  topicDiv.appendChild(topicDetails);
+  topicDetails.classList.add(
+    "topic-details",
+    "ms-3",
+    "mt-1",
+    "p-2",
+    "bg-dark", // Changed to bg-dark for better contrast
+    "border",
+    "border-secondary",
+    "rounded",
+    "small",
+  ); // Styling for details
+
+  let detailsHTML = "";
+
+  // --- Queries ---
+  const allQueries = new Set([
+    ...(topicData.queries || []),
+    ...(topicData.searched_queries || []),
+  ]);
+  if (allQueries.size > 0) {
+    detailsHTML += `<h6>Queries:</h6><ul class="list-unstyled mb-1">`;
+    allQueries.forEach((q) => {
+      const isSearched = topicData.searched_queries?.includes(q);
+      const icon = isSearched
+        ? '<i class="bi bi-check-lg text-success"></i>'
+        : '<i class="bi bi-hourglass-split text-warning"></i>';
+      const textClass = isSearched ? "text-success" : "text-warning";
+      detailsHTML += `<li class="${textClass}">${icon} <code>${q}</code></li>`;
+    });
+    detailsHTML += `</ul>`;
+  }
+
+  // --- URLs ---
+  // Merge URLs from different states
+  const plannedUrls = new Set([
+    ...(topicData.planed_fetchurl || []), // Potential typo? Should match backend
+    ...(topicData.urls || []),
+  ]);
+  const fetchedUrls = new Set(topicData.fetched_urls || []);
+  const failedUrls = new Set([
+    ...(topicData.failed_fetchurl || []), // Potential typo? Should match backend
+    ...(topicData.failed_fetched_urls || []),
+  ]);
+
+  // Create a combined set of all unique URLs involved with this topic
+  const allUrls = new Set([...plannedUrls, ...fetchedUrls, ...failedUrls]);
+
+  if (allUrls.size > 0) {
+    detailsHTML += `<h6 class="mt-2">URLs:</h6><ul class="list-unstyled mb-1">`;
+    allUrls.forEach((url) => {
+      let statusIcon = '<i class="bi bi-hourglass-split text-warning"></i>'; // Default: Planned
+      let textClass = "text-warning";
+      let statusText = "(Planned)";
+
+      if (fetchedUrls.has(url)) {
+        statusIcon = '<i class="bi bi-check-lg text-success"></i>';
+        textClass = "text-success";
+        statusText = "(Fetched)";
+      } else if (failedUrls.has(url)) {
+        statusIcon = '<i class="bi bi-x-lg text-danger"></i>';
+        textClass = "text-danger";
+        statusText = "(Failed)";
+      }
+
+      detailsHTML += `<li class="${textClass}">${statusIcon} <a href="${url}" target="_blank" class="${textClass}">${url}</a> <span class="text-muted">${statusText}</span></li>`;
+    });
+    detailsHTML += `</ul>`;
+  }
+
+  // Optionally add fetched content count
+  if (topicData.fetched_content && topicData.fetched_content.length > 0) {
+    detailsHTML += `<h6 class="mt-2">Fetched Content Items:</h6><p class="m-0">${topicData.fetched_content.length}</p>`;
+  }
+
+  topicDetails.innerHTML =
+    detailsHTML || '<p class="text-muted m-0">No details available.</p>';
+  topicDetailsCollapse.appendChild(topicDetails);
+  topicDiv.appendChild(topicDetailsCollapse);
 
   parentElement.appendChild(topicDiv);
 
@@ -94,40 +184,196 @@ function renderTopicTree(topicData, parentElement, level = 0) {
   }
 }
 
-// --- Helper function to render a single step ---
+// --- Helper function to render a single step (Updated for Search Grid & Tooltip Init) ---
 function renderStep(stepData, index, container, functionId) {
-  // Added functionId
   const stepDiv = document.createElement("div");
-  stepDiv.classList.add("research-step", "mb-2", "pb-2", "border-bottom");
-  let stepContent = `<strong>Step ${index + 1}: ${stepData.type}</strong>`;
+  stepDiv.classList.add(
+    "research-step",
+    "mb-3", // Increased margin bottom
+    "pb-2",
+    "border-bottom",
+    "border-secondary",
+  );
+
+  // Assign ID if the step has one (e.g., search steps)
+  if (stepData.id) {
+    stepDiv.dataset.stepId = stepData.id;
+    stepDiv.id = `research-step-${functionId}-${stepData.id}`; // Unique DOM ID
+  } else {
+    stepDiv.id = `research-step-${functionId}-${index}`; // Fallback ID
+  }
+
+  let stepTitle = `<strong>Step ${index + 1}: ${stepData.type.charAt(0).toUpperCase() + stepData.type.slice(1)}</strong>`;
+  let stepDetailsHTML = "";
 
   if (stepData.type === "thinking" && stepData.content) {
     const thinkingCollapseId = `thinking-collapse-${functionId}-${index}`;
-    // Add a toggle button for thinking content
-    stepContent += `
+    stepTitle += `
             <button class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" type="button" data-bs-toggle="collapse" data-bs-target="#${thinkingCollapseId}" aria-expanded="false" aria-controls="${thinkingCollapseId}">
                 <i class="bi bi-arrows-expand"></i> Toggle Thoughts
             </button>
+        `;
+    stepDetailsHTML = `
             <div class="collapse" id="${thinkingCollapseId}">
-                <div class="mt-1 mb-0 p-2 bg-dark text-light rounded small border border-secondary">
+                <div class="mt-1 mb-0 p-2 bg-darker text-light rounded small border border-secondary">
                     ${marked.parse(stepData.content)}
                 </div>
             </div>
         `;
-  } else if (stepData.type === "fetch" && stepData.url) {
-    stepContent += `<br><small>URL: <a href="${stepData.url}" target="_blank">${stepData.url}</a></small>`;
-  } else if (stepData.type === "search" && stepData.query) {
-    stepContent += `<br><small>Query: <code>${stepData.query}</code></small>`;
-    if (stepData.links && stepData.links.length > 0) {
-      stepContent += `<br><small>Found Links:</small><ul class="list-unstyled small mb-0">${stepData.links.map((l) => `<li><a href="${l}" target="_blank">${l}</a></li>`).join("")}</ul>`;
-    }
-  } else if (stepData.type === "report_gen") {
-    stepContent += `<br><small>Generating final report...</small>`;
-  }
-  // Add more conditions for other step types if needed
+  } else if (stepData.type === "search") {
+    const searchCollapseId = `search-collapse-${functionId}-${stepData.id || index}`;
+    // Display the topic name with the search
+    stepTitle += ` for Topic: <span class="text-info fst-italic">${stepData.topic_name || "Unknown"}</span>`;
+    stepTitle += `
+          <button class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" type="button" data-bs-toggle="collapse" data-bs-target="#${searchCollapseId}" aria-expanded="true" aria-controls="${searchCollapseId}">
+              <i class="bi bi-arrows-collapse"></i> Details
+          </button>
+      `;
 
-  stepDiv.innerHTML = stepContent;
-  container.appendChild(stepDiv);
+    const renderGridItem = (item, type) => {
+      if (type === "query") {
+        let statusClass = "planned"; // Default: planned
+        let statusIcon = "bi-hourglass-split";
+        let tooltipText = "Planned";
+        if (stepData.researched_queries?.includes(item)) {
+          statusClass = "searched";
+          statusIcon = "bi-check-lg";
+          tooltipText = "Searched";
+        }
+        // Keep query rendering simple (or adjust if needed)
+        return `
+            <div class="research-grid-item query-item ${statusClass}" data-bs-toggle="tooltip" title="${tooltipText}">
+                <i class="bi ${statusIcon} me-1"></i>
+                <code>${item}</code>
+            </div>`;
+      } else if (type === "url") {
+        let statusClass = ""; // Base class for state
+        let tooltipText = "Planning...";
+        let shimmerClass = ""; // Shimmer applied via CSS based on 'planned' and 'shimmer-active' states
+
+        // Determine status and apply classes/tooltip text
+        const fetchedUrlsInStep = new Set(stepData.fetched_urls || []);
+        const failedUrlsInStep = new Set(stepData.fetched_failed_urls || []);
+        const fetchedUrlsPreviously = new Set(
+          stepData.researched_fetchurl || [],
+        );
+        const failedUrlsPreviously = new Set(stepData.failed_fetchurl || []);
+
+        if (fetchedUrlsInStep.has(item) || fetchedUrlsPreviously.has(item)) {
+          statusClass = "fetched"; // Class for fetched state
+          tooltipText = "Fetched";
+        } else if (
+          failedUrlsInStep.has(item) ||
+          failedUrlsPreviously.has(item)
+        ) {
+          statusClass = "failed"; // Class for failed state
+          tooltipText = "Failed";
+        } else {
+          statusClass = "planned"; // Class for planned state (default)
+          // Add shimmer class only if actively planning
+          if (stepData.status === "planning") {
+            shimmerClass = "shimmer-active";
+          }
+        }
+
+        // Get URL metadata
+        const urlMeta = stepData.url_metadata?.[item] || {};
+        const urlTitle = urlMeta.title || "";
+        const favicon = urlMeta.favicon
+          ? `<img src="${urlMeta.favicon}" class="url-favicon" alt="">`
+          : `<i class="bi bi-globe url-favicon-placeholder"></i>`; // Placeholder icon
+
+        // Extract domain for display
+        let displayUrl = item;
+        try {
+          const urlObject = new URL(item);
+          displayUrl = urlObject.hostname.replace(/^www\./, ""); // Show domain without www.
+        } catch (e) {
+          // Keep original item if URL parsing fails
+          console.warn(`Could not parse URL: ${item}`, e);
+        }
+
+        // Construct the HTML structure matching the image
+        return `
+            <div class="research-grid-item url-item ${statusClass} ${shimmerClass}" data-bs-toggle="tooltip"
+                 title="${tooltipText}: ${item}${urlTitle ? " - " + urlTitle : ""}">
+                ${favicon}
+                <div class="url-details">
+                    <span class="url-domain">${displayUrl}</span>
+                    <span class="url-title">${urlTitle}</span>
+                </div>
+            </div>`;
+      }
+      return "";
+    };
+
+    // Combine all relevant queries and URLs for display in this step
+    const queriesToShow = new Set([
+      ...(stepData.planed_queries || []),
+      ...(stepData.researched_queries || []),
+    ]);
+    const urlsToShow = new Set([
+      ...(stepData.planed_fetchurl || []),
+      ...(stepData.urls || []),
+      ...(stepData.researched_fetchurl || []),
+      ...(stepData.fetched_urls || []),
+      ...(stepData.failed_fetchurl || []),
+      ...(stepData.fetched_failed_urls || []),
+    ]);
+
+    // Use specific classes for query and URL grids
+    stepDetailsHTML = `
+            <div class="collapse show" id="${searchCollapseId}">
+                 <div class="mt-2 p-2 bg-darker text-light rounded border border-secondary">
+                    ${queriesToShow.size > 0 ? "<h6>Queries:</h6>" : ""}
+                    <div class="research-grid query-grid">
+                        ${Array.from(queriesToShow)
+                          .map((q) => renderGridItem(q, "query"))
+                          .join("")}
+                    </div>
+                    ${urlsToShow.size > 0 ? '<h6 class="mt-3">URLs:</h6>' : ""}
+                     <div class="research-grid url-grid">
+                        ${Array.from(urlsToShow)
+                          .map((url) => renderGridItem(url, "url"))
+                          .join("")}
+                    </div>
+                </div>
+            </div>
+        `;
+  } else if (stepData.type === "report_gen") {
+    stepDetailsHTML = `<div class="d-flex align-items-center text-muted small mt-1">
+                            <div class="spinner-border spinner-border-sm me-2" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            Generating final report...
+                         </div>`;
+  } else if (stepData.type === "done_generating_report") {
+    stepTitle = `<strong>Step ${index + 1}: Report Generated</strong> <i class="bi bi-check-circle-fill text-success"></i>`;
+    stepDetailsHTML = `<small class="text-muted d-block mt-1">Final report is available below.</small>`;
+  }
+  // Keep the old fetch type rendering if needed (though likely covered by search)
+  else if (stepData.type === "fetch" && stepData.url) {
+    stepDetailsHTML = `<small class="d-block mt-1">Fetched URL: <a href="${stepData.url}" target="_blank">${stepData.url}</a></small>`;
+  }
+
+  stepDiv.innerHTML = stepTitle + stepDetailsHTML;
+  container.appendChild(stepDiv); // Append the fully constructed step
+
+  // Initialize tooltips AFTER appending, specifically for search steps
+  if (stepData.type === "search") {
+    // Use requestAnimationFrame to ensure the browser has processed the DOM update
+    requestAnimationFrame(() => {
+      const tooltipTriggerList = stepDiv.querySelectorAll(
+        '[data-bs-toggle="tooltip"]',
+      );
+      tooltipTriggerList.forEach((tooltipTriggerEl) => {
+        // Avoid re-initializing if it somehow already exists
+        if (!bootstrap.Tooltip.getInstance(tooltipTriggerEl)) {
+          new bootstrap.Tooltip(tooltipTriggerEl);
+        }
+      });
+    });
+  }
 }
 
 function displayDeepResearchDetails(functionId) {
@@ -158,19 +404,18 @@ function displayDeepResearchDetails(functionId) {
     console.error(`Function call for ID ${functionId} not found in message.`);
     // Still display response/error if available
     if (contentItemResponse) {
-      displayFunctionErrorOrOutput(functionId, contentItemResponse); // You might need this helper
+      // Assuming displayFunctionError exists or handles both error/output
+      displayFunctionError(functionId);
     }
     return;
   }
 
   const extraData = contentItemCall.function_call.extra_data || {};
-  const functionName = contentItemCall.function_call.name;
   const status =
     extraData.status || (contentItemResponse ? "finished" : "running"); // Infer status
   const isRunning = status === "running";
   const isStopping = status === "stopping";
   const isFinished = status === "finished";
-  const isStopped = status === "stopped";
   const isError = status === "error";
   const isEditable = isRunning; // Config is editable only when running
 
@@ -189,10 +434,10 @@ function displayDeepResearchDetails(functionId) {
   configSectionDiv.classList.add(
     "research-section",
     "mb-3",
-    "p-3", // Increased padding
+    "p-3",
     "border",
     "rounded",
-    "bg-dark", // Darker background for section
+    "bg-dark",
   );
 
   const configHeader = document.createElement("div");
@@ -200,9 +445,9 @@ function displayDeepResearchDetails(functionId) {
     "d-flex",
     "justify-content-between",
     "align-items-center",
-    "mb-2", // Margin below header
+    "mb-2",
   );
-  configHeader.innerHTML = `<h5 class="mb-0 text-light">Configuration</h5>`; // Adjusted header style
+  configHeader.innerHTML = `<h5 class="mb-0 text-light">Configuration</h5>`;
   const configToggleButton = createButton(
     "btn btn-sm btn-outline-secondary py-0 px-1",
     '<i class="bi bi-arrows-expand"></i> Toggle',
@@ -270,7 +515,7 @@ function displayDeepResearchDetails(functionId) {
 
   // --- Stop Button and Status ---
   const stopGroup = document.createElement("div");
-  stopGroup.classList.add("d-flex", "align-items-center", "mt-3"); // Added margin top
+  stopGroup.classList.add("d-flex", "align-items-center", "mt-3");
 
   let stopButtonClass = "btn-secondary"; // Default
   let stopButtonIcon = "bi-slash-circle-fill";
@@ -358,9 +603,9 @@ function displayDeepResearchDetails(functionId) {
   topicCollapseDiv.id = `research-topic-collapse-${functionId}`;
   const topicTreeContainer = document.createElement("div");
   topicTreeContainer.id = `research-topic-container-${functionId}`;
-  topicTreeContainer.classList.add("mt-2"); // Add margin top to container
+  topicTreeContainer.classList.add("mt-2");
   if (extraData.topic) {
-    renderTopicTree(extraData.topic, topicTreeContainer);
+    renderTopicTree(extraData.topic, topicTreeContainer); // Uses updated renderTopicTree
   } else {
     topicTreeContainer.innerHTML =
       '<p class="text-muted small">Topic tree not available yet.</p>';
@@ -386,7 +631,7 @@ function displayDeepResearchDetails(functionId) {
     "align-items-center",
     "mb-2",
   );
-  stepsHeader.innerHTML = `<h5 class="mb-0 text-light">Steps</h5>`;
+  stepsHeader.innerHTML = `<h5 class="mb-0 text-light">Research Steps</h5>`;
   const stepsToggleButton = createButton(
     "btn btn-sm btn-outline-secondary py-0 px-1",
     '<i class="bi bi-arrows-expand"></i> Toggle',
@@ -409,10 +654,11 @@ function displayDeepResearchDetails(functionId) {
   stepsCollapseDiv.id = `research-steps-collapse-${functionId}`;
   const stepsContainer = document.createElement("div");
   stepsContainer.id = `research-steps-container-${functionId}`;
-  stepsContainer.classList.add("mt-2"); // Add margin top
+  stepsContainer.classList.add("mt-2");
   if (extraData.steps && extraData.steps.length > 0) {
+    // Use the updated renderStep function
     extraData.steps.forEach((step, index) => {
-      renderStep(step.data, index, stepsContainer, functionId);
+      renderStep(step, index, stepsContainer, functionId); // Uses updated renderStep
     });
   } else {
     stepsContainer.innerHTML =
@@ -431,13 +677,13 @@ function displayDeepResearchDetails(functionId) {
     "border",
     "rounded",
     "bg-dark",
-  ); // Consistent section styling
-  responseDiv.innerHTML = `<h5 class="mb-2 text-light">Final Report</h5>`; // Header
+  );
+  responseDiv.innerHTML = `<h5 class="mb-2 text-light">Final Report</h5>`;
 
   if (contentItemResponse && contentItemResponse.function_response) {
     if (contentItemResponse.function_response.response?.output) {
       const outputContainer = document.createElement("div");
-      outputContainer.classList.add("text-attachment-panel", "bg-darker"); // Reuse style, maybe darker bg
+      outputContainer.classList.add("text-attachment-panel", "bg-darker");
       outputContainer.innerHTML = marked.parse(
         contentItemResponse.function_response.response.output,
       );
@@ -445,21 +691,19 @@ function displayDeepResearchDetails(functionId) {
       const copyButton = createCopyButton(
         contentItemResponse.function_response.response.output,
       );
-      copyButton.classList.add("mt-2"); // Add margin top to copy button
+      copyButton.classList.add("mt-2");
       responseDiv.appendChild(copyButton);
     } else if (contentItemResponse.function_response.response?.error) {
       const errorContainer = document.createElement("div");
-      errorContainer.classList.add("terminal-error", "p-2", "rounded"); // Style error
+      errorContainer.classList.add("terminal-error", "p-2", "rounded");
       errorContainer.textContent =
         contentItemResponse.function_response.response.error;
       responseDiv.appendChild(errorContainer);
     } else if (!isRunning && !isStopping) {
-      // Show placeholder only if not running/stopping and no output/error yet
       responseDiv.innerHTML +=
         '<p class="text-muted small mt-2">Report not generated or research stopped early.</p>';
     }
   } else if (!isRunning && !isStopping) {
-    // Add placeholder if response object doesn't exist and not running/stopping
     responseDiv.innerHTML +=
       '<p class="text-muted small mt-2">Report not generated yet.</p>';
   }
@@ -467,7 +711,6 @@ function displayDeepResearchDetails(functionId) {
 
   // --- Add Event Listeners Conditionally ---
   if (isEditable) {
-    // Only add listeners if the research is running
     const maxTopicsInput = document.getElementById(
       `research-max-topics-${functionId}`,
     );
@@ -486,7 +729,7 @@ function displayDeepResearchDetails(functionId) {
       if (value === null || value >= 1) {
         socket.emit(`research-update_max_topics_${functionId}`, value);
       } else {
-        e.target.value = extraData.max_topics || ""; // Revert if invalid
+        e.target.value = extraData.max_topics || "";
       }
     };
     const handleMaxQueriesChange = (e) => {
@@ -494,7 +737,7 @@ function displayDeepResearchDetails(functionId) {
       if (value === null || value >= 1) {
         socket.emit(`research-update_max_queries_${functionId}`, value);
       } else {
-        e.target.value = extraData.max_search_queries || ""; // Revert
+        e.target.value = extraData.max_search_queries || "";
       }
     };
     const handleMaxResultsChange = (e) => {
@@ -502,15 +745,14 @@ function displayDeepResearchDetails(functionId) {
       if (value === null || value >= 1) {
         socket.emit(`research-update_max_results_${functionId}`, value);
       } else {
-        e.target.value = extraData.max_search_results || ""; // Revert
+        e.target.value = extraData.max_search_results || "";
       }
     };
     const handleStopClick = () => {
       socket.emit(`research-stop_${functionId}`);
-      // Disable button immediately for responsiveness
       stopBtn.disabled = true;
       stopBtn.classList.remove("btn-danger");
-      stopBtn.classList.add("btn-warning"); // Indicate stopping
+      stopBtn.classList.add("btn-warning");
       stopBtn.innerHTML = `<i class="bi bi-hourglass-split"></i> Stopping`;
       const statusSpan = document.getElementById(
         `research-status-text-${functionId}`,
@@ -523,23 +765,31 @@ function displayDeepResearchDetails(functionId) {
     maxResultsInput?.addEventListener("change", handleMaxResultsChange);
     stopBtn?.addEventListener("click", handleStopClick);
 
-    // Store listeners for cleanup
-    activeResearchListeners[functionId] = {
-      maxTopics: handleMaxTopicsChange,
-      maxQueries: handleMaxQueriesChange,
-      maxResults: handleMaxResultsChange,
-      stop: handleStopClick,
-      cleanup: () => {
-        maxTopicsInput?.removeEventListener("change", handleMaxTopicsChange);
-        maxQueriesInput?.removeEventListener("change", handleMaxQueriesChange);
-        maxResultsInput?.removeEventListener("change", handleMaxResultsChange);
-        stopBtn?.removeEventListener("click", handleStopClick);
-        delete activeResearchListeners[functionId];
-        console.log(`Cleaned up listeners for research ${functionId}`);
-      },
-    };
+    // Store listeners only if they are actually added
+    if (maxTopicsInput && maxQueriesInput && maxResultsInput && stopBtn) {
+      activeResearchListeners[functionId] = {
+        maxTopics: handleMaxTopicsChange,
+        maxQueries: handleMaxQueriesChange,
+        maxResults: handleMaxResultsChange,
+        stop: handleStopClick,
+        cleanup: () => {
+          maxTopicsInput?.removeEventListener("change", handleMaxTopicsChange);
+          maxQueriesInput?.removeEventListener(
+            "change",
+            handleMaxQueriesChange,
+          );
+          maxResultsInput?.removeEventListener(
+            "change",
+            handleMaxResultsChange,
+          );
+          stopBtn?.removeEventListener("click", handleStopClick);
+          delete activeResearchListeners[functionId];
+          console.log(`Cleaned up listeners for research ${functionId}`);
+        },
+      };
+    }
   } else {
-    // Ensure no listeners are active if not editable
+    // Cleanup if listeners exist but research is no longer editable
     if (activeResearchListeners[functionId]) {
       activeResearchListeners[functionId].cleanup();
     }
@@ -550,12 +800,9 @@ function displayDeepResearchDetails(functionId) {
   contentTab.show();
 }
 
-// --- Update Socket listener for incremental updates ---
+// --- Update Socket listener for incremental updates (Updated) ---
 socket.on("research_update", (payload) => {
   const { function_id, update_type, data } = payload;
-  // --- Update Configuration Inputs (Keep disabled if viewing details) ---
-  // No need to update values if they are disabled when viewing details.
-  // The initial display function handles setting the values.
 
   // --- Update Topic Tree ---
   if (update_type === "topic_tree") {
@@ -564,123 +811,287 @@ socket.on("research_update", (payload) => {
     );
     if (container) {
       container.innerHTML = ""; // Clear previous tree
-      renderTopicTree(data, container); // Render the new tree structure
+      renderTopicTree(data, container); // Render the new tree structure using updated function
     }
   }
-  // --- Append New Step ---
+  // --- Update/Append Step ---
   else if (update_type === "step") {
     const container = document.getElementById(
       `research-steps-container-${function_id}`,
     );
     if (container) {
-      const noStepsMsg = container.querySelector("p.text-muted");
-      if (noStepsMsg) noStepsMsg.remove();
+      // Special handling for updating last thinking step
+      if (data.type === "update_last_thinking" && data.content) {
+        const steps = container.querySelectorAll(".research-step");
+        if (steps.length > 0) {
+          // Find the last thinking step
+          for (let i = steps.length - 1; i >= 0; i--) {
+            const stepDiv = steps[i];
+            if (stepDiv.innerHTML.includes("Thinking")) {
+              // Find the collapse div that contains the content
+              const collapseId = stepDiv
+                .querySelector('[data-bs-toggle="collapse"]')
+                ?.getAttribute("data-bs-target")
+                ?.substring(1);
+              if (collapseId) {
+                const contentDiv = document
+                  .getElementById(collapseId)
+                  ?.querySelector(".bg-darker");
+                if (contentDiv) {
+                  // Update the content
+                  contentDiv.innerHTML = marked.parse(data.content);
+                  // No need to continue processing
+                  return;
+                }
+              }
+              break; // Stop if we found a thinking step but couldn't update it
+            }
+          }
+        }
+        // If we get here, we couldn't find a thinking step to update, fall through to normal handling
+      }
 
-      const currentStepCount =
-        container.querySelectorAll(".research-step").length;
-      // Pass function_id to renderStep
-      renderStep(data, currentStepCount, container, function_id);
+      // Find existing step by ID if possible
+      const existingStepDiv = data.id
+        ? container.querySelector(`[data-step-id="${data.id}"]`)
+        : null;
+
+      if (existingStepDiv) {
+        // Update existing step
+        const index = Array.from(container.children).indexOf(existingStepDiv);
+        existingStepDiv.remove(); // Remove old one
+        // Re-render at the same position
+        const tempContainer = document.createElement("div");
+        renderStep(data, index, tempContainer, function_id); // Use updated renderStep
+        const newStepDiv = tempContainer.firstChild;
+        if (newStepDiv) {
+          // Check if newStepDiv exists
+          if (index >= 0 && index < container.children.length) {
+            container.insertBefore(newStepDiv, container.children[index]);
+          } else {
+            container.appendChild(newStepDiv); // Append if index calculation fails or at the end
+          }
+        }
+      } else {
+        // Add new step (or update last step for 'done_generating_report')
+        const steps = container.querySelectorAll(".research-step");
+        let index = steps.length; // Default to appending
+
+        if (data.type === "done_generating_report" && steps.length > 0) {
+          // Replace the last step ('report_gen')
+          const lastStepDiv = steps[steps.length - 1];
+          if (lastStepDiv.innerText.includes("Generating final report")) {
+            index = steps.length - 1;
+            lastStepDiv.remove();
+          }
+        } else {
+          // Remove "No steps" message if it exists
+          const noStepsMsg = container.querySelector("p.text-muted");
+          if (noStepsMsg) noStepsMsg.remove();
+        }
+        // Render the new/updated step
+        const tempContainer = document.createElement("div");
+        renderStep(data, index, tempContainer, function_id); // Use updated renderStep
+        const newStepDiv = tempContainer.firstChild;
+        if (newStepDiv) {
+          // Check if newStepDiv exists
+          if (index >= 0 && index < container.children.length) {
+            container.insertBefore(newStepDiv, container.children[index]);
+          } else {
+            container.appendChild(newStepDiv); // Append if index calculation fails or at the end
+          }
+        }
+      }
     }
   }
-  // --- Update Status (Stop Button, Status Text) ---
+  // --- Update Status ---
   else if (update_type === "status") {
     const stopButton = document.getElementById(
       `research-stop-button-${function_id}`,
     );
-    const stopStatus = document.getElementById(
-      `research-stop-status-${function_id}`,
-    );
-    const isStopped =
-      data.stopped ||
-      data.status === "stopped" ||
-      data.status === "finished" ||
-      data.status === "error";
+    const statusSpan = document.getElementById(
+      `research-status-text-${function_id}`,
+    ); // Corrected ID
+    const isStopped = data.stopped;
+    const status = data.status || (isStopped ? "stopped" : "running");
 
-    // Update button appearance even if disabled
     if (stopButton) {
-      stopButton.disabled = true; // Keep it disabled
-      stopButton.classList.remove("btn-danger", "btn-secondary"); // Remove existing color classes
-      stopButton.classList.add("btn-secondary"); // Always use disabled style
-      const statusText = data.status
-        ? data.status.charAt(0).toUpperCase() + data.status.slice(1)
-        : "Stopped";
-      stopButton.innerHTML = `<i class="bi bi-check-circle-fill"></i> ${statusText}`;
+      stopButton.disabled = status !== "running"; // Only enable if running
+      stopButton.classList.remove(
+        "btn-danger",
+        "btn-warning",
+        "btn-success",
+        "btn-secondary",
+      ); // Clear classes
+
+      let iconClass = "bi-slash-circle-fill";
+      let btnClass = "btn-secondary";
+      let btnText = status.charAt(0).toUpperCase() + status.slice(1);
+
+      if (status === "running") {
+        btnClass = "btn-danger";
+        iconClass = "bi-stop-circle";
+        btnText = "Stop";
+      } else if (status === "stopping") {
+        btnClass = "btn-warning";
+        iconClass = "bi-hourglass-split";
+      } else if (status === "finished") {
+        btnClass = "btn-success";
+        iconClass = "bi-check-circle-fill";
+      } else if (status === "error") {
+        btnClass = "btn-danger";
+        iconClass = "bi-exclamation-octagon-fill";
+      } else if (status === "stopped") {
+        // Keep defaults
+      }
+
+      stopButton.classList.add(btnClass);
+      stopButton.innerHTML = `<i class="bi ${iconClass}"></i> ${btnText}`;
     }
-    if (stopStatus) {
-      stopStatus.textContent = `(${data.status || (isStopped ? "stopped" : "running")})`;
+    if (statusSpan) {
+      statusSpan.textContent = `(${status})`;
     }
   }
-  // --- Update Final Response Area (Render as Markdown) ---
-  else if (update_type === "final_response") {
+  // --- Update Final Response Area ---
+  else if (update_type === "done_generating_report") {
     const responseContainer = document.getElementById(
       `research-response-container-${function_id}`,
     );
     if (responseContainer) {
-      responseContainer.classList.remove("d-none");
-      responseContainer.innerHTML = `<h5>Final Report</h5>`;
-      if (data.output) {
+      responseContainer.classList.remove("d-none"); // Ensure visible
+      responseContainer.innerHTML = `<h5 class="mb-2 text-light">Final Report</h5>`; // Reset header
+      if (data.report) {
         const outputDiv = document.createElement("div");
-        outputDiv.classList.add("text-attachment-panel");
-        // *** Use marked.parse here ***
-        outputDiv.innerHTML = marked.parse(data.output);
+        outputDiv.classList.add("text-attachment-panel", "bg-darker");
+        outputDiv.innerHTML = marked.parse(data.report);
         responseContainer.appendChild(outputDiv);
-        // Add copy button for the original markdown source
-        const copyBtn = createCopyButton(data.output);
+        const copyBtn = createCopyButton(data.report);
+        copyBtn.classList.add("mt-2");
         responseContainer.appendChild(copyBtn);
-      } else if (data.error) {
-        const errorDiv = document.createElement("div");
-        errorDiv.classList.add("terminal-error");
-        errorDiv.textContent = data.error;
-        responseContainer.appendChild(errorDiv);
+      } else {
+        responseContainer.innerHTML +=
+          '<p class="text-muted small mt-2">Report generated but content is missing.</p>';
+      }
+    }
+    // Ensure the last step shows "Report Generated"
+    const stepsContainer = document.getElementById(
+      `research-steps-container-${function_id}`,
+    );
+    if (stepsContainer) {
+      const steps = stepsContainer.querySelectorAll(".research-step");
+      if (steps.length > 0) {
+        const lastStepDiv = steps[steps.length - 1];
+        // If the last step isn't already the "done" step, update it
+        if (!lastStepDiv.innerText.includes("Report Generated")) {
+          const index = steps.length - 1;
+          lastStepDiv.remove();
+          const tempContainer = document.createElement("div");
+          renderStep(
+            { type: "done_generating_report" },
+            index,
+            tempContainer,
+            function_id,
+          );
+          const newStepDiv = tempContainer.firstChild;
+          if (newStepDiv) {
+            stepsContainer.appendChild(newStepDiv);
+          }
+        }
       }
     }
   }
 });
 
 // --- Socket listener for cleanup ---
-// Keep the existing research_finished listener as is
 socket.on("research_finished", (data) => {
   const functionId = data.functionId;
-  // Clean up listeners on the client side
   if (
     activeResearchListeners[functionId] &&
     activeResearchListeners[functionId].cleanup
   ) {
-    activeResearchListeners[functionId].cleanup(); // Call the stored cleanup function
+    activeResearchListeners[functionId].cleanup();
   } else {
     console.warn(
       `No active listeners found to cleanup for research ${functionId}`,
     );
   }
 
-  // Ensure final button state is set (redundant if status update worked, but safe)
+  // Update UI elements to final state
   const stopButton = document.getElementById(
     `research-stop-button-${functionId}`,
   );
-  const stopStatus = document.getElementById(
-    `research-stop-status-${functionId}`,
-  );
-  if (stopButton) {
-    stopButton.disabled = true;
-    if (
-      !stopButton.innerHTML.includes("Finished") &&
-      !stopButton.innerHTML.includes("Stopped") &&
-      !stopButton.innerHTML.includes("Error")
-    ) {
-      stopButton.classList.remove("btn-danger");
-      stopButton.classList.add("btn-secondary");
-      stopButton.innerHTML =
-        '<i class="bi bi-check-circle-fill"></i> Finished/Stopped';
+  const statusSpan = document.getElementById(
+    `research-status-text-${functionId}`,
+  ); // Corrected ID
+
+  // Find the message and extra data to determine final status (finished/stopped/error)
+  const msgDiv = document
+    .getElementById(`fn-call-${functionId}`)
+    ?.closest(".message");
+  let finalStatus = "stopped"; // Default if message not found
+  let stoppedFlag = true; // Assume stopped if not running
+  if (msgDiv) {
+    const msg = messages.find((m) => m.id === msgDiv.id);
+    if (msg) {
+      const contentItemCall = msg.content.find(
+        (c) => c.function_call && c.function_call.id === functionId,
+      );
+      const contentItemResponse = msg.content.find(
+        (c) => c.function_response && c.function_response.id === functionId,
+      );
+      const extraData = contentItemCall?.function_call?.extra_data || {};
+      finalStatus =
+        extraData.status || (contentItemResponse ? "finished" : "stopped");
+      stoppedFlag =
+        extraData.stop ||
+        (finalStatus !== "running" && finalStatus !== "stopping");
     }
   }
-  if (
-    stopStatus &&
-    !stopStatus.textContent.includes("finished") &&
-    !stopStatus.textContent.includes("stopped") &&
-    !stopStatus.textContent.includes("error")
-  ) {
-    stopStatus.textContent = "(Finished/Stopped)";
+
+  if (stopButton) {
+    stopButton.disabled = true;
+    stopButton.classList.remove(
+      "btn-danger",
+      "btn-warning",
+      "btn-success",
+      "btn-secondary",
+    );
+
+    let iconClass = "bi-slash-circle-fill";
+    let btnClass = "btn-secondary";
+    let btnText = finalStatus.charAt(0).toUpperCase() + finalStatus.slice(1);
+
+    if (finalStatus === "finished") {
+      btnClass = "btn-success";
+      iconClass = "bi-check-circle-fill";
+    } else if (finalStatus === "error") {
+      btnClass = "btn-danger";
+      iconClass = "bi-exclamation-octagon-fill";
+    } else {
+      // Default to stopped appearance
+      btnText = stoppedFlag ? "Stopped" : "Finished"; // Adjust text based on flag
+    }
+
+    stopButton.classList.add(btnClass);
+    stopButton.innerHTML = `<i class="bi ${iconClass}"></i> ${btnText}`;
   }
+  if (statusSpan) {
+    statusSpan.textContent = `(${finalStatus})`;
+  }
+
+  // Disable config inputs
+  const maxTopicsInput = document.getElementById(
+    `research-max-topics-${functionId}`,
+  );
+  const maxQueriesInput = document.getElementById(
+    `research-max-queries-${functionId}`,
+  );
+  const maxResultsInput = document.getElementById(
+    `research-max-results-${functionId}`,
+  );
+  if (maxTopicsInput) maxTopicsInput.disabled = true;
+  if (maxQueriesInput) maxQueriesInput.disabled = true;
+  if (maxResultsInput) maxResultsInput.disabled = true;
 });
 
 document.getElementById("chat-box").addEventListener("click", function (event) {
@@ -704,7 +1115,7 @@ document.getElementById("chat-box").addEventListener("click", function (event) {
     } else if (functionName === "WriteFile") {
       displayWriteFileContent(functionId);
     } else if (functionName === "DeepResearch") {
-      displayDeepResearchDetails(functionId);
+      displayDeepResearchDetails(functionId); // Display details on click
     }
   } else if (errorTarget) {
     const functionId = errorTarget.dataset.functionId;
@@ -718,53 +1129,6 @@ document.getElementById("chat-box").addEventListener("click", function (event) {
   }
 });
 
-socket.on("research_finished", (data) => {
-  const functionId = data.functionId;
-  // Clean up listeners on the client side
-  if (activeResearchListeners[functionId]) {
-    const maxTopicsInput = document.getElementById(
-      `research-max-topics-${functionId}`,
-    );
-    const maxQueriesInput = document.getElementById(
-      `research-max-queries-${functionId}`,
-    );
-    const maxResultsInput = document.getElementById(
-      `research-max-results-${functionId}`,
-    );
-    const stopBtn = document.getElementById(
-      `research-stop-button-${functionId}`,
-    );
-
-    maxTopicsInput?.removeEventListener(
-      "change",
-      activeResearchListeners[functionId].maxTopics,
-    );
-    maxQueriesInput?.removeEventListener(
-      "change",
-      activeResearchListeners[functionId].maxQueries,
-    );
-    maxResultsInput?.removeEventListener(
-      "change",
-      activeResearchListeners[functionId].maxResults,
-    );
-    stopBtn?.removeEventListener(
-      "click",
-      activeResearchListeners[functionId].stop,
-    );
-
-    // Update button state if it exists
-    if (stopBtn) {
-      stopBtn.disabled = true;
-      stopBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Finished';
-      const stopStatus = document.getElementById(
-        `research-stop-status-${functionId}`,
-      );
-      if (stopStatus) stopStatus.textContent = "(Finished/Stopped)";
-    }
-
-    delete activeResearchListeners[functionId];
-  }
-});
 // --------------------------------------------------------------------------
 // --- Notification Display ---
 // --------------------------------------------------------------------------

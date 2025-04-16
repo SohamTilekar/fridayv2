@@ -42,22 +42,27 @@ class FetchModelMD(TypedDict):
     url: str
     statusCode: int
 
-
 class FetchModel(TypedDict):
     markdown: str
     # screenshot: str  # url of the website screenshot
     links: list[str]  # links in the website
-    # metadata: FetchModelMD
+    metadata: FetchModelMD
 
 
 class Topic:
     topic: str
     id: str
     sub_topics: list["Topic"]
-    queries: Optional[list[str]]
+
+    queries: list[str]
+    searched_queries: list[str]
+
     urls: list[str] = []
+    fetched_urls: list[str] = []
+    failed_fetched_urls: list[str] = []
+
     fetched_content: Optional[
-        list[tuple[str, str, list[str]]]  # url  # fetched content  # links on site
+        list[tuple[str, str, list[str], dict]]  # url  # fetched content  # links on site  # metadata
     ]
     researched: bool
 
@@ -69,23 +74,28 @@ class Topic:
         queries: Optional[list[str]] = None,
         sites: Optional[list[str]] = None,
         fetched_content: Optional[
-            list[tuple[str, str, list[str]]]  # url  # fetched content  # links on site
+            list[tuple[str, str, list[str], dict]]  # url  # fetched content  # links on site  # metadata
         ] = None,
         researched: Optional[bool] = None,
+        searched_queries: Optional[list[str]] = None,
+        fetched_urls: Optional[list[str]] = None,
+        failed_fetched_urls: Optional[list[str]] = None,
     ):
         self.topic = topic
         self.id = id if id else str(uuid.uuid4())
         self.sub_topics = sub_topics if sub_topics else []  # Subtopics
-        self.queries = queries if queries else queries  # Queries to search online for
+        self.queries = queries if queries else []
+        self.searched_queries = searched_queries if searched_queries else []
         self.fetched_content = fetched_content if fetched_content else None
         self.researched = researched if researched else False
         self.urls = sites if sites else []
+        self.fetched_urls = fetched_urls if fetched_urls else []
+        self.failed_fetched_urls = failed_fetched_urls if failed_fetched_urls else []
 
-    def for_ai(self, id: Optional[str] = None, depth: int = 0) -> str:
+    def for_ai(self, depth: int = 0) -> str:
         """Format topic details for AI processing in Markdown format."""
         header = "#" * (depth + 1)  # Determine heading level
         details = f"#{header} {self.topic}\n\n"
-        details += f"{"This Topic is Newly searched online" if self.id == id else ""}\n"
         details += f"{"This is the main Topic/Question Searched by user." if not depth else ""}\n"
         details += f"**ID:** {self.id}\n"
         details += f"**Researched:** {'Yes' if self.researched else 'No'}  \n\n"
@@ -98,28 +108,27 @@ class Topic:
 
         if self.fetched_content:
             details += f"{header} Fetched Content:\n"
-            for url, markdown, links in self.fetched_content:
+            for url, markdown, links, link_info in self.fetched_content:
                 details += f"- {url}:\n```md\n{markdown}\nExtracted Linkes in Webpage:\n{"\n".join(links)}```\n\n"
 
         if self.sub_topics:
             details += f"{header} Subtopics:\n"
             for sub in self.sub_topics:
-                details += sub.for_ai(id, depth + 1) + "\n"
+                details += sub.for_ai(depth + 1) + "\n"
 
         return details
 
-    def get_unresearched_topic(self) -> "Topic | None":
+    def get_unresearched_topic(self) -> list["Topic"]:
         """
-        Recursively find the deepest unresearched topic in the topic tree,
-        prioritizing subtopics over the current topic.
+        Recursively find all unresearched topics in the topic tree.
+        Returns list of Topic objects that have researched=False.
         """
+        unresearched = []
         for topic in self.sub_topics:
-            ut = topic.get_unresearched_topic()
-            if ut:
-                return ut
+            unresearched.extend(topic.get_unresearched_topic())
         if not self.researched:
-            return self
-        return None
+            unresearched.append(self)
+        return unresearched
 
     def add_topic(self, parent_id: str, topic: "Topic") -> bool:
         if self.id == parent_id:
@@ -155,7 +164,10 @@ class Topic:
             "id": self.id,
             "sub_topics": [_.jsonify() for _ in self.sub_topics],
             "queries": self.queries,
+            "searched_queries": self.searched_queries,
             "urls": self.urls,
+            "fetched_urls": self.fetched_urls,
+            "failed_fetched_urls": self.fetched_urls,
             "fetched_content": self.fetched_content,
             "researched": self.researched,
         }
@@ -167,7 +179,10 @@ class Topic:
             id=data.get("id"),
             sub_topics=data.get("sub_topics"),
             queries=data.get("queries"),
+            searched_queries=data.get("searched_queries"),
             sites=data.get("urls"),
+            fetched_urls=data.get("fetched_urls"),
+            failed_fetched_urls=data.get("failed_fetched_urls"),
             fetched_content=data.get("fetched_content"),
             researched=data.get("researched"),
         )
@@ -214,95 +229,63 @@ class DeepResearcher:
         if value:
             self._stop_event.set()
 
-    def _is_query_question(self) -> bool:
-        return (
-            utils.retry(
-                exceptions=utils.network_errors,
-                ignore_exceptions=utils.ignore_network_error,
-            )(global_shares["client"].models.generate_content)(
-                model="tunedModels/question-detactor-e0adnas2gayt",
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part(
-                                text=prompt.QUESTION_DETECTOR_USR_INSTR.format(
-                                    query=self.query
-                                )
-                            )
-                        ],
-                    )
-                ],
-                config=types.GenerateContentConfig(temperature=0),
-            )
-            .candidates[0]  # type: ignore
-            .content.parts[0]  # type: ignore
-            .text
-            == "Yes"
-        )
+    def analyse_add_topic(self) -> str:
+        def add_topic(parent_id: str,topic: str,sites: Optional[list[str]] = None,queries: Optional[list[str]] = None) -> str:
+            """\
+                Adds a new subtopic under an existing topic in the research tree.
 
-    def analyse_add_topic(self, id: Optional[str] = None) -> str:
-        def add_topic(
-            parent_id: str,
-            topic: str,
-            sites: Optional[list[str]] = None,
-            queries: Optional[list[str]] = None,
-        ) -> str:
-            """
-            Adds a new subtopic under an existing topic in the research tree.
+                You MUST only use this when:
+                - The new topic provides **meaningful depth, clarification, or a new angle**
+                - It is directly relevant to the main topic or its subtopics
+                - The need for it arises from the **content of existing research**
+                - You can generate **specific, well-scoped search queries** to guide research
+                - It is not a duplicate or trivial variation of an existing topic
 
-            You MUST only use this when:
-            - The new topic provides **meaningful depth, clarification, or a new angle**
-            - It is directly relevant to the main topic or its subtopics
-            - The need for it arises from the **content of existing research**
-            - You can generate **specific, well-scoped search queries** to guide research
-            - It is not a duplicate or trivial variation of an existing topic
+                Arguments:
+                - parent_id (str, required): ID of the topic under which this subtopic logically belongs
+                - topic (str, required): A concise, clear title for the new subtopic
+                - sites (list[str], optional): List of high-value external URLs that should be explored under this topic (optional)
+                - queries (list[str], optional): A list of diverse, targeted search queries that will drive initial research
 
-            Arguments:
-            - parent_id (str, required): ID of the topic under which this subtopic logically belongs
-            - topic (str, required): A concise, clear title for the new subtopic
-            - sites (list[str], optional): List of high-value external URLs that should be explored under this topic (optional)
-            - queries (list[str], optional): A list of diverse, targeted search queries that will drive initial research
+                Returns:
+                - str: The ID of the newly created subtopic
 
-            Returns:
-            - str: The ID of the newly created subtopic
+                🚫 Do NOT use if:
+                - The tree is already complete or near-complete
+                - The idea is vague, redundant, or
+                unsupported by content
+                - There are more than two existing unresearched subtopics *unless* this one adds essential clarity
 
-            🚫 Do NOT use if:
-            - The tree is already complete or near-complete
-            - The idea is vague, redundant, or
-            unsupported by content
-            - There are more than two existing unresearched subtopics *unless* this one adds essential clarity
-
-            ✅ You MAY call this multiple times if each new subtopic meets all quality criteria
+                ✅ You MAY call this multiple times if each new subtopic meets all quality criteria
             """
             _topic = Topic(topic=topic, sites=sites, queries=queries)
             self.topic.add_topic(parent_id, _topic)
-            self.call_back({"action": "topic_updated", "topic": self.topic.jsonify()})
+            self.call_back({"action": "topic_updated"})
             return _topic.id
 
         def add_site(id: str, site: str):
             """
-            Adds a specific external link to an existing topic for deeper or manual research follow-up.
+                Adds a specific external link to an existing topic for deeper or manual research follow-up.
 
-            You MUST use this when:
-            - A high-value external page (e.g., documentation, research paper, niche blog) is discovered
-            - The page contains **content not surfaced by existing search results** but important to the topic
-            - The link is highly relevant and deepens understanding of the associated topic
+                You MUST use this when:
+                - A high-value external page (e.g., documentation, research paper, niche blog) is discovered
+                - The page contains **content not surfaced by existing search results** but important to the topic
+                - The link is highly relevant and deepens understanding of the associated topic
 
-            Arguments:
-            - id (str, required): The ID of the topic this link belongs to
-            - site (str, required): The full URL of the external resource
+                Arguments:
+                - id (str, required): The ID of the topic this link belongs to
+                - site (str, required): The full URL of the external resource
 
-            🚫 Do NOT use this:
-            - For generic, low-value, or loosely related links
-            - When the content is already covered by search results
-            - Just to add links—only use when the link clearly supports research
+                🚫 Do NOT use this:
+                - For generic, low-value, or loosely related links
+                - When the content is already covered by search results
+                - Just to add links—only use when the link clearly supports research
 
-            ✅ You MAY use this without adding a new topic
-            ✅ Especially useful when researching documentation-heavy domains
+                ✅ You MAY use this without adding a new topic
+                ✅ Especially useful when researching documentation-heavy domains
             """
             self.topic.add_site(id, site)
-            self.call_back({"action": "topic_updated", "topic": self.topic.jsonify()})
+            self.call_back({"action": "topic_updated"})
 
         add_topic_tool = types.Tool(
             function_declarations=[
@@ -319,7 +302,7 @@ class DeepResearcher:
                 role="user",
                 parts=[
                     types.Part(
-                        text=f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai(id)}"
+                        text=f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai()}"
                     ),
                     types.Part(
                         text=prompt.ADD_TOPIC_USR_INSTR.format(
@@ -335,10 +318,7 @@ class DeepResearcher:
         ]
         text: str = ""
         while True:
-            result = utils.retry(
-                exceptions=utils.network_errors,
-                ignore_exceptions=utils.ignore_network_error,
-            )(global_shares["client"].models.generate_content)(
+            result = utils.retry(exceptions=utils.network_errors,ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
                 model="gemini-2.0-flash",
                 contents=cast(types.ContentListUnion, contents),
                 config=types.GenerateContentConfig(
@@ -407,7 +387,7 @@ class DeepResearcher:
                                     )
                                 )
                                 called = True
-                                text += f'$%fail call=`add topic` args=`parent_id="{part.function_call.args.get("parent_id")}", topic="{part.function_call.args.get("topic")}", sites={part.function_call.args.get("sites")}, queries={part.function_call.args.get("queries")}, error="{e}"`%$'
+                                text += f'### Failed Function Call\n\n**Function:** `add topic`\n\n**Arguments:**\n- parent_id: "{part.function_call.args.get("parent_id")}"\n- topic: "{part.function_call.args.get("topic")}"\n- sites: {part.function_call.args.get("sites")}\n- queries: {part.function_call.args.get("queries")}\n\n**Error:** {e}'
                                 continue
                             if contents[-1].role == "model":
                                 contents[-1].parts.append(part)  # type: ignore
@@ -432,7 +412,7 @@ class DeepResearcher:
                                 )
                             )
                             called = True
-                            text += f'$%successful call=`add topic` args=`parent_id="{part.function_call.args.get("parent_id")}", topic="{part.function_call.args.get("topic")}", sites={part.function_call.args.get("sites")}, queries={part.function_call.args.get("queries")}`%$'
+                            text += f'### Successful Function Call\n\n**Function:** `add topic`\n\n**Arguments:**\n- parent_id: "{part.function_call.args.get("parent_id")}"\n- topic: "{part.function_call.args.get("topic")}"\n- sites: {part.function_call.args.get("sites")}\n- queries: {part.function_call.args.get("queries")}"'
                         elif (
                             part.function_call.name == "add_site"
                             and part.function_call.args
@@ -465,7 +445,7 @@ class DeepResearcher:
                                 )
                                 called = True
                                 continue
-                                text += f'$%fail call=`add site` args=`id="{part.function_call.args.get("id")}", site={part.function_call.args.get("site")}, error="{e}"`%$'
+                                text += f'### Failed Function Call\n\n**Function:** `add site`\n\n**Arguments:**\n- id: "{part.function_call.args.get("id")}"\n- site: {part.function_call.args.get("site")}\n\n**Error:** {e}'
                             if contents[-1].role == "model":
                                 contents[-1].parts.append(part)  # type: ignore
                             else:
@@ -481,7 +461,7 @@ class DeepResearcher:
                                                 name="add_site",
                                                 id=part.function_call.id,
                                                 response={
-                                                    "output": f"Succesfully Added url to reseaearch for topic with id {part.function_call.args["id"]}"
+                                                    "output": f"Succesfully Added url to reseaearch for topic with id {part.function_call.args['id']}"
                                                 },
                                             )
                                         )
@@ -489,11 +469,11 @@ class DeepResearcher:
                                 )
                             )
                             called = True
-                            text += f'$%successful call=`add site` args=`id="{part.function_call.args.get("id")}", site={part.function_call.args.get("site")}`%$'
+                            text += f'### Successful Function Call\n\n**Function:** `add site`\n\n**Arguments:**\n- id: "{part.function_call.args.get("id")}"\n- site: {part.function_call.args.get("site")}"'
             if not called:
                 break
             if self.stop: raise DeepResearcher.StopResearch()
-            contents[0].parts[0].text = f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai(id)}"  # type: ignore
+            contents[0].parts[0].text = f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai()}"  # type: ignore
         return text
 
     def _generate_queries(self, topic: str) -> list[str]:
@@ -560,37 +540,96 @@ class DeepResearcher:
         results = self.ddgs.text(
             query, backend="lite", safesearch="off", max_results=self.max_search_results
         )
+        # print(results)
         links = [result["href"] for result in results]
-        self.call_back({"action": "search", "query": query, "links": links})
         return links
 
-    def _search_and_fetch(self, unresearched_topic: Topic, visited_urls: set[str]):
+    def _search_and_fetch(self, unresearched_topic: Topic, visited_urls: set[str], failed_urls: set[str]):
+        search_state = {
+            "action": "search",
+            "type": "search",
+            "id": str(uuid.uuid4()),
+            "topic_name": unresearched_topic.topic,
+            "planed_queries": unresearched_topic.queries or [],
+            "researched_queries": unresearched_topic.searched_queries or [],
+            "planed_fetchurl": unresearched_topic.urls or [],
+            "failed_fetchurl": unresearched_topic.failed_fetched_urls or [],
+            "researched_fetchurl": unresearched_topic.fetched_urls or [],
+            "urls": [],
+            "fetched_urls": [],
+            "fetched_failed_urls": [],
+            "url_metadata": {}
+        }
+        self.call_back(search_state)
+        search_state["action"] = "update_search"
+        def fetch_with_handling(url: str, is_not_searched: bool) -> tuple[str, str, list[str], dict] | None:
+            fetch_model = self.fetch_url(url)
+            if is_not_searched: # whether it is in extra sites of topic
+                search_state["planed_fetchurl"].remove(url)
+                unresearched_topic.urls.remove(url)
+            search_state["urls"].remove(url)
+            if fetch_model:
+                if is_not_searched:
+                    search_state["researched_fetchurl"].append(url)
+                    unresearched_topic.fetched_urls.append(url)
+                search_state["fetched_urls"].append(url)
+                url_info = fetch_model.get('url_display_info', {'url': url, 'title': '', 'favicon': ''})
+                search_state["url_metadata"][url] = url_info
+                self.call_back(search_state)
+                return (url, fetch_model["markdown"], fetch_model["links"], url_info)
+            failed_urls.add(url)
+            if is_not_searched:
+                search_state["failed_fetchurl"].append(url)
+                unresearched_topic.failed_fetched_urls.append(url)
+            search_state["fetched_failed_urls"].append(url)
+            self.call_back(search_state)
+            return None
 
-        def fetch_with_handling(url: str) -> tuple[str, str, list[str]] | None:
-            try:
-                self.call_back({"action": "fetching_url", "url": url})
-                fetch_model = self.fetch_url(url)
-                if not fetch_model:
-                    return None
-                return (url, fetch_model["markdown"], fetch_model["links"])
-            except Exception as e:
-                print(f"Error fetching URL {url}: {e}")
-                traceback.print_exc()
-                return None
-
-        def process_urls(urls: list[str]) -> list[tuple[str, str, list[str]]]:
+        def process_urls(urls: list[str], is_not_searched: bool, executor: concurrent.futures.ThreadPoolExecutor) -> list[tuple[str, str, list[str], dict]]:
             results = []
+            search_state["urls"].extend(urls)
+            self.call_back(search_state)
+            futures = []
+
             for url in urls:
                 if url not in visited_urls:
                     visited_urls.add(url)
-                    result = fetch_with_handling(url)
+                    # Submit the fetch task to the thread pool
+                    future = executor.submit(fetch_with_handling, url, is_not_searched)
+                    futures.append(future)
+                else:
+                    # to not append alrady visited but failed url in fetched urls
+                    if url in failed_urls:
+                        search_state["fetched_failed_urls"].append(url)
+                    else:
+                        search_state["fetched_urls"].append(url)
+
+            # Collect results from all futures
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
                     if result:
                         results.append(result)
+                except Exception as e:
+                    print(f"Error in future execution: {e}")
+                    traceback.print_exc()
+
             return results
 
-        def search_and_fetch_query(query: str):
+        def search_and_fetch_query(query: str, executor: concurrent.futures.ThreadPoolExecutor):
             urls = self._search_online(query)
-            return process_urls(urls)
+            result = process_urls(urls, False, executor)
+            search_state["planed_queries"].remove(query)
+            search_state["researched_queries"].append(query)
+            try:
+                unresearched_topic.searched_queries.append(query)
+                unresearched_topic.queries.remove(query)
+            except ValueError:
+                traceback.print_exc()
+                print(unresearched_topic.queries, unresearched_topic.searched_queries, query)
+            self.call_back(search_state)
+            self.call_back({"action": "topic_updated"})
+            return result
 
         if unresearched_topic.fetched_content is None:
             unresearched_topic.fetched_content = []
@@ -599,14 +638,12 @@ class DeepResearcher:
         urls = unresearched_topic.urls or []
 
         # Somewhere in your method:
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(32, len(queries) + len(urls))
-        ) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
 
             futures = [
-                executor.submit(search_and_fetch_query, query) for query in queries
+                executor.submit(search_and_fetch_query, query, executor) for query in queries
             ]
-            futures.append(executor.submit(process_urls, urls))
+            futures.append(executor.submit(process_urls, urls, True, executor))
 
             completed = set()
 
@@ -633,40 +670,70 @@ class DeepResearcher:
                 except concurrent.futures.TimeoutError:
                     # No futures completed during this 0.1s window; check self.stop again
                     continue
+        unresearched_topic.queries = search_state["planed_queries"]
+        unresearched_topic.searched_queries = search_state["researched_queries"]
+        unresearched_topic.urls = search_state["planed_fetchurl"]
+        unresearched_topic.failed_fetched_urls = search_state["failed_fetchurl"]
+        unresearched_topic.fetched_urls = search_state["researched_fetchurl"]
 
     def research(self) -> str:
         current_depth: int = 0
         visited_urls: set[str] = set()
+        failed_urls: set[str] = set()
         try:
             while not self.stop:
-                unresearched_topic = self.topic.get_unresearched_topic()
-                if not unresearched_topic:
+                unresearched_topics = self.topic.get_unresearched_topic()
+                if not unresearched_topics:
                     break
 
-                if not unresearched_topic.queries:
-                    unresearched_topic.queries = self._generate_queries(
-                        unresearched_topic.topic
-                    )
-                    self.call_back({})
-                if self.stop: raise DeepResearcher.StopResearch()
+                # Use ThreadPoolExecutor to process multiple unresearched topics in parallel
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(unresearched_topics))) as executor:
+                    topic_futures = []
 
-                self._search_and_fetch(unresearched_topic, visited_urls)
+                    # Submit tasks for each unresearched topic
+                    for topic in unresearched_topics:
+                        if not topic.queries:
+                            topic.queries = self._generate_queries(topic.topic)
+                            self.call_back({"action": "topic_updated"})
 
-                unresearched_topic.researched = True
+                        if self.stop:
+                            raise DeepResearcher.StopResearch()
+
+                        # Submit the search and fetch task to the thread pool
+                        future = executor.submit(self._search_and_fetch, topic, visited_urls, failed_urls)
+                        topic_futures.append((topic, future))
+
+                    # Process results as they complete
+                    for topic, future in topic_futures:
+                        try:
+                            future.result()  # Wait for completion and handle any exceptions
+                            topic.researched = True
+                            self.call_back({"action": "topic_updated"})
+                        except Exception as e:
+                            print(f"Error researching topic {topic.topic}: {e}")
+                            traceback.print_exc()
+
+                # Check if we've reached the maximum topic depth
+                current_depth += 1
                 if current_depth >= (self.max_topics or float("inf")):
                     break
-                current_depth += 1
-                if self.stop: raise DeepResearcher.StopResearch()
+
+                if self.stop:
+                    raise DeepResearcher.StopResearch()
+
+                # Analyze and add new topics after completing current batch
+                # self.analyse_add_topic()
                 self.call_back(
                     {
                         "action": "thinking",
-                        "thoughts": self.analyse_add_topic(unresearched_topic.id),
+                        "thoughts": self.analyse_add_topic(),
                     }
                 )
         except DeepResearcher.StopResearch:
             pass # Dont care abot how much reacsher has complited
 
         report = self._generate_report()
+        self.call_back({"action": "done_generating_report", "data": report})
         return report
 
     def _generate_report(self) -> str:
@@ -694,12 +761,14 @@ class DeepResearcher:
             ),
         ]
         report_str: str = "# "
+        first_iteration = True
         while True:
+            model = "gemini-2.0-flash-thinking-exp-01-21" if first_iteration else "gemini-2.0-flash-001" # thinking moddel dont work corecly in all next iteration
             result = utils.retry(
                 exceptions=utils.network_errors,
                 ignore_exceptions=utils.ignore_network_error,
             )(global_shares["client"].models.generate_content)(
-                model="gemini-2.0-flash-thinking-exp-01-21",
+                model=model,
                 contents=cast(types.ContentListUnion, contents),
                 config=types.GenerateContentConfig(
                     temperature=0.4, system_instruction=prompt.REPORT_GEN_SYS_INSTR
@@ -728,6 +797,7 @@ class DeepResearcher:
                     contents[1].parts[0].text += result.candidates[0].content.parts[0].text  # type: ignore
                 if result.candidates[0].finish_reason != types.FinishReason.MAX_TOKENS:
                     break
+                first_iteration = False
 
         return report_str
 
@@ -739,7 +809,7 @@ class DeepResearcher:
             )(utils.FetchLimiter()(self.app.scrape_url))(
                 url,
                 params={
-                    "formats": ["markdown", "links"],  # , "screenshot@fullPage"],
+                    "formats": ["markdown", "links"],
                     "waitFor": wait_for,
                     "proxy": "stealth",
                     "timeout": 30_000,
@@ -747,9 +817,17 @@ class DeepResearcher:
                 },
             )
             if scrape_result:
+                if 'metadata' in scrape_result and scrape_result['metadata']:
+                    scrape_result['url_display_info'] = {
+                        'url': url,
+                        'title': scrape_result['metadata'].get('title', '') or
+                                 scrape_result['metadata'].get('ogTitle', ''),
+                        'favicon': scrape_result['metadata'].get('favicon', '')
+                    }
                 return scrape_result
             else:
                 return None
+        # dead code for future
         img = (
             utils.retry(
                 exceptions=utils.network_errors,

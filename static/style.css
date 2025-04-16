@@ -368,14 +368,14 @@ body {
         var(--gray-600) 75%
     );
     background-size: 200% 100%;
-    animation: shimmer-text 1.5s infinite linear;
+    animation: shimmer 1.5s infinite linear;
     color: transparent;
     background-clip: text;
     -webkit-background-clip: text;
 }
 
 /* Shimmer animation for text */
-@keyframes shimmer-text {
+@keyframes shimmer {
     from {
         background-position: 200% 0;
     }
@@ -1536,4 +1536,213 @@ ul.chat-tree-level {
 
 #history-pane .p-3 {
     padding: 0 !important;
+}
+
+/* Grid container for URLs */
+.research-grid.url-grid {
+    display: grid;
+    /* Use CSS Grid for layout */
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    /* Create responsive columns */
+    gap: 0.75rem;
+    /* Spacing between grid items */
+}
+
+/* Individual URL item box styling */
+.research-grid-item.url-item {
+    display: flex;
+    /* Use flexbox for internal layout: favicon + details */
+    align-items: center;
+    /* Vertically center content */
+    background-color: var(--gray-800);
+    /* Dark background like image */
+    border-radius: 8px;
+    /* Rounded corners */
+    padding: 0.6rem 0.8rem;
+    /* Padding inside the box */
+    border: 1px solid var(--gray-700);
+    /* Default subtle border */
+    overflow: hidden;
+    /* Prevent content spillover */
+    transition: border-color 0.2s ease;
+    min-height: 50px;
+    /* Ensure a minimum height */
+    text-decoration: none;
+    /* Remove underline if wrapped in <a> */
+    color: var(--foreground);
+    /* Default text color */
+    position: relative;
+    /* Needed for shimmer pseudo-element */
+}
+
+/* Favicon styling */
+.url-favicon {
+    width: 20px;
+    height: 20px;
+    margin-right: 0.6rem;
+    /* Space between favicon and text details */
+    border-radius: 4px;
+    /* Slightly rounded favicon corners */
+    flex-shrink: 0;
+    /* Prevent favicon from shrinking */
+    object-fit: contain;
+    /* Ensure favicon scales nicely */
+    background-color: #fff; /* White background for transparency */
+}
+
+/* Placeholder icon if favicon is missing */
+.url-favicon-placeholder {
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+    margin-right: 0.6rem;
+    color: var(--gray-500);
+    /* Muted color for placeholder */
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Container for domain and title text */
+.url-details {
+    display: flex;
+    flex-direction: column;
+    /* Stack domain and title vertically */
+    overflow: hidden;
+    /* Hide overflow for text ellipsis */
+    flex-grow: 1;
+    /* Allow details section to take remaining width */
+}
+
+/* Domain text styling */
+.url-domain {
+    font-size: 0.9rem;
+    font-weight: 500;
+    /* Slightly bolder */
+    color: var(--gray-200);
+    /* Lighter text for domain */
+    white-space: nowrap;
+    /* Prevent wrapping */
+    overflow: hidden;
+    /* Hide overflow */
+    text-overflow: ellipsis;
+    /* Add ellipsis (...) for long domains */
+}
+
+/* Title text styling */
+.url-title {
+    font-size: 0.8rem;
+    color: var(--gray-400);
+    /* Muted color for title */
+    white-space: nowrap;
+    /* Prevent wrapping */
+    overflow: hidden;
+    /* Hide overflow */
+    text-overflow: ellipsis;
+    /* Add ellipsis (...) for long titles */
+    margin-top: 0.1rem;
+    /* Small space between domain and title */
+}
+
+/* --- Status Styling --- */
+.research-grid-item.url-item.fetched {
+    border-color: var(--success);
+    /* Green border for fetched */
+}
+
+.research-grid-item.url-item.failed {
+    border-color: var(--danger);
+    /* Red border for failed */
+    background-color: rgba(var(--danger-rgb), 0.1);
+    /* Optional: Subtle red background tint */
+}
+
+.research-grid-item.url-item.planned {
+    border-color: var(--gray-700);
+    /* Default border for planned */
+}
+
+/* --- Shimmer Animation for Planning State --- */
+.research-grid-item.url-item.shimmer-active {
+    background-color: var(--gray-700);
+    /* Base color during shimmer */
+    border-color: transparent !important;
+    /* Hide border during shimmer */
+}
+
+.research-grid-item.url-item.shimmer-active::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.08),
+        /* More subtle shimmer */ transparent
+    );
+    animation: shimmer-overlay 1.8s infinite linear;
+    /* Slightly slower animation */
+    border-radius: inherit;
+    /* Inherit parent's border-radius */
+}
+
+/* Optional: Slightly fade content during shimmer */
+.research-grid-item.url-item.shimmer-active .url-favicon,
+.research-grid-item.url-item.shimmer-active .url-favicon-placeholder,
+.research-grid-item.url-item.shimmer-active .url-details {
+    opacity: 0.3;
+}
+
+@keyframes shimmer-overlay {
+    0% {
+        left: -100%;
+    }
+
+    100% {
+        left: 100%;
+    }
+}
+
+/* --- Query Item Styling (Optional Refinement) --- */
+.research-grid.query-grid {
+    display: flex;
+    /* Use flexbox for queries */
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.research-grid-item.query-item {
+    background-color: var(--gray-800);
+    border: 1px solid var(--gray-700);
+    padding: 0.3rem 0.6rem;
+    border-radius: 1rem;
+    /* Pill shape */
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--gray-300);
+    /* Default query color */
+}
+
+.research-grid-item.query-item.searched {
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.research-grid-item.query-item.planned {
+    border-color: var(--warning);
+    color: var(--warning);
+}
+
+.research-grid-item.query-item code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+    color: inherit;
+    /* Inherit color from parent */
 }

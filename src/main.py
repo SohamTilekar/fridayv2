@@ -926,6 +926,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
             if func_call.name == "DeepResearch":
                 if func_call.args:
                     def research_callback(update_data: Optional[dict[str, Any]]) -> None:
+                        # print(update_data)
                         if not update_data:
                             # No specific update, maybe just a state check internally
                             return
@@ -940,30 +941,35 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                         if update_data.get("action") == "thinking":
                             event_payload["update_type"] = "step" # More specific type
                             event_payload["data"] = {"type": "thinking", "content": update_data.get("thoughts")}
-                            fc.extra_data["steps"].append(event_payload)
+                            fc.extra_data["steps"].append(event_payload["data"])
                         elif update_data.get("action") == "topic_updated":
                             event_payload["update_type"] = "topic_tree"
-                            event_payload["data"] = update_data.get("topic")
-                            fc.extra_data["topic"] = researcher.topic.jsonify()
-                        elif update_data.get("action") == "fetching_url":
-                            event_payload["update_type"] = "step"
-                            event_payload["data"] = {"type": "fetch", "url": update_data.get("url")}
-                            fc.extra_data["steps"].append(event_payload)
+                            event_payload["data"] = researcher.topic.jsonify()
+                            fc.extra_data["topic"] = event_payload["data"]
                         elif update_data.get("action") == "search":
-                            event_payload["update_type"] = "step"
-                            event_payload["data"] = {"type": "search", "query": update_data.get("query"), "links": update_data.get("links")}
-                            fc.extra_data["steps"].append(event_payload)
+                            event_payload["update_type"] = "step" # More specific type
+                            event_payload["data"] = update_data
+                            fc.extra_data["steps"].append(update_data)
+                        elif update_data.get("action") == "update_search":
+                            event_payload["update_type"] = "step" # More specific type
+                            event_payload["data"] = update_data.copy()
+                            idx = None
+                            for idx, step in enumerate(fc.extra_data["steps"]):
+                                if step.get("type") == "search" and step["id"] == update_data["id"]:
+                                    break
+                            fc.extra_data["steps"][idx] = update_data
                         elif update_data.get("action") == "generating_report":
                             event_payload["update_type"] = "step"
                             event_payload["data"] = {"type": "report_gen"}
-                            fc.extra_data["steps"].append(event_payload)
+                            fc.extra_data["steps"].append(event_payload["data"])
+                        elif update_data.get("action") == "done_generating_report":
+                            event_payload["update_type"] = "done_generating_report"
+                            event_payload["data"] = {"type": "done_generating_report", "report": update_data["data"]}
+                            fc.extra_data["steps"].pop()
+                            fc.extra_data["steps"].append(event_payload["data"])
 
-                        if event_payload["update_type"]: # Only emit if there's a valid type
-                            socketio.emit('research_update', event_payload)
-                            emit_msg_update(msg) # cz fc is updated but the content in the message is not get to the website
-                        else:
-                            print(f"Warning: Unhandled research callback action: {update_data.get('action')}")
-
+                        socketio.emit('research_update', event_payload)
+                        emit_msg_update(msg) # cz fc is updated but the content in the message is not get to the website
 
                     researcher = tools.DeepResearcher(
                         **func_call.args, call_back=research_callback # Use the new callback
