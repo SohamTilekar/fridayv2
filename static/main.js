@@ -186,6 +186,23 @@ function renderTopicTree(topicData, parentElement, level = 0) {
 
 // --- Helper function to render a single step (Updated for Search Grid & Tooltip Init) ---
 function renderStep(stepData, index, container, functionId) {
+  // Global URL metadata storage - create if it doesn't exist
+  if (!window.SHARED_URL_METADATA) {
+    window.SHARED_URL_METADATA = {};
+  }
+
+  // Update shared URL metadata with any new information from this step
+  if (stepData.url_metadata) {
+    for (const [url, metadata] of Object.entries(stepData.url_metadata)) {
+      if (
+        !window.SHARED_URL_METADATA[url] ||
+        !window.SHARED_URL_METADATA[url].title
+      ) {
+        window.SHARED_URL_METADATA[url] = metadata;
+      }
+    }
+  }
+
   const stepDiv = document.createElement("div");
   stepDiv.classList.add(
     "research-step",
@@ -276,18 +293,31 @@ function renderStep(stepData, index, container, functionId) {
           }
         }
 
-        // Get URL metadata
-        const urlMeta = stepData.url_metadata?.[item] || {};
+        // Get URL metadata from shared global storage first, then fall back to step-specific data
+        const urlMeta =
+          window.SHARED_URL_METADATA[item] ||
+          stepData.url_metadata?.[item] ||
+          {};
         const urlTitle = urlMeta.title || "";
-        const favicon = urlMeta.favicon
-          ? `<img src="${urlMeta.favicon}" class="url-favicon" alt="">`
-          : `<i class="bi bi-globe url-favicon-placeholder"></i>`; // Placeholder icon
+        let favicon = `<i class="bi bi-globe url-favicon-placeholder"></i>`; // Default placeholder icon
 
         // Extract domain for display
         let displayUrl = item;
+        let urlObject;
         try {
-          const urlObject = new URL(item);
+          urlObject = new URL(item);
           displayUrl = urlObject.hostname.replace(/^www\./, ""); // Show domain without www.
+
+          // Try to use metadata favicon if available, otherwise attempt to use default favicon URL
+          if (urlMeta.favicon) {
+            favicon = `<img src="${urlMeta.favicon}" class="url-favicon" alt="">`;
+          } else if (urlObject) {
+            // Create a default favicon URL to try
+            const defaultFaviconUrl = `${urlObject.origin}/favicon.ico`;
+
+            // Check if favicon exists without blocking UI
+            favicon = `<img src="${defaultFaviconUrl}" class="url-favicon" alt="" onerror="this.outerHTML=\`<i class='bi bi-globe url-favicon-placeholder'></i>\`;">`;
+          }
         } catch (e) {
           // Keep original item if URL parsing fails
           console.warn(`Could not parse URL: ${item}`, e);
