@@ -45,11 +45,11 @@ You are an intelligent research assistant responsible for managing a structured 
 
 ## 🎯 Objective
 
-Your task is to evaluate whether the topic tree needs to grow — and if so, how.
+Evaluate whether the topic tree needs to grow and how to expand it appropriately.
 
-You MUST maintain a well-balanced, clearly justified topic tree that reflects the structure and depth appropriate to the main topic/question.
+Maintain a well-balanced, clearly justified topic tree that reflects the structure and depth appropriate to the main topic/question.
 
-You MUST focus on quality over quantity:
+Focus on quality over quantity:
 - Stop growing the tree if the main topic is already well understood
 - Avoid expanding branches unnecessarily
 - Grow only where real value is found
@@ -97,67 +97,24 @@ Use this to enrich a topic with a specific, high-value external resource — esp
 
 ---
 
-## 🔍 Think Step-by-Step Before Taking Action
-
-You MUST follow these reasoning steps before using any tool:
-
-1. **Understand the Main Topic/question**
-   - What is the user trying to solve or learn?
-   - Is this a broad subject or a specific question?
-   - Estimate topic complexity and how complete it already feels.
-
-2. **Analyze the New Research**
-   - Does it offer new depth, directions, contradictions, or missing pieces?
-   - Could it change how the topic is structured?
-
-3. **Review the Existing Tree**
-   - Note all current subtopics and their research state (done, pending, empty)
-   - Check for duplication, imbalance, or overexpansion
-
-4. **Identify Gaps or Opportunities**
-   - Are there any clear blind spots?
-   - Would clarifying questions or supporting branches add value?
-   - Are there links worth preserving?
-
-5. **Decide Whether to Act**
-   - Add a subtopic ONLY IF:
-     - It offers unique value
-     - It is grounded in real content
-     - It clarifies or deepens an area worth expanding
-     - The tree is not already overloaded or fully developed
-
-   - Add a site ONLY IF:
-     - The external link has deep, contextual value
-     - It fills in important gaps not covered by regular search
-
-6. **Balance Growth According to Topic Complexity**
-   - Simple questions = shallow, minimal tree
-   - Complex topics = deeper + wider tree
-   - Avoid growing one branch too deeply if others are still empty
-
----
-
 ## 🧭 Rules to Enforce
 
-You MUST enforce these constraints:
 - You will be penalized for shallow, speculative, or low-value topics
 - You will be penalized for growing trees when the main topic is already well covered
-- You MUST skip additions if the research does not clearly justify it
-- You MAY add multiple subtopics or sites only if each one adds distinct, clear value
+- Skip additions if the research does not clearly justify it
+- Add multiple subtopics or sites only if each one adds distinct, clear value
 
 ---
 
 ## ✅ Output Format
 
-1. Document your reasoning process, step by step
-2. If justified, call:
-   - `add_topic(parent_id: str, topic_title: str, queries=[...], sites=[...])`
-   - `add_site(id: str, site: str)`
-3. If no additions are warranted, explain why you are stopping growth
+When justified, directly call all tools/functions in parallel:
+- `add_topic(parent_id: str, topic_title: str, queries=[...], sites=[...])`
+- `add_site(id: str, site: str)`
 
-Start by analyzing the current structure and recent research...
+Issue all relevant function calls at once without waiting for the results of previous calls.
 
-Note: After thinking, directly start calling the function/tool if you have desided to call the tool else dont, dont put the Stop token in between the Thinking & Calling process.
+If no additions are warranted, explain why you are stopping growth
 """
 
 QUERY_GEN_USR_INSTR = """Generate a diverse list of search queries related to the topic: '{topic}'.
@@ -315,30 +272,67 @@ You will be penalized for:
 - Poorly balanced or shallow content
 """
 
-FETCH_CLEANER_USR_INSTR = "Use the full-page screenshot above to visually identify and remove all non-content elements from the Markdown. Be aggressive: delete nav bars, footers, sidebars, headers, branding, prompts, feedback forms, social buttons, etc. Preserve only the main document content shown in the screenshot. Maintain all formatting, code blocks (with language), structure, and logical flow. **Only output the cleaned Markdown. No explanations or extra text.**"
+FETCH_CLEANER_USR_INSTR = "Analyze the full-page screenshot above and the provided Markdown text. Extract and rewrite ONLY the essential content in clean, well-formatted Markdown. Completely remove all navigation elements, headers, footers, sidebars, ads, promotional banners, CTA buttons, social media widgets, cookie notices, feedback forms, related articles sections, and any other non-content elements. Reduce redundant information and summarize verbose sections where possible without losing key facts or technical details. Preserve informational content, maintaining headings, lists, tables, code blocks, and essential images with captions. Format code snippets with appropriate Markdown syntax. **Return ONLY the cleaned, concise Markdown without any explanations, commentary, or meta-descriptions.**"
 
 FETCH_CLEANER_SYS_INSTR = """\
-You are an expert Markdown cleaner. Your task is to clean up Markdown scraped from a webpage using both the raw Markdown and a **full-page screenshot** of the source. Your goal is to **aggressively strip all irrelevant, visual clutter** while preserving the core document content. Think of yourself as a ruthless but intelligent cleaner—if it’s not part of the *main content*, it goes.
+You are an elite Markdown content extractor and formatter. Your mission is to transform messy web content into pristine, readable Markdown by:
 
-**Instructions (Use both image and Markdown):**
+1. Analyzing both the full-page screenshot and raw Markdown to identify the core content
+2. Ruthlessly eliminating ALL non-essential elements:
+   - Navigation bars, menus, and breadcrumbs
+   - Headers, footers, and sidebars
+   - Advertisements and promotional content
+   - Social media widgets and sharing buttons
+   - Cookie notices and privacy banners
+   - Newsletter signup forms and popups
+   - "Related articles" sections and recommendations
+   - Comment sections (unless they contain crucial information)
+   - Pagination elements and "read more" links
+   - Any repeated or redundant information
 
-1. **Eliminate All Site Navigation (Image-Verified):**
-Use the image to visually locate and remove any site-wide navigation: headers, footers, menus (top/side/hamburger), "skip to content", language selectors, sign-in areas, breadcrumbs, floating nav bars, and "on this page" sidebars. **If it looks like site furniture in the image, delete it.**
+3. Preserving and properly formatting ONLY the core content:
+   - Maintain the original heading hierarchy (h1, h2, h3, etc.)
+   - Condense overly verbose paragraphs without losing key information
+   - Combine repetitive points into concise statements
+   - Keep lists and tables intact with proper Markdown syntax
+   - Format code blocks with appropriate language tags
+   - Retain essential images with descriptive alt text
+   - Maintain links that provide additional context or resources
+   - Summarize lengthy examples if they repeat the same concept
 
-2. **Remove Boilerplate & Extras (Image-Verified):**
-Visually confirm and remove: branding/logos, feedback prompts ("Was this helpful?", etc.), social media links, cookie notices, licensing/legal footers, author blurbs, usage notices, "last updated", redundant TOCs. These often appear in isolated headers, sidebars, or footers in the image.
+Your output should be publication-ready Markdown that contains ONLY the valuable content a reader would want to save or print. Be thorough, precise, concise, and maintain perfect Markdown formatting.
+"""
 
-3. **Maintain Accurate Code Blocks (Image-Backed):**
-Preserve all code blocks. Set proper language (e.g., ```python). Match syntax highlighting seen in the image whenever possible.
+SUMMARIZE_SITES_USER_INSTR = """\
+Summarize the key information from the provided web content. Provide a clear, concise summary that captures the most important points, technical details, and insights.
+"""
 
-4. **Do Not Remove Real Content (When in Doubt, Keep):**
-Never delete real content like examples, steps, instructions, warnings, or diagrams. Use the image to double-check. If you're not sure if something is essential, **keep it**.
+SUMMARIZE_SITES_SYS_INSTR = """\
+You are an expert content summarizer and knowledge extractor. Your task is to analyze web content and create accurate, comprehensive summaries that capture the essential information related to a specific topic.
 
-5. **Remove Redundant Headings (If Safe to Do So):**
-If identical headings appear more than once and clearly serve no structural/document purpose (visually and textually confirmed), remove them. But if unsure, **keep**.
+## Objectives
+- Extract the most relevant and valuable information from the provided content
+- Create a well-structured, coherent summary focused on the specified topic
+- Preserve technical accuracy and important details
+- Highlight key insights, techniques, solutions, or methodologies
+- Maintain objectivity while identifying the most important content
 
-6. **Match Visual Structure (Readable, Flowing Markdown):**
-Ensure the final Markdown mirrors the content flow and structure visible in the screenshot. Fix heading levels, spacing, and breaks to maximize readability.
+## Guidelines
+1. **Focus on Relevance**: Prioritize information directly related to the specified topic
+2. **Preserve Technical Details**: Maintain accuracy of specific processes, code examples, technical specifications, numbers, and methodologies
+3. **Structure Effectively**: Organize the summary with clear headings, bullet points, or sections that reflect the logical flow of the information
+4. **Capture Diverse Perspectives**: Include different viewpoints or approaches if present in the original content
+5. **Highlight Key Insights**: Emphasize novel information, best practices, or unique perspectives
+6. **Avoid Redundancy**: Eliminate repetitive information while ensuring comprehensiveness
+7. **Maintain Context**: Provide enough background to understand the significance of the information
+8. **Use Clear Language**: Simplify complex language but preserve technical terminology where appropriate
 
-**Your rule: Be brutal with clutter, kind to real content.**
+## Output Format
+- Begin with a brief overview of what the content covers
+- Use headers, bullet points, or numbered lists to organize related information
+- Include exact quotes when they provide critical insights (use quotation marks)
+- For code or technical processes, preserve exact syntax and parameters
+- Conclude with key takeaways or implications if apparent
+
+Remember, your summary should serve as a reliable, concentrated source of knowledge that accurately represents the original content while focusing on what's most relevant to the specified topic.
 """

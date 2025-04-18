@@ -967,6 +967,20 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             event_payload["data"] = {"type": "done_generating_report", "report": update_data["data"]}
                             fc.extra_data["steps"].pop()
                             fc.extra_data["steps"].append(event_payload["data"])
+                        elif update_data.get("action") == "summarize_sites":
+                            event_payload["update_type"] = "step"
+                            event_payload["data"] = {"type": "summarize_sites", "topic": update_data.get("topic")}
+                            fc.extra_data["steps"].append(event_payload["data"])
+                            print(event_payload["data"])
+                        elif update_data.get("action") == "summarize_sites_complete":
+                            event_payload["update_type"] = "step"
+                            event_payload["data"] = {"type": "summarize_sites_complete", "topic": update_data.get("topic")}
+                            print(event_payload["data"])
+                            # Find and remove the summarize_sites step
+                            for idx, step in enumerate(fc.extra_data["steps"]):
+                                if step.get("type") == "summarize_sites" and step.get("topic") == update_data.get("topic"):
+                                    del fc.extra_data["steps"][idx]
+                                    break
 
                         socketio.emit('research_update', event_payload)
                         emit_msg_update(msg) # cz fc is updated but the content in the message is not get to the website

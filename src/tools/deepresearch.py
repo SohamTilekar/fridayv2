@@ -6,10 +6,9 @@ import concurrent.futures
 import requests
 import traceback
 from rich import print
-from typing import Any, Callable, Optional, TypedDict, cast
+from typing import Any, Callable, Optional, cast
 from google.genai import types
 from global_shares import global_shares
-import config
 import prompt
 import threading
 import utils
@@ -29,8 +28,9 @@ class Topic:
 
     fetched_content: Optional[
         list[tuple[str, str, list[str], dict]]  # url  # fetched content  # links on site  # metadata
-    ]
-    researched: bool
+    ] = None
+    sumarized_fetched_content: str = ""
+    researched: bool = False
 
     def __init__(
         self,
@@ -58,7 +58,7 @@ class Topic:
         self.fetched_urls = fetched_urls if fetched_urls else []
         self.failed_fetched_urls = failed_fetched_urls if failed_fetched_urls else []
 
-    def for_ai(self, depth: int = 0) -> str:
+    def for_ai(self, depth: int = 0, include_sub_topics: bool = True) -> str:
         """Format topic details for AI processing in Markdown format."""
         header = "#" * (depth + 1)  # Determine heading level
         details = f"#{header} {self.topic}\n\n"
@@ -72,12 +72,15 @@ class Topic:
                 details += f"- {query}\n"
             details += "\n"
 
+        if self.sumarized_fetched_content:
+            details += f"{header} Sumarized Fetched Content:\n"
+
         if self.fetched_content:
-            details += f"{header} Fetched Content:\n"
+            details += f"{header} {"Additional" if self.sumarized_fetched_content else ""} Fetched Content:\n"
             for url, markdown, links, link_info in self.fetched_content:
                 details += f"- {url}:\n```md\n{markdown}\nExtracted Linkes in Webpage:\n{"\n".join(links)}```\n\n"
 
-        if self.sub_topics:
+        if include_sub_topics and self.sub_topics:
             details += f"{header} Subtopics:\n"
             for sub in self.sub_topics:
                 details += sub.for_ai(depth + 1) + "\n"
@@ -191,7 +194,158 @@ class DeepResearcher:
         if value:
             self._stop_event.set()
 
-    def analyse_add_topic(self) -> str:
+    @utils.retry(
+        exceptions=utils.network_errors,
+        ignore_exceptions=utils.ignore_network_error,
+    )
+    def summarize_sites(self, topic: Topic, executor: Optional[concurrent.futures.ThreadPoolExecutor] = None) -> None:
+        self.call_back({"action": "summarize_sites", "topic": topic.id})
+
+        # Create a new executor if one wasn't provided
+        should_close_executor = False
+        if executor is None:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)# cz max RPM is 10 & each request will easyly take more than 6 seconds
+            should_close_executor = True
+
+        try:
+            # Process current topic and its subtopics concurrently
+            topic_future = executor.submit(self._summarize_topic_content, topic)
+
+            # Process subtopics concurrently using the executor
+            futures = []
+            for stopic in topic.sub_topics:
+                if self.stop:
+                    break
+                futures.append(executor.submit(self.summarize_sites, stopic, executor))
+
+            # Wait for current topic summarization to complete
+            try:
+                topic_future.result()  # Ensure the current topic is summarized
+                self.call_back({"action": "summarize_sites_complete", "topic": topic.id})
+            except Exception as e:
+                print(f"Error summarizing topic content: {e}")
+                traceback.print_exc()
+
+            # Wait for all subtopic summarizations to complete
+            for future in concurrent.futures.as_completed(futures):
+                if self.stop:
+                    break
+                try:
+                    future.result()  # Get the result to propagate any exceptions
+                except Exception as e:
+                    print(f"Error summarizing subtopic: {e}")
+                    traceback.print_exc()
+
+        finally:
+            # Only close the executor if we created it
+            if should_close_executor:
+                executor.shutdown()
+
+    def _summarize_topic_content(self, topic: Topic) -> None:
+        """Helper method to summarize a single topic's content using AI."""
+        contents = [types.Content(role="user", parts=[
+            types.Part(text=topic.for_ai(0, False)),
+            types.Part(text=prompt.SUMMARIZE_SITES_USER_INSTR),
+        ])]
+        tc = utils.retry(
+            exceptions=utils.network_errors,
+            ignore_exceptions=utils.ignore_network_error,
+        )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=contents).total_tokens or 0 # type: ignore
+        if tc > 6_00_000:
+            # Implement the TODO: summarize each site individually and remove sites with content that's too large
+            if topic.fetched_content:
+                summarized_sites = []
+                for url, content, links, metadata in topic.fetched_content:
+                    # Check if individual site content is too large
+                    site_content = [types.Content(role="user", parts=[
+                        types.Part(text=f"Content from {url}:\n```md\n{content}\n```"),
+                        types.Part(text="Summarize the key information from this content concisely."),
+                    ])]
+
+                    site_tc = utils.retry(
+                        exceptions=utils.network_errors,
+                        ignore_exceptions=utils.ignore_network_error,
+                    )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=site_content).total_tokens or 0 # type: ignore
+
+                    if site_tc > 6_00_000:
+                        # Skip this site as it's too large
+                        continue
+
+                    # Summarize the site content if it's a reasonable size
+                    if site_tc > 50_000:  # Only summarize if the content is substantial
+                        site_summary_result = utils.retry(
+                            exceptions=utils.network_errors,
+                            ignore_exceptions=utils.ignore_network_error
+                        )(global_shares["client"].models.generate_content)(
+                            model="gemini-1.5-flash-8b",
+                            contents=cast(types.ContentListUnion, site_content),
+                            config=types.GenerateContentConfig(
+                                system_instruction="Create a concise summary of the key information."
+                            ),
+                        )
+
+                        if (site_summary_result and site_summary_result.candidates and
+                            site_summary_result.candidates[0].content and
+                            site_summary_result.candidates[0].content.parts):
+                            # Replace original content with summary
+                            summarized_content = site_summary_result.candidates[0].content.parts[0].text
+                            summarized_sites.append((url, summarized_content, links, metadata))
+                        else:
+                            summarized_sites.append((url, content, links, metadata))
+                    else:
+                        summarized_sites.append((url, content, links, metadata))
+
+                # Replace the original fetched_content with summarized content
+                topic.fetched_content = summarized_sites
+
+                # Recalculate token count after summarization
+                contents = [types.Content(role="user", parts=[
+                    types.Part(text=topic.for_ai(0, False)),
+                    types.Part(text=prompt.SUMMARIZE_SITES_USER_INSTR),
+                ])]
+
+            tc = utils.retry(
+                exceptions=utils.network_errors,
+                ignore_exceptions=utils.ignore_network_error,
+            )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=contents).total_tokens or 0 # type: ignore
+
+        while True:
+            if self.stop:
+                break
+
+            result = utils.retry(
+                exceptions=utils.network_errors,
+                ignore_exceptions=utils.ignore_network_error
+            )(global_shares["client"].models.generate_content)(
+                model="gemini-1.5-flash-8b",
+                contents=cast(types.ContentListUnion, contents),
+                config=types.GenerateContentConfig(system_instruction=prompt.SUMMARIZE_SITES_SYS_INSTR),
+            )
+
+            if (
+                result
+                and result.candidates
+                and result.candidates[0].content
+                and result.candidates[0].content.parts
+            ):
+                for part in result.candidates[0].content.parts:
+                    if part.text:
+                        if contents[-1].role == "model":
+                            contents[-1].parts[-1].text += part.text  # type: ignore
+                        else:
+                            contents.append(
+                                types.Content(
+                                    role="model", parts=[types.Part(text=part.text)]
+                                )
+                            )
+                if result.candidates[0].finish_reason != types.FinishReason.MAX_TOKENS:
+                    break
+
+        if contents[-1].role == "model" and len(contents[-1].parts or ()) > 0:
+            topic.sumarized_fetched_content = contents[-1].parts[-1].text  # type: ignore
+            topic.fetched_content = None
+
+    def analyse_add_topic(self, use_thinking: bool) -> str:
         def add_topic(parent_id: str,topic: str,sites: Optional[list[str]] = None,queries: Optional[list[str]] = None) -> str:
             """\
                 Adds a new subtopic under an existing topic in the research tree.
@@ -281,7 +435,7 @@ class DeepResearcher:
         text: str = ""
         while True:
             result = utils.retry(exceptions=utils.network_errors,ignore_exceptions=utils.ignore_network_error)(global_shares["client"].models.generate_content)(
-                model="gemini-2.0-flash",
+                model= "gemini-2.5-flash-preview-04-17" if use_thinking else "gemini-2.0-flash",
                 contents=cast(types.ContentListUnion, contents),
                 config=types.GenerateContentConfig(
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(
@@ -307,13 +461,16 @@ class DeepResearcher:
                 for part in result.candidates[0].content.parts:
                     if part.text:
                         if contents[-1].role == "model":
-                            contents[-1].parts[-1].text += part.text  # type: ignore
+                            if part.thought and contents[-1].parts[-1].thought:  # type: ignore
+                                contents[-1].parts[-1].text += part.text  # type: ignore
+                            elif not part.thought and contents[-1].parts[-1].thought:  # type: ignore
+                                contents[-1].parts.append(types.Part(text=part.text, thought=False))  # type: ignore
+                            elif part.thought and not contents[-1].parts[-1].thought:  # type: ignore
+                                contents[-1].parts.append(types.Part(text=part.text, thought=True))  # type: ignore
+                            elif not part.thought and not contents[-1].parts[-1].thought:  # type: ignore
+                                contents[-1].parts[-1].text += part.text  # type: ignore
                         else:
-                            contents.append(
-                                types.Content(
-                                    role="model", parts=[types.Part(text=part.text)]
-                                )
-                            )
+                            contents.append(types.Content(role="model", parts=[types.Part(text=part.text, thought=part.thought)]))
                         text += part.text
                     elif part.function_call:
                         if (
@@ -682,11 +839,22 @@ class DeepResearcher:
                     raise DeepResearcher.StopResearch()
 
                 # Analyze and add new topics after completing current batch
-                # self.analyse_add_topic()
+                tc = utils.retry(
+                    exceptions=utils.network_errors,
+                    ignore_exceptions=utils.ignore_network_error,
+                )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=[types.Content(role="user", parts=[types.Part(text=self.topic.for_ai())])]).total_tokens or 0
+                if tc > 9_00_000: # 0.9 million
+                    self.summarize_sites(self.topic)
+                    tc = utils.retry(
+                        exceptions=utils.network_errors,
+                        ignore_exceptions=utils.ignore_network_error,
+                    )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=[types.Content(role="user", parts=[types.Part(text=self.topic.for_ai())])]).total_tokens or 0
+                if tc > 9_00_000:
+                    break
                 self.call_back(
                     {
                         "action": "thinking",
-                        "thoughts": self.analyse_add_topic(),
+                        "thoughts": self.analyse_add_topic(tc < 1_86_000),
                     }
                 )
         except DeepResearcher.StopResearch:
@@ -762,29 +930,26 @@ class DeepResearcher:
         return report_str
 
     def fetch_url(self, url: str, wait_for: int = 4000) -> Optional[utils.ScrapedData]:
-        while True:
-            scrape_result = utils.scrape_url(
-                url,
-                params={
-                    "formats": ["markdown", "links"],
-                    "waitFor": wait_for,
-                    "proxy": "stealth",
-                    "timeout": 30_000,
-                    "removeBase64Images": True,
-                },
-            )
-            if scrape_result:
-                if 'metadata' in scrape_result and scrape_result['metadata']:
-                    scrape_result['url_display_info'] = {
-                        'url': url,
-                        'title': scrape_result['metadata'].get('title', '') or
-                                 scrape_result['metadata'].get('ogTitle', ''),
-                        'favicon': scrape_result['metadata'].get('favicon', '')
-                    }
-                return scrape_result
-            else:
-                return None
-        # dead code for future
+        scrape_result = utils.scrape_url(
+            url,
+            params={
+                "formats": ["markdown", "links"],
+                "waitFor": wait_for,
+                "proxy": "stealth",
+                "timeout": 30_000,
+                "removeBase64Images": True,
+            },
+        )
+        if not scrape_result:
+            return
+        if 'metadata' in scrape_result and scrape_result['metadata']:
+            scrape_result['url_display_info'] = {
+                'url': url,
+                'title': scrape_result['metadata'].get('title', '') or
+                            scrape_result['metadata'].get('ogTitle', ''),
+                'favicon': scrape_result['metadata'].get('favicon', '')
+            }
+        return scrape_result
         img = (
             utils.retry(
                 exceptions=utils.network_errors,

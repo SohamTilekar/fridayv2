@@ -1,5 +1,6 @@
 import functools
 import http.client
+from json.encoder import ESCAPE
 import ssl
 import threading
 import time
@@ -535,13 +536,10 @@ class FireFetcher:
                 elif response.status_code == 403:
                     return None
                 elif response.status_code == 500 and ((response.json().get("error") or "").find("timeout") > 0):
-                    continue  # Retry immediately on timeout errors
+                    continue
                 elif response.status_code not in (408, 429):  # Don't count rate limit or timeout errors
-                    attempt += 1
-
-                # Apply backoff
-                back_off *= 2
-                time.sleep(min(config.RETRY_DELAY * back_off, 128))
+                    continue  # Retry immediately on timeout errors
+                raise Exception("Unworth Status code return")
             except self.APICreditsOver:
                 raise
             except requests.exceptions.ReadTimeout:

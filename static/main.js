@@ -380,6 +380,20 @@ function renderStep(stepData, index, container, functionId) {
   } else if (stepData.type === "done_generating_report") {
     stepTitle = `<strong>Step ${index + 1}: Report Generated</strong> <i class="bi bi-check-circle-fill text-success"></i>`;
     stepDetailsHTML = `<small class="text-muted d-block mt-1">Final report is available below.</small>`;
+  } else if (stepData.type === "summarize_sites") {
+    stepTitle += ` for Topic: <span class="text-info fst-italic">${stepData.topic || "Unknown"}</span>`;
+    stepDetailsHTML = `<div class="mt-2 d-flex align-items-center text-muted small">
+                            <div class="spinner-border spinner-border-sm me-2" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            Summarizing sites for topic "${stepData.topic || "Unknown"}"...
+                         </div>`;
+  } else if (stepData.type === "summarize_sites_complete") {
+    stepTitle += ` for Topic: <span class="text-info fst-italic">${stepData.topic || "Unknown"}</span>`;
+    stepDetailsHTML = `<div class="mt-2 d-flex align-items-center text-success small">
+                            <i class="bi bi-check-circle-fill me-2"></i>
+                            Completed summarizing sites for topic "${stepData.topic || "Unknown"}"
+                         </div>`;
   }
   // Keep the old fetch type rendering if needed (though likely covered by search)
   else if (stepData.type === "fetch" && stepData.url) {
