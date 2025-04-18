@@ -156,6 +156,8 @@ You MUST enforce these constraints:
 3. If no additions are warranted, explain why you are stopping growth
 
 Start by analyzing the current structure and recent research...
+
+Note: After thinking, directly start calling the function/tool if you have desided to call the tool else dont, dont put the Stop token in between the Thinking & Calling process.
 """
 
 QUERY_GEN_USR_INSTR = """Generate a diverse list of search queries related to the topic: '{topic}'.

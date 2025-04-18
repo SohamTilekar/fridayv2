@@ -6,7 +6,6 @@ import concurrent.futures
 import requests
 import traceback
 from rich import print
-from firecrawl import FirecrawlApp
 from typing import Any, Callable, Optional, TypedDict, cast
 from google.genai import types
 from global_shares import global_shares
@@ -14,39 +13,6 @@ import config
 import prompt
 import threading
 import utils
-
-
-class FetchModelMD(TypedDict):
-    # "og:description": str
-    # "og:image:width": str
-    # "og:locale": str
-    # "google-signin-scope": str
-    # "google-signin-client-id": str
-    # "og:image": str
-    # "og:title": str
-    # "twitter:card": str
-    # "og:image:height": str
-    # "og:url": str
-    title: str
-    ogTitle: str
-    language: str
-    ogDescription: str
-    viewport: str
-    favicon: str
-    ogUrl: str
-    ogImage: str
-    ogLocale: str
-    description: str
-    scrapeId: str
-    sourceURL: str
-    url: str
-    statusCode: int
-
-class FetchModel(TypedDict):
-    markdown: str
-    # screenshot: str  # url of the website screenshot
-    links: list[str]  # links in the website
-    metadata: FetchModelMD
 
 
 class Topic:
@@ -189,7 +155,6 @@ class Topic:
 
 
 class DeepResearcher:
-    app: FirecrawlApp
     query: str
     topic: Topic
     max_topics: int | None  # None for inf
@@ -208,9 +173,6 @@ class DeepResearcher:
         max_search_results: int = 7,
         call_back: Callable[[dict[str, Any] | None], None] = lambda x: None,
     ):
-        self.app = FirecrawlApp(
-            api_key=config.FIRECRAWL_API, api_url=config.FIRECRAWL_ENDPOINT
-        )
         self.query = query
         self.call_back = call_back
         self.max_topics = max_topics
@@ -540,7 +502,6 @@ class DeepResearcher:
         results = self.ddgs.text(
             query, backend="lite", safesearch="off", max_results=self.max_search_results
         )
-        # print(results)
         links = [result["href"] for result in results]
         return links
 
@@ -623,10 +584,9 @@ class DeepResearcher:
             search_state["researched_queries"].append(query)
             try:
                 unresearched_topic.searched_queries.append(query)
-                unresearched_topic.queries.remove(query)
             except ValueError:
-                traceback.print_exc()
                 print(unresearched_topic.queries, unresearched_topic.searched_queries, query)
+                traceback.print_exc()
             self.call_back(search_state)
             self.call_back({"action": "topic_updated"})
             return result
@@ -801,12 +761,9 @@ class DeepResearcher:
 
         return report_str
 
-    def fetch_url(self, url: str, wait_for: int = 4000) -> Optional[FetchModel]:
+    def fetch_url(self, url: str, wait_for: int = 4000) -> Optional[utils.ScrapedData]:
         while True:
-            scrape_result = utils.retry(
-                exceptions=utils.network_errors,
-                ignore_exceptions=utils.ignore_network_error,
-            )(utils.FetchLimiter()(self.app.scrape_url))(
+            scrape_result = utils.scrape_url(
                 url,
                 params={
                     "formats": ["markdown", "links"],

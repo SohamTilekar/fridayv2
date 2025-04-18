@@ -4,7 +4,11 @@ from typing import Literal, Optional
 
 # Remove the -example part
 GOOGLE_API: str = "Your-Google-API-Gose-Here"
-FIRECRAWL_API: str = "fc-..."
+# This is just if your self hosted option have multiple API keys for concrunt browsers
+# RPM ( Request per minute limit, None for not any limit ), API key
+FIRECRAWL_APIS: list[tuple[Optional[int], Optional[str]]] = [
+    (None, None)
+]
 FIRECRAWL_ENDPOINT: Optional[str] = (
     None  # None for firecrawl.dev hosted endpoint (FIRECRAWL_API requires if None)
 )
