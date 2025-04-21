@@ -567,7 +567,7 @@ class Message:
                     return
 
     def for_ai(
-        self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
+        self, support_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
     ) -> list[types.Content]:
         if msg is None:
             raise ValueError("msg parameter is required.")
@@ -576,17 +576,17 @@ class Message:
         parts_buffer = []
 
         for item in self.content:
-            if item.function_response and suport_tools:
+            if item.function_response and support_tools:
                 if parts_buffer:
                     ai_contents.append(
                         types.Content(parts=parts_buffer, role=self.role)
                     )
                     parts_buffer = []
                 if part := item.function_response.for_ai(
-                    suport_tools, imagen_selected, msg
+                    support_tools, imagen_selected, msg
                 ):
                     ai_contents.append(types.Content(parts=part, role="user"))
-            elif part := item.for_ai(suport_tools, imagen_selected, msg):
+            elif part := item.for_ai(support_tools, imagen_selected, msg):
                 if isinstance(part, types.Part):
                     parts_buffer.append(part)
                 elif isinstance(part, tuple):
@@ -697,12 +697,12 @@ class ChatHistory:
         )
 
     def for_ai(
-        self, ai_msg: Message, suport_tools: bool, imagen_selected: bool, chat_id: str
+        self, ai_msg: Message, support_tools: bool, imagen_selected: bool, chat_id: str
     ) -> list[types.Content]:
         result: list[types.Content] = []
         for msg in self._messages:
             if msg.is_member(self._chats[chat_id], self._chats):
-                result.extend(msg.for_ai(suport_tools, imagen_selected, ai_msg))
+                result.extend(msg.for_ai(support_tools, imagen_selected, ai_msg))
         return result
 
     def jsonify(self):
@@ -1154,153 +1154,113 @@ def generate_content(msg: Message, chat_id: str) -> Message:
     )
     def get_model_and_tools() -> tuple[str, bool, list[types.Tool]]:
         """
-        Determines which model and tools to use, with retry logic.
+        Determines which model and tools to use, with retry logic and optimized prompting using COSTAR principles.
 
         Returns:
-            Tuple of (model_name, tools_list)
+            Tuple of (model_name, tool_compatible_flag, tools_list)
 
         Raises:
             Exception: If selection fails after multiple attempts
         """
-        chat = chat_history.for_ai(msg, True, False, chat_id)
+        chat = chat_history.for_ai(msg, support_tools=True, imagen_selected=False, chat_id=chat_id)
         global model
         allowed_function_names: Optional[list[str]] = None
-        # Case 1: Both model and tools are already selected
+
+        # Case 1: Both model and tools already selected
         if model is not None and selected_tools is not None:
-            tols = [
-                tools.Tools[selected_tool].value for selected_tool in selected_tools
-            ]
+            tools_selected = [tools.Tools[tool].value for tool in selected_tools]
             return (
                 config.Models[model].value,
-                model in config.ToolSuportedModels
-                and tools.SearchGrounding not in tols,
-                tols,
+                model in config.ToolSuportedModels and tools.SearchGrounding not in tools_selected,
+                tools_selected,
             )
 
-        # Case 2: Only model is selected, need to select tools
+        # Case 2: Model is known, select tools
         elif model is not None:
+            # Prepare the tool selection prompt
             if model in config.SearchGroundingSuportedModels:
-                chat.append(
-                    types.Content(
-                        parts=[
-                            types.Part(
-                                text="Select which tools to use to reply to the user message."
-                            )
-                        ],
-                        role="user",
-                    )
-                )
-                tools_list = [
-                    types.Tool(
-                        function_declarations=[
-                            types.FunctionDeclaration.from_callable_with_api_option(
-                                callable=tools.ToolSelector
-                            )
-                        ]
-                    )
-                ]
-                allowed_function_names = [tools.ToolSelector.__name__]
+                chat.append(types.Content(
+                    parts=[types.Part(
+                        text="🧠 Your task is to select the most suitable tools to support the user's request. "
+                             "The current model supports SearchGrounding. Think step by step about the user’s intent, "
+                             "and choose tools that match the task. You MUST call ToolSelector(...)."
+                    )],
+                    role="user"
+                ))
             elif model in config.ToolSuportedModels:
-                chat.append(
-                    types.Content(
-                        parts=[
-                            types.Part(
-                                text="Select which tools to use to reply to the user message. "
-                                "Important: Don't use `Search` tool as it's not supported by the current model."
-                            )
-                        ],
-                        role="user",
-                    )
-                )
-                tools_list = [
-                    types.Tool(
-                        function_declarations=[
-                            types.FunctionDeclaration.from_callable_with_api_option(
-                                callable=tools.ToolSelector
-                            )
-                        ]
-                    )
-                ]
-                allowed_function_names = [tools.ToolSelector.__name__]
+                chat.append(types.Content(
+                    parts=[types.Part(
+                        text="🚫 SearchGrounding is NOT supported by the current model. Your task is to select other relevant tools "
+                             "to help the assistant complete the user’s task. Think step by step and call ToolSelector(...) with only compatible tools."
+                    )],
+                    role="user"
+                ))
             else:
                 return config.Models[model].value, True, []
 
-        # Case 3: Only tools are selected, need to select model
+            # Assign tool selector and function call permission
+            tools_list = [types.Tool(
+                function_declarations=[
+                    types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ToolSelector)
+                ]
+            )]
+            allowed_function_names = [tools.ToolSelector.__name__]
+
+        # Case 3: Tools known, select model
         elif selected_tools is not None:
             if tools.Tools.SearchGrounding.name in selected_tools:
-                chat.append(
-                    types.Content(
-                        parts=[
-                            types.Part(
-                                text=f"Select which model to use to reply to the user message. "
-                                f"Important: Use only these models: {config.SearchGroundingSuportedModels} "
-                                f"as they are the only ones that support `SearchGrounding`."
-                            )
-                        ],
-                        role="user",
-                    )
-                )
+                chat.append(types.Content(
+                    parts=[types.Part(
+                        text=f"🔍 The tool `SearchGrounding` is selected. You MUST now choose a compatible model from: {config.SearchGroundingSuportedModels}. "
+                             "Think step by step about latency, context size, and fit for the task. Call ModelSelector(...)."
+                    )],
+                    role="user"
+                ))
             else:
-                chat.append(
-                    types.Content(
-                        parts=[
-                            types.Part(
-                                text=f"Select which model to use to reply to the user message. "
-                                f"Important: Use only these models: {config.ToolSuportedModels} "
-                                f"as they are the only ones that support Tool Calling."
-                            )
-                        ],
-                        role="user",
-                    )
-                )
-            tools_list = [
-                types.Tool(
-                    function_declarations=[
-                        types.FunctionDeclaration.from_callable_with_api_option(
-                            callable=tools.ModelSelector
-                        )
-                    ]
-                )
-            ]
+                chat.append(types.Content(
+                    parts=[types.Part(
+                        text=f"🧰 Based on the selected tools, choose a model that supports general tool calling. "
+                             f"Allowed models are: {config.ToolSuportedModels}. Think carefully and call ModelSelector(...)."
+                    )],
+                    role="user"
+                ))
+
+            tools_list = [types.Tool(
+                function_declarations=[
+                    types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ModelSelector)
+                ]
+            )]
             allowed_function_names = [tools.ModelSelector.__name__]
 
-        # Case 4: Neither model nor tools selected, need to select both
+        # Case 4: Neither model nor tools are selected
         else:
-            chat.append(
-                types.Content(
-                    parts=[
-                        types.Part(
-                            text="Select which model and tools to use to reply to the user message."
-                        )
-                    ],
-                    role="user",
-                )
-            )
-            tools_list = [
-                types.Tool(
-                    function_declarations=[
-                        types.FunctionDeclaration.from_callable_with_api_option(
-                            callable=tools.ModelAndToolSelector
-                        )
-                    ]
-                )
-            ]
+            chat.append(types.Content(
+                parts=[types.Part(
+                    text="🧠 Your task is to select BOTH a compatible model and relevant tools to fulfill the user request. "
+                         "Use ABOUT_MODELS and think step by step about capabilities, latency, tool support, and user intent. "
+                         "You MUST call ModelAndToolSelector(...) with full valid arguments."
+                )],
+                role="user"
+            ))
+
+            tools_list = [types.Tool(
+                function_declarations=[
+                    types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ModelAndToolSelector)
+                ]
+            )]
             allowed_function_names = [tools.ModelAndToolSelector.__name__]
 
-        # Try selection process with multiple attempts
+        # --- Retry Loop with Selector ---
         for attempt in range(3):
             try:
-                # Make selection request to tool selector model
                 selector_response = client.models.generate_content(
                     model=config.MODEL_TOOL_SELECTOR,
                     contents=chat,  # type: ignore
                     config=types.GenerateContentConfig(
                         system_instruction=prompt.ModelAndToolSelectorSYSTEM_INSTUNCTION,
                         temperature=0.1,
-                        tools=tools_list,  # type: ignore
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                            disable=True, maximum_remote_calls=None
-                        ),
+                        tools=tools_list, # type: ignore
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                         tool_config=types.ToolConfig(
                             function_calling_config=types.FunctionCallingConfig(
                                 mode=types.FunctionCallingConfigMode.ANY,
@@ -1310,44 +1270,40 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     ),
                 )
 
-                # Process response if function calls are present
-                if (
-                    selector_response.function_calls
-                    and selector_response.function_calls[0].args
-                ):
+                # Process function call response
+                if selector_response.function_calls and selector_response.function_calls[0].args:
                     call_name = selector_response.function_calls[0].name
                     args = selector_response.function_calls[0].args
                     call_id = selector_response.function_calls[0].id
 
-                    # Handle tool selection when model is known
+                    # Tool Selection Flow
                     if call_name == "ToolSelector" and model is not None:
                         try:
-                            tols = tools.ToolSelector(**args)
+                            selected = tools.ToolSelector(**args)
                             return (
                                 config.Models[model].value,
-                                model in config.ToolSuportedModels
-                                and tools.SearchGrounding not in tols,
-                                tols,
+                                model in config.ToolSuportedModels and tools.SearchGrounding not in selected,
+                                selected,
                             )
                         except Exception as e:
                             handle_selector_error(chat, call_id, call_name, e)
                             continue
 
-                    # Handle model selection when tools are known
+                    # Model Selection Flow
                     elif call_name == "ModelSelector" and selected_tools is not None:
                         try:
                             tols = tools.ToolSelector(selected_tools)
+                            model_selected = tools.ModelSelector(**args)
                             return (
-                                tools.ModelSelector(**args),
-                                model in config.ToolSuportedModels
-                                and tools.SearchGrounding not in tols,
+                                model_selected,
+                                model_selected in config.ToolSuportedModels and tools.SearchGrounding not in tols,
                                 tols,
                             )
                         except Exception as e:
                             handle_selector_error(chat, call_id, call_name, e)
                             continue
 
-                    # Handle combined model and tool selection
+                    # Model & Tool Selection Flow
                     elif call_name == "ModelAndToolSelector":
                         try:
                             return tools.ModelAndToolSelector(**args)
@@ -1355,56 +1311,42 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             handle_selector_error(chat, call_id, call_name, e)
                             continue
 
-                    # Handle unknown function call
                     else:
-                        error_msg = f"Unknown function: {call_name}"
-                        handle_selector_error(chat, call_id, call_name, error_msg)
+                        handle_selector_error(chat, call_id, call_name, f"Unknown function: {call_name}")
                         continue
 
-                # No function calls detected
                 else:
-                    chat.append(
-                        types.Content(
-                            parts=[
-                                types.Part(
-                                    text="Select which model and tools to use to reply to the user message. "
-                                    "You didn't call the required function."
-                                )
-                            ],
-                            role="user",
-                        )
-                    )
+                    # No function called
+                    chat.append(types.Content(
+                        parts=[types.Part(
+                            text="⚠️ You did not call any of the required selection functions. You MUST retry and select using one of:\n"
+                                 "- ToolSelector(...)\n- ModelSelector(...)\n- ModelAndToolSelector(...)"
+                        )],
+                        role="user"
+                    ))
                     continue
 
             except Exception as e:
-                # Log error and continue to next attempt
-                print(f"Selection attempt {attempt+1} failed: {str(e)}")
-                if attempt == 2:  # Last attempt
-                    raise Exception(
-                        f"Failed to select model and tools after multiple attempts: {str(e)}"
-                    )
+                print(f"[Retry {attempt + 1}/3] Selection failed: {str(e)}")
+                if attempt == 2:
+                    raise Exception(f"❌ Failed to select model/tools after 3 retries. Last error: {str(e)}")
 
-        # If we reach here, all attempts failed
-        raise Exception(
-            "Cannot select models & tools automatically. Please select manually."
-        )
+        raise Exception("🚫 Final failure: could not automatically determine model/tools.")
 
-    # Helper function to handle selector errors
     def handle_selector_error(chat, call_id, call_name, error):
-        error_msg = f"Error occurred while calling function: {error}"
-        chat.append(
-            types.Content(
-                parts=[
-                    types.Part(
-                        function_response=types.FunctionResponse(
-                            id=call_id, name=call_name, response={"error": error_msg}
-                        )
-                    )
-                ],
-                role="user",
-            )
-        )
+        error_msg = f"❌ Error occurred while calling `{call_name}`: {error}"
         print(error_msg)
+        chat.append(types.Content(
+            parts=[
+                types.Part(function_response=types.FunctionResponse(
+                    id=call_id,
+                    name=call_name,
+                    response={"error": error_msg}
+                )),
+                types.Part(text="Please retry with corrected arguments and proper function call.")
+            ],
+            role="user"
+        ))
 
     # Main execution flow
     msg.processing = True
