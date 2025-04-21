@@ -58,30 +58,31 @@ class Topic:
         self.fetched_urls = fetched_urls if fetched_urls else []
         self.failed_fetched_urls = failed_fetched_urls if failed_fetched_urls else []
 
-    def for_ai(self, depth: int = 0, include_sub_topics: bool = True) -> str:
+    def for_ai(self, depth: int = 0, include_details: bool = True) -> str:
         """Format topic details for AI processing in Markdown format."""
         header = "#" * (depth + 1)  # Determine heading level
-        details = f"#{header} {self.topic}\n\n"
-        details += f"{"This is the main Topic/Question Searched by user." if not depth else ""}\n"
-        details += f"**ID:** {self.id}\n"
-        details += f"**Researched:** {'Yes' if self.researched else 'No'}  \n\n"
+        details  = f"{header} {self.topic}\n\n"
+        if include_details:
+            details += f"{"This is the main Topic/Question Searched by user." if not depth else ""}\n"
+            details += f"**ID:** {self.id}\n"
+            details += f"**Researched:** {'Yes' if self.researched else 'No'}  \n\n"
 
-        if self.queries:
-            details += f"{header} Queries Searched online: \n"
+        if include_details and self.queries:
+            details += f"#{header} Queries Searched online: \n"
             for query in self.queries:
                 details += f"- {query}\n"
             details += "\n"
 
         if self.sumarized_fetched_content:
-            details += f"{header} Sumarized Fetched Content:\n"
+            details += f"#{header} Sumarized Fetched Content:\n"
 
         if self.fetched_content:
-            details += f"{header} {"Additional" if self.sumarized_fetched_content else ""} Fetched Content:\n"
+            details += f"#{header} {"Additional" if self.sumarized_fetched_content else ""} Fetched Content:\n"
             for url, markdown, links, link_info in self.fetched_content:
                 details += f"- {url}:\n```md\n{markdown}\nExtracted Linkes in Webpage:\n{"\n".join(links)}```\n\n"
 
-        if include_sub_topics and self.sub_topics:
-            details += f"{header} Subtopics:\n"
+        if include_details and self.sub_topics:
+            details += f"#{header} Subtopics:\n"
             for sub in self.sub_topics:
                 details += sub.for_ai(depth + 1) + "\n"
 
@@ -172,8 +173,8 @@ class DeepResearcher:
         self,
         query: str,
         max_topics: Optional[int] = None,
-        max_search_queries: int = 5,
-        max_search_results: int = 7,
+        max_search_queries: int = 2,
+        max_search_results: int = 4,
         call_back: Callable[[dict[str, Any] | None], None] = lambda x: None,
     ):
         self.query = query
@@ -204,7 +205,7 @@ class DeepResearcher:
         # Create a new executor if one wasn't provided
         should_close_executor = False
         if executor is None:
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)# cz max RPM is 10 & each request will easyly take more than 6 seconds
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=10) # cz max RPM is 10 & each request will easyly take more than 6 seconds
             should_close_executor = True
 
         try:
@@ -243,23 +244,18 @@ class DeepResearcher:
 
     def _summarize_topic_content(self, topic: Topic) -> None:
         """Helper method to summarize a single topic's content using AI."""
-        contents = [types.Content(role="user", parts=[
-            types.Part(text=topic.for_ai(0, False)),
-            types.Part(text=prompt.SUMMARIZE_SITES_USER_INSTR),
-        ])]
         tc = utils.retry(
             exceptions=utils.network_errors,
             ignore_exceptions=utils.ignore_network_error,
-        )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=contents).total_tokens or 0 # type: ignore
+        )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=types.Part(text=topic.for_ai(0, False))).total_tokens or 0 # type: ignore
         if tc > 6_00_000:
-            # Implement the TODO: summarize each site individually and remove sites with content that's too large
             if topic.fetched_content:
                 summarized_sites = []
                 for url, content, links, metadata in topic.fetched_content:
                     # Check if individual site content is too large
                     site_content = [types.Content(role="user", parts=[
                         types.Part(text=f"Content from {url}:\n```md\n{content}\n```"),
-                        types.Part(text="Summarize the key information from this content concisely."),
+                        types.Part(text=prompt.SUMMARIZE_SITES_USER_INSTR),
                     ])]
 
                     site_tc = utils.retry(
@@ -267,48 +263,71 @@ class DeepResearcher:
                         ignore_exceptions=utils.ignore_network_error,
                     )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=site_content).total_tokens or 0 # type: ignore
 
-                    if site_tc > 6_00_000:
+                    if site_tc > 3_00_000:
                         # Skip this site as it's too large
                         continue
 
                     # Summarize the site content if it's a reasonable size
-                    if site_tc > 50_000:  # Only summarize if the content is substantial
-                        site_summary_result = utils.retry(
-                            exceptions=utils.network_errors,
-                            ignore_exceptions=utils.ignore_network_error
-                        )(global_shares["client"].models.generate_content)(
-                            model="gemini-1.5-flash-8b",
-                            contents=cast(types.ContentListUnion, site_content),
-                            config=types.GenerateContentConfig(
-                                system_instruction="Create a concise summary of the key information."
-                            ),
-                        )
+                    if site_tc > 15_000:  # Only summarize if the content is substantial
+                        # Initialize empty summary and context for continuation
+                        site_summary_contents = site_content
+                        summarized_content = ""
 
-                        if (site_summary_result and site_summary_result.candidates and
-                            site_summary_result.candidates[0].content and
-                            site_summary_result.candidates[0].content.parts):
-                            # Replace original content with summary
-                            summarized_content = site_summary_result.candidates[0].content.parts[0].text
-                            summarized_sites.append((url, summarized_content, links, metadata))
-                        else:
-                            summarized_sites.append((url, content, links, metadata))
+                        # Loop until summarization is complete
+                        while True:
+                            if self.stop:
+                                break
+
+                            site_summary_result = utils.retry(
+                                exceptions=utils.network_errors,
+                                ignore_exceptions=utils.ignore_network_error
+                            )(global_shares["client"].models.generate_content)(
+                                model="gemini-1.5-flash-8b",
+                                contents=cast(types.ContentListUnion, site_summary_contents),
+                                config=types.GenerateContentConfig(
+                                    system_instruction="Create a concise summary of the key information."
+                                ),
+                            )
+
+                            if (site_summary_result and site_summary_result.candidates and
+                                site_summary_result.candidates[0].content and
+                                site_summary_result.candidates[0].content.parts):
+
+                                # Append the new content to our summary
+                                new_content = site_summary_result.candidates[0].content.parts[0].text
+                                summarized_content += new_content or ""
+
+                                # If there's already a model response in our contents, add to it
+                                # Otherwise, create a new model response
+                                if len(site_summary_contents) > 1 and site_summary_contents[-1].role == "model":
+                                    site_summary_contents[-1].parts[-1].text += new_content  # type: ignore
+                                else:
+                                    site_summary_contents.append(
+                                        types.Content(
+                                            role="model", parts=[types.Part(text=new_content)]
+                                        )
+                                    )
+
+                                # Break the loop if we're done (not truncated by token limit)
+                                if site_summary_result.candidates[0].finish_reason != types.FinishReason.MAX_TOKENS:
+                                    break
+                            else:
+                                # No valid result, use original content
+                                summarized_content = content
+                                break
+
+                        # Add the summarized content to our sites
+                        summarized_sites.append((url, summarized_content, links, metadata))
                     else:
+                        # Content is small enough, keep as is
                         summarized_sites.append((url, content, links, metadata))
 
                 # Replace the original fetched_content with summarized content
                 topic.fetched_content = summarized_sites
-
-                # Recalculate token count after summarization
-                contents = [types.Content(role="user", parts=[
-                    types.Part(text=topic.for_ai(0, False)),
-                    types.Part(text=prompt.SUMMARIZE_SITES_USER_INSTR),
-                ])]
-
-            tc = utils.retry(
-                exceptions=utils.network_errors,
-                ignore_exceptions=utils.ignore_network_error,
-            )(global_shares["client"].models.count_tokens)(model="gemini-2.0-flash", contents=contents).total_tokens or 0 # type: ignore
-
+        contents = [types.Content(role="user", parts=[
+            types.Part(text=topic.for_ai(0, False)),
+            types.Part(text=prompt.SUMMARIZE_TOPIC_USER_INSTR),
+        ])]
         while True:
             if self.stop:
                 break
@@ -317,9 +336,9 @@ class DeepResearcher:
                 exceptions=utils.network_errors,
                 ignore_exceptions=utils.ignore_network_error
             )(global_shares["client"].models.generate_content)(
-                model="gemini-1.5-flash-8b",
+                model="gemini-2.0-flash",
                 contents=cast(types.ContentListUnion, contents),
-                config=types.GenerateContentConfig(system_instruction=prompt.SUMMARIZE_SITES_SYS_INSTR),
+                config=types.GenerateContentConfig(system_instruction=prompt.SUMMARIZE_TOPIC_SYS_INSTR.format(topic=topic.topic)),
             )
 
             if (
@@ -622,7 +641,7 @@ class DeepResearcher:
             model="gemini-2.0-flash",
             contents=cast(types.ContentListUnion, contents),
             config=types.GenerateContentConfig(
-                temperature=0.5, system_instruction=prompt.QUERY_GEN_SYS_INSTR
+                temperature=0.5, system_instruction=prompt.QUERY_GEN_SYS_INSTR.format(breadth=(f"less than {self.max_search_queries}" if self.max_search_queries else "2-4"))
             ),
         )
         queries_str: str = (

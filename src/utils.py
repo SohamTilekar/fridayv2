@@ -7,7 +7,7 @@ import time
 import traceback
 import socket
 from typing import Callable, Optional, ParamSpec, TypeVar, TypedDict, Any, cast
-
+from duckduckgo_search import DDGS
 import google.auth.exceptions
 import google.genai.errors
 import googleapiclient.errors
@@ -308,7 +308,7 @@ class FireFetcher:
         if not hasattr(self, 'initialized'):
             self.apis = config.FIRECRAWL_APIS
             self.api_semaphores = {api[1]: threading.Semaphore(2) for api in self.apis if api[1]}
-            self.api_calls = {api[1]: 0 for api in self.apis if api[1]}
+            self.api_calls: dict[str | None, int] = {api[1]: 0 for api in self.apis if api[1]}
             self.api_reset_times = {api[1]: time.time() for api in self.apis if api[1]}
             self.api_credits = {}
             self.api_index = 0
@@ -506,6 +506,11 @@ class FireFetcher:
                 if timeout:
                     timeout += 10_000
 
+                if api_key in self.api_credits:
+                    self.api_credits[api_key] -= 1
+                    if self.api_credits[api_key] <= 0:
+                        self._remove_dead_api(api_key)
+
                 response = requests.post(
                     endpoint,
                     json=request_params,
@@ -516,12 +521,6 @@ class FireFetcher:
                 # Handle successful response
                 if response.status_code == 200:
                     data = response.json()
-                    if data.get("success") and "data" in data:
-                        with self._lock:
-                            if api_key in self.api_credits:
-                                self.api_credits[api_key] -= 1
-                                if self.api_credits[api_key] <= 0:
-                                    self._remove_dead_api(api_key)
                     return data["data"]
 
                 # Log response info
@@ -534,20 +533,23 @@ class FireFetcher:
                         self._remove_dead_api(api_key)
                     raise self.APICreditsOver("API has no credits")
                 elif response.status_code == 403:
+                    self.api_credits[api_key] += 1
+                    self.api_calls[api_key] -= 1
                     return None
-                elif response.status_code == 500 and ((response.json().get("error") or "").find("timeout") > 0):
-                    continue
                 elif response.status_code not in (408, 429):  # Don't count rate limit or timeout errors
+                    self.api_credits[api_key] += 1
+                    self.api_calls[api_key] -= 1
                     continue  # Retry immediately on timeout errors
+                elif response.status_code == 500 and response.json().get("error").find("net::ERR_CERT_AUTHORITY_INVALID") != -1:
+                    self.api_credits[api_key] += 1
+                    self.api_calls[api_key] -= 1
+                    return None
+                self.api_credits[api_key] += 1
+                self.api_calls[api_key] -= 1
                 raise Exception("Unworth Status code return")
             except self.APICreditsOver:
                 raise
             except requests.exceptions.ReadTimeout:
-                with self._lock:
-                    if api_key in self.api_credits:
-                        self.api_credits[api_key] -= 1
-                        if self.api_credits[api_key] <= 0:
-                            self._remove_dead_api(api_key)
                 back_off *= 2
                 time.sleep(min(config.RETRY_DELAY * back_off, 128))
                 continue
@@ -557,7 +559,6 @@ class FireFetcher:
                     back_off *= 2
                     time.sleep(min(config.RETRY_DELAY * back_off, 128))
                     continue
-
                 # For other exceptions, count the attempt
                 attempt += 1
                 back_off *= 2
@@ -566,3 +567,86 @@ class FireFetcher:
         raise  # Max retries exceeded
 
 scrape_url = FireFetcher()
+
+class DDGSearcher:
+    _instance: Optional["DDGSearcher"] = None
+    _lock = threading.Lock()
+    _request_semaphore = threading.Semaphore(15)  # Allow only 10 search at a time
+    _last_request_time = 0
+    _requests_in_minute = 0
+    _minute_start = 0
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+            return cls._instance
+
+    def __init__(self):
+        if not hasattr(self, 'initialized'):
+            self.ddg = DDGS(verify=False)
+            self.initialized = True
+
+    def __call__(self, query: str, max_results: int | None = 10, **kwargs):
+        with self._request_semaphore:
+            current_time = time.time()
+
+            with self._lock:
+                # Reset counter if a minute has passed
+                if current_time - self._minute_start >= 60:
+                    self._requests_in_minute = 0
+                    self._minute_start = current_time
+
+                # If we're at rate limit, wait until next minute
+                if self._requests_in_minute >= 30:  # Conservative rate limit
+                    wait_time = 60 - (current_time - self._minute_start)
+                    if wait_time > 0:
+                        time.sleep(wait_time)
+                    self._requests_in_minute = 0
+                    self._minute_start = time.time()
+
+                # Ensure minimum delay between requests
+                time_since_last = current_time - self._last_request_time
+                if time_since_last < 2:  # Minimum 2 seconds between requests
+                    time.sleep(2 - time_since_last)
+
+            # Track rate limited URLs
+            rate_limited_urls = {
+                'lite': False,
+                'html': False
+            }
+
+            while True:
+                try:
+                    # Try backend that isn't rate limited
+                    if not rate_limited_urls['lite']:
+                        results = self.ddg.text(query, max_results=max_results, backend="lite", **kwargs)
+                        break
+                    elif not rate_limited_urls['html']:
+                        results = self.ddg.text(query, max_results=max_results, backend="html", **kwargs)
+                        break
+                    else:
+                        # Both backends rate limited
+                        time.sleep(64)
+                        rate_limited_urls = {'lite': False, 'html': False}
+                        continue
+
+                except Exception as e:
+                    error_str = str(e)
+                    if "Ratelimit" in error_str:
+                        if "lite.duckduckgo.com" in error_str:
+                            print(f"Rate limit hit for lite backend: {error_str}")
+                            rate_limited_urls['lite'] = True
+                        elif "html.duckduckgo.com" in error_str:
+                            print(f"Rate limit hit for html backend: {error_str}")
+                            rate_limited_urls['html'] = True
+                        continue
+                    raise e
+
+            with self._lock:
+                self._requests_in_minute += 1
+                self._last_request_time = time.time()
+
+            return results
+
+searcher = DDGSearcher()
