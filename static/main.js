@@ -520,12 +520,21 @@ function displayDeepResearchDetails(functionId) {
     currentValue,
     placeholder,
     disabled,
+    type = "number",
+    min = "1",
+    max = null,
+    step = null,
   ) => {
     const group = document.createElement("div");
     group.classList.add("input-group", "input-group-sm", "mb-2");
+    let additionalAttrs = "";
+    if (min !== null) additionalAttrs += ` min="${min}"`;
+    if (max !== null) additionalAttrs += ` max="${max}"`;
+    if (step !== null) additionalAttrs += ` step="${step}"`;
+
     group.innerHTML = `
             <span class="input-group-text bg-secondary text-light border-secondary">${labelText}</span>
-            <input type="number" min="1" class="form-control bg-dark text-light border-secondary" id="${inputId}" value="${currentValue || ""}" placeholder="${placeholder}" ${disabled ? "disabled" : ""}>
+            <input type="${type}" ${additionalAttrs} class="form-control bg-dark text-light border-secondary" id="${inputId}" value="${currentValue !== undefined && currentValue !== null ? currentValue : ""}" placeholder="${placeholder}" ${disabled ? "disabled" : ""}>
         `;
     return group;
   };
@@ -556,6 +565,55 @@ function displayDeepResearchDetails(functionId) {
     !isEditable,
   );
   configCollapseDiv.appendChild(maxResultsGroup);
+
+  // Add new parameters
+  const treeDepthGroup = createInputGroup(
+    "Tree Depth Limit",
+    `research-tree-depth-${functionId}`,
+    extraData.tree_depth_limit,
+    "3",
+    !isEditable,
+    "number",
+    "1",
+  );
+  configCollapseDiv.appendChild(treeDepthGroup);
+
+  const branchWidthGroup = createInputGroup(
+    "Branch Width Limit",
+    `research-branch-width-${functionId}`,
+    extraData.branch_width_limit,
+    "5",
+    !isEditable,
+    "number",
+    "1",
+  );
+  configCollapseDiv.appendChild(branchWidthGroup);
+
+  const semanticDriftGroup = createInputGroup(
+    "Semantic Drift Limit",
+    `research-semantic-drift-${functionId}`,
+    extraData.semantic_drift_limit,
+    "0.5",
+    !isEditable,
+    "number",
+    "0",
+    "1",
+    "0.1",
+  );
+  configCollapseDiv.appendChild(semanticDriftGroup);
+
+  const detailLevelGroup = createInputGroup(
+    "Research Detail Level",
+    `research-detail-level-${functionId}`,
+    extraData.research_detail_level,
+    "0.5",
+    !isEditable,
+    "number",
+    "0",
+    "1",
+    "0.1",
+  );
+  configCollapseDiv.appendChild(detailLevelGroup);
 
   // --- Stop Button and Status ---
   const stopGroup = document.createElement("div");
@@ -764,6 +822,18 @@ function displayDeepResearchDetails(functionId) {
     const maxResultsInput = document.getElementById(
       `research-max-results-${functionId}`,
     );
+    const treeDepthInput = document.getElementById(
+      `research-tree-depth-${functionId}`,
+    );
+    const branchWidthInput = document.getElementById(
+      `research-branch-width-${functionId}`,
+    );
+    const semanticDriftInput = document.getElementById(
+      `research-semantic-drift-${functionId}`,
+    );
+    const detailLevelInput = document.getElementById(
+      `research-detail-level-${functionId}`,
+    );
     const stopBtn = document.getElementById(
       `research-stop-button-${functionId}`,
     );
@@ -792,6 +862,38 @@ function displayDeepResearchDetails(functionId) {
         e.target.value = extraData.max_search_results || "";
       }
     };
+    const handleTreeDepthChange = (e) => {
+      const value = e.target.value ? parseInt(e.target.value, 10) : null;
+      if (value === null || value >= 1) {
+        socket.emit(`research-update_tree_depth_${functionId}`, value);
+      } else {
+        e.target.value = extraData.tree_depth_limit || "";
+      }
+    };
+    const handleBranchWidthChange = (e) => {
+      const value = e.target.value ? parseInt(e.target.value, 10) : null;
+      if (value === null || value >= 1) {
+        socket.emit(`research-update_branch_width_${functionId}`, value);
+      } else {
+        e.target.value = extraData.branch_width_limit || "";
+      }
+    };
+    const handleSemanticDriftChange = (e) => {
+      const value = e.target.value ? parseFloat(e.target.value) : null;
+      if (value === null || (value >= 0 && value <= 1)) {
+        socket.emit(`research-update_semantic_drift_${functionId}`, value);
+      } else {
+        e.target.value = extraData.semantic_drift_limit || "";
+      }
+    };
+    const handleDetailLevelChange = (e) => {
+      const value = e.target.value ? parseFloat(e.target.value) : null;
+      if (value === null || (value >= 0 && value <= 1)) {
+        socket.emit(`research-update_detail_level_${functionId}`, value);
+      } else {
+        e.target.value = extraData.research_detail_level || "";
+      }
+    };
     const handleStopClick = () => {
       socket.emit(`research-stop_${functionId}`);
       stopBtn.disabled = true;
@@ -807,14 +909,31 @@ function displayDeepResearchDetails(functionId) {
     maxTopicsInput?.addEventListener("change", handleMaxTopicsChange);
     maxQueriesInput?.addEventListener("change", handleMaxQueriesChange);
     maxResultsInput?.addEventListener("change", handleMaxResultsChange);
+    treeDepthInput?.addEventListener("change", handleTreeDepthChange);
+    branchWidthInput?.addEventListener("change", handleBranchWidthChange);
+    semanticDriftInput?.addEventListener("change", handleSemanticDriftChange);
+    detailLevelInput?.addEventListener("change", handleDetailLevelChange);
     stopBtn?.addEventListener("click", handleStopClick);
 
     // Store listeners only if they are actually added
-    if (maxTopicsInput && maxQueriesInput && maxResultsInput && stopBtn) {
+    if (
+      maxTopicsInput &&
+      maxQueriesInput &&
+      maxResultsInput &&
+      treeDepthInput &&
+      branchWidthInput &&
+      semanticDriftInput &&
+      detailLevelInput &&
+      stopBtn
+    ) {
       activeResearchListeners[functionId] = {
         maxTopics: handleMaxTopicsChange,
         maxQueries: handleMaxQueriesChange,
         maxResults: handleMaxResultsChange,
+        treeDepth: handleTreeDepthChange,
+        branchWidth: handleBranchWidthChange,
+        semanticDrift: handleSemanticDriftChange,
+        detailLevel: handleDetailLevelChange,
         stop: handleStopClick,
         cleanup: () => {
           maxTopicsInput?.removeEventListener("change", handleMaxTopicsChange);
@@ -825,6 +944,19 @@ function displayDeepResearchDetails(functionId) {
           maxResultsInput?.removeEventListener(
             "change",
             handleMaxResultsChange,
+          );
+          treeDepthInput?.removeEventListener("change", handleTreeDepthChange);
+          branchWidthInput?.removeEventListener(
+            "change",
+            handleBranchWidthChange,
+          );
+          semanticDriftInput?.removeEventListener(
+            "change",
+            handleSemanticDriftChange,
+          );
+          detailLevelInput?.removeEventListener(
+            "change",
+            handleDetailLevelChange,
           );
           stopBtn?.removeEventListener("click", handleStopClick);
           delete activeResearchListeners[functionId];

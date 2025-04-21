@@ -994,6 +994,10 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     fc.extra_data["max_topics"] = researcher.max_topics
                     fc.extra_data["max_search_queries"] = researcher.max_search_queries
                     fc.extra_data["max_search_results"] = researcher.max_search_results
+                    fc.extra_data["tree_depth_limit"] = researcher.tree_depth_limit
+                    fc.extra_data["branch_width_limit"] = researcher.branch_width_limit
+                    fc.extra_data["semantic_drift_limit"] = researcher.semantic_drift_limit
+                    fc.extra_data["research_detail_level"] = researcher.research_detail_level
                     fc.extra_data["stop"] = False
                     fc.extra_data["status"] = "running" # Add initial status
 
@@ -1026,6 +1030,48 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             "data": {"max_search_results": max_search_results}
                         })
 
+                    def update_tree_depth_limit(tree_depth_limit: int):
+                        researcher.tree_depth_limit = tree_depth_limit
+                        fc.extra_data["tree_depth_limit"] = tree_depth_limit
+                        socketio.emit('research_update', {
+                            "function_id": id,
+                            "update_type": "config",
+                            "data": {"tree_depth_limit": tree_depth_limit}
+                        })
+
+                    def update_branch_width_limit(branch_width_limit: int):
+                        researcher.branch_width_limit = branch_width_limit
+                        fc.extra_data["branch_width_limit"] = branch_width_limit
+                        socketio.emit('research_update', {
+                            "function_id": id,
+                            "update_type": "config",
+                            "data": {"branch_width_limit": branch_width_limit}
+                        })
+
+                    def update_semantic_drift_limit(semantic_drift_limit: float):
+                        # Ensure value is between 0 and 1
+                        if semantic_drift_limit is not None:
+                            semantic_drift_limit = max(0.0, min(1.0, semantic_drift_limit))
+                        researcher.semantic_drift_limit = semantic_drift_limit
+                        fc.extra_data["semantic_drift_limit"] = semantic_drift_limit
+                        socketio.emit('research_update', {
+                            "function_id": id,
+                            "update_type": "config",
+                            "data": {"semantic_drift_limit": semantic_drift_limit}
+                        })
+
+                    def update_research_detail_level(research_detail_level: float):
+                        # Ensure value is between 0 and 1
+                        if research_detail_level is not None:
+                            research_detail_level = max(0.0, min(1.0, research_detail_level))
+                        researcher.research_detail_level = research_detail_level
+                        fc.extra_data["research_detail_level"] = research_detail_level
+                        socketio.emit('research_update', {
+                            "function_id": id,
+                            "update_type": "config",
+                            "data": {"research_detail_level": research_detail_level}
+                        })
+
                     def stop_research():
                         researcher.stop = True
                         fc.extra_data["stop"] = True
@@ -1047,6 +1093,10 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     make_event("research-update_max_topics", update_max_topics)
                     make_event("research-update_max_queries", update_max_search_queries)
                     make_event("research-update_max_results", update_max_search_results)
+                    make_event("research-update_tree_depth", update_tree_depth_limit)
+                    make_event("research-update_branch_width", update_branch_width_limit)
+                    make_event("research-update_semantic_drift", update_semantic_drift_limit)
+                    make_event("research-update_detail_level", update_research_detail_level)
                     make_event("research-stop", stop_research)
 
                     # --- Run Research and Handle Completion/Error ---

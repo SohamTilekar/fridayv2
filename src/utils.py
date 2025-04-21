@@ -1,13 +1,13 @@
 import functools
 import http.client
-from json.encoder import ESCAPE
 import ssl
 import threading
 import time
 import traceback
 import socket
-from typing import Callable, Optional, ParamSpec, TypeVar, TypedDict, Any, cast
+from typing import Callable, Optional, ParamSpec, TypeVar, TypedDict, Any
 from duckduckgo_search import DDGS
+from duckduckgo_search.exceptions import DuckDuckGoSearchException
 import google.auth.exceptions
 import google.genai.errors
 import googleapiclient.errors
@@ -180,88 +180,6 @@ def retry(
 
     return decorator_retry
 
-
-class FetchLimiter:
-    """
-    A class to limit the number of function calls within a specific time period,
-    using a semaphore to limit concurrent requests and a lock to ensure thread safety.
-
-    This class implements a rate limiter that controls the number of calls to a decorated function.
-    It uses a singleton pattern to ensure only one instance exists, managing call counts and reset times.
-    """
-
-    _instance: Optional["FetchLimiter"] = None
-    _lock: threading.Lock = threading.Lock()
-    _semaphore: threading.Semaphore = threading.Semaphore(
-        2
-    )  # Limit to 2 concurrent requests
-    calls: int = 0
-    period: int = 60  # seconds
-    max_calls: int = 10
-    last_reset: float = 0.0
-
-    def __new__(cls) -> "FetchLimiter":
-        """
-        Implements the singleton pattern, ensuring only one instance of FetchLimiter exists.
-        """
-        with cls._lock:
-            if not cls._instance:
-                cls._instance = super().__new__(cls)
-                cls._instance.last_reset = time.time()
-            return cls._instance
-
-    def __call__(self, func: Callable[P, R]) -> Callable[P, R | None]:
-        """
-        Wraps the given function to limit its execution rate.
-
-        Args:
-            func: The function to be rate-limited.
-
-        Returns:
-            A wrapped function that adheres to the rate limits.
-        """
-
-        @functools.wraps(func)
-        def limited_func(*args: P.args, **kwargs: P.kwargs) -> R | None:
-            """
-            The wrapped function that enforces the rate limits.
-            """
-            with self._semaphore:  # Acquire semaphore to limit concurrent requests
-                with self._lock:
-                    now = time.time()
-                    # Reset the call count if the period has elapsed
-                    if now - self.last_reset > self.period:
-                        self.calls = 0
-                        self.last_reset = now
-
-                    # Wait if the maximum number of calls has been reached
-                    while self.calls >= self.max_calls:
-                        sleep_time = self.last_reset + self.period - now
-                        if sleep_time > 0:
-                            time.sleep(sleep_time)
-                        now = time.time()
-                        if now - self.last_reset > self.period:
-                            self.calls = 0
-                            self.last_reset = now
-
-                    self.calls += 1
-                try:
-                    return func(*args, **kwargs)
-                except requests.exceptions.HTTPError as e:
-                    print(*args, {**kwargs})
-                    traceback.print_exc()
-                    print(e)
-                    print(e.response.json())
-                    print("-------------------------------")
-                    if e.response.json()["error"].startswith("This website is no longer supported"):
-                        return None
-                finally:
-                    pass
-
-        return limited_func
-
-
-
 class ScrapedMetadata(TypedDict, total=False):
     title: str
     ogTitle: str
@@ -392,29 +310,65 @@ class FireFetcher:
                 if api_key in self.active_requests:
                     self.active_requests[api_key] -= 1
 
+    def _is_api_available(self, rpm_limit, api_key):
+        """Check if an API is currently available based on concurrent and RPM limits."""
+        if not api_key:
+            return False
+
+        # Check if API has credits
+        if api_key not in self.api_credits or self.api_credits[api_key] <= 0:
+            return False
+
+        now = time.time()
+
+        # Check if API is within RPM limit
+        current_usage = self.api_calls[api_key]
+        period_elapsed = now - self.api_reset_times.get(api_key, now)
+
+        # Reset counter if period has elapsed
+        if period_elapsed > 60:
+            current_usage = 0
+        elif rpm_limit and current_usage >= rpm_limit:
+            return False
+
+        # Check concurrent usage (against semaphore limit of 2)
+        active_reqs = self.active_requests.get(api_key, 0)
+        if active_reqs >= 2:  # Hardcoded semaphore limit from initialization
+            return False
+
+        return True
+
     def _get_best_api(self):
-        """Get the best API based on credits, usage rate, parallel usage, and last request time."""
+        """Get the best API from currently available APIs."""
         with self._lock:
-            best_api = None
-            best_score = float('-inf')
             now = time.time()
 
-            # Track which APIs to remove due to 0 credits
+            # First identify APIs to remove (0 credits)
             apis_to_remove = []
-
             for rpm_limit, api_key in self.apis:
-                if not api_key:
-                    continue
+                if api_key and api_key in self.api_credits and self.api_credits[api_key] <= 0:
+                    apis_to_remove.append(api_key)
 
-                if api_key not in self.api_credits or self.api_credits[api_key] <= 0:
-                    # Mark this API for removal if it has 0 or no credits
-                    if api_key in self.api_credits and self.api_credits[api_key] <= 0:
-                        apis_to_remove.append(api_key)
-                    continue
+            # Remove dead APIs
+            for api_key in apis_to_remove:
+                self._remove_dead_api(api_key)
 
+            # Filter for currently available APIs
+            available_apis = []
+            for rpm_limit, api_key in self.apis:
+                if self._is_api_available(rpm_limit, api_key):
+                    available_apis.append((rpm_limit, api_key))
+
+            if not available_apis:
+                return None, None
+
+            # Now choose the best API from available ones
+            best_api = None
+            best_score = float('-inf')
+
+            for rpm_limit, api_key in available_apis:
                 # Available parameters for scoring
                 credits = self.api_credits[api_key]
-                current_usage = self.api_calls[api_key]
 
                 # Get current parallel usage (active requests)
                 active_reqs = self.active_requests.get(api_key, 0)
@@ -423,49 +377,20 @@ class FireFetcher:
                 last_req_time = self.last_request_times.get(api_key, 0)
                 time_since_last_req = now - last_req_time
 
-                # Calculate estimated capacity based on rpm limit and current period
-                period_elapsed = now - self.api_reset_times.get(api_key, now)
-                period_remaining = max(0, 60 - period_elapsed)
-
-                # Max capacity calculation
-                if rpm_limit is None:
-                    # No rate limit, just use a high number
-                    capacity_score = 1000
-                else:
-                    # How many more requests we could make in this period
-                    # Taking into account time remaining in the period
-                    capacity_score = rpm_limit - current_usage
-                    if period_remaining < 1:  # Almost end of period
-                        capacity_score = rpm_limit  # We'll reset soon
-
-                # Combine all factors into a comprehensive score
-                # 1. Credits (most important) - weighted at 60%
-                # 2. Available capacity - weighted at 15%
-                # 3. Active requests (fewer is better) - weighted at 15%
-                # 4. Time since last request (longer is better) - weighted at 10%
-
                 # Normalize active requests (0 is best, 2+ is worst)
                 active_reqs_normalized = max(0, 2 - active_reqs) / 2
 
                 # Normalize time since last request (cap at 5 seconds)
                 freshness = min(time_since_last_req, 5) / 5
 
-                score = (
-                    (credits * 0.6) +
-                    (capacity_score * 0.15) +
-                    (active_reqs_normalized * 0.15) +
-                    (freshness * 0.1)
-                )
+                # Simple score based primarily on credits and freshness
+                score = (credits * 0.7) + (active_reqs_normalized * 0.15) + (freshness * 0.15)
 
                 if score > best_score:
                     best_score = score
                     best_api = (rpm_limit, api_key)
 
-            # Remove any dead APIs with 0 credits
-            for api_key in apis_to_remove:
-                self._remove_dead_api(api_key)
-
-            return best_api if best_api else (None, None)
+            return best_api
 
     def _remove_dead_api(self, api_key: str | None):
         """Remove an API key with no credits from the list of available APIs."""
@@ -540,7 +465,7 @@ class FireFetcher:
                     self.api_credits[api_key] += 1
                     self.api_calls[api_key] -= 1
                     continue  # Retry immediately on timeout errors
-                elif response.status_code == 500 and response.json().get("error").find("net::ERR_CERT_AUTHORITY_INVALID") != -1:
+                elif response.status_code == 500 and response.json().get("error").find("net::") != -1:
                     self.api_credits[api_key] += 1
                     self.api_calls[api_key] -= 1
                     return None
@@ -571,82 +496,127 @@ scrape_url = FireFetcher()
 class DDGSearcher:
     _instance: Optional["DDGSearcher"] = None
     _lock = threading.Lock()
-    _request_semaphore = threading.Semaphore(15)  # Allow only 10 search at a time
-    _last_request_time = 0
-    _requests_in_minute = 0
-    _minute_start = 0
+    _request_semaphore = threading.Semaphore(10)  # Limit concurrent requests
+    _queue_lock = threading.Lock()  # Lock for queue operations
 
     def __new__(cls):
         with cls._lock:
             if cls._instance is None:
-                cls._instance = super().__new__(cls)
+                cls._instance = super(DDGSearcher, cls).__new__(cls)
             return cls._instance
 
     def __init__(self):
         if not hasattr(self, 'initialized'):
             self.ddg = DDGS(verify=False)
+
+            # Backend state tracking
+            self.backends = {
+                'lite': {'available': True, 'backoff_until': 0},
+                'html': {'available': True, 'backoff_until': 0}
+            }
+
+            # Fixed backoff time in seconds when rate limited
+            self.backoff_time = 64
+
+            # Request tracking
+            self.last_request_time = 0
+            self.min_request_interval = 1.0  # Minimum seconds between requests
+
             self.initialized = True
 
     def __call__(self, query: str, max_results: int | None = 10, **kwargs):
         with self._request_semaphore:
-            current_time = time.time()
+            # Wait if all backends are rate-limited
+            if self._all_backends_limited():
+                self._wait_for_backends()
 
-            with self._lock:
-                # Reset counter if a minute has passed
-                if current_time - self._minute_start >= 60:
-                    self._requests_in_minute = 0
-                    self._minute_start = current_time
+            # First try with lite backend
+            result = self._try_backend('lite', query, max_results, **kwargs)
+            if result is not None:
+                return result
 
-                # If we're at rate limit, wait until next minute
-                if self._requests_in_minute >= 30:  # Conservative rate limit
-                    wait_time = 60 - (current_time - self._minute_start)
-                    if wait_time > 0:
-                        time.sleep(wait_time)
-                    self._requests_in_minute = 0
-                    self._minute_start = time.time()
+            # If lite is rate-limited, try html backend
+            result = self._try_backend('html', query, max_results, **kwargs)
+            if result is not None:
+                return result
 
-                # Ensure minimum delay between requests
-                time_since_last = current_time - self._last_request_time
-                if time_since_last < 2:  # Minimum 2 seconds between requests
-                    time.sleep(2 - time_since_last)
+            # If both are rate-limited, wait and retry once more
+            self._wait_for_backends()
+            return self(query, max_results, **kwargs)
 
-            # Track rate limited URLs
-            rate_limited_urls = {
-                'lite': False,
-                'html': False
-            }
+    def _all_backends_limited(self) -> bool:
+        """Check if all backends are currently rate-limited."""
+        now = time.time()
+        with self._lock:
+            return all(not info['available'] and info['backoff_until'] > now
+                      for info in self.backends.values())
 
-            while True:
-                try:
-                    # Try backend that isn't rate limited
-                    if not rate_limited_urls['lite']:
-                        results = self.ddg.text(query, max_results=max_results, backend="lite", **kwargs)
-                        break
-                    elif not rate_limited_urls['html']:
-                        results = self.ddg.text(query, max_results=max_results, backend="html", **kwargs)
-                        break
-                    else:
-                        # Both backends rate limited
-                        time.sleep(64)
-                        rate_limited_urls = {'lite': False, 'html': False}
-                        continue
+    def _wait_for_backends(self):
+        """Wait until at least one backend becomes available."""
+        with self._lock:
+            now = time.time()
+            # Find the earliest time when any backend will become available
+            min_backoff_time = min(info['backoff_until'] for info in self.backends.values())
+            wait_time = max(0, min_backoff_time - now)
 
-                except Exception as e:
-                    error_str = str(e)
-                    if "Ratelimit" in error_str:
-                        if "lite.duckduckgo.com" in error_str:
-                            print(f"Rate limit hit for lite backend: {error_str}")
-                            rate_limited_urls['lite'] = True
-                        elif "html.duckduckgo.com" in error_str:
-                            print(f"Rate limit hit for html backend: {error_str}")
-                            rate_limited_urls['html'] = True
-                        continue
-                    raise e
+            if wait_time > 0:
+                print(f"All backends rate-limited. Waiting {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
 
-            with self._lock:
-                self._requests_in_minute += 1
-                self._last_request_time = time.time()
+            # Reset availability for backends whose backoff period has expired
+            now = time.time()
+            for backend, info in self.backends.items():
+                if info['backoff_until'] <= now:
+                    info['available'] = True
+                    print(f"Backend {backend} is now available")
 
+    def _try_backend(self, backend: str, query: str, max_results: int | None, **kwargs):
+        """Try to perform a search using the specified backend."""
+        with self._lock:
+            # Check if backend is available
+            if not self.backends[backend]['available']:
+                if self.backends[backend]['backoff_until'] <= time.time():
+                    # Backoff period has expired, reset availability
+                    self.backends[backend]['available'] = True
+                    print(f"Backend {backend} is now available")
+                else:
+                    # Backend still in backoff period
+                    return None
+
+            # Apply rate limiting
+            self._apply_rate_limiting()
+
+        try:
+            # Perform the search
+            results = self.ddg.text(query, max_results=max_results, backend=backend, **kwargs)
             return results
+
+        except DuckDuckGoSearchException as e:
+            error_str = str(e)
+
+            # Check if this is a rate limit error
+            if any(domain in error_str for domain in [f"{backend}.duckduckgo.com", "duckduckgo.com"]):
+                print(f"Rate limit hit for {backend} backend: {error_str}")
+
+                with self._lock:
+                    # Mark this backend as unavailable for the fixed backoff time
+                    self.backends[backend]['available'] = False
+                    self.backends[backend]['backoff_until'] = time.time() + self.backoff_time
+                    print(f"Backend {backend} backed off for {self.backoff_time} seconds")
+
+                return None
+            else:
+                # For non-rate-limit errors, pass them up
+                raise
+
+    def _apply_rate_limiting(self):
+        """Apply minimum interval between requests."""
+        now = time.time()
+        time_since_last = now - self.last_request_time
+
+        if time_since_last < self.min_request_interval:
+            time.sleep(self.min_request_interval - time_since_last)
+
+        self.last_request_time = time.time()
 
 searcher = DDGSearcher()
