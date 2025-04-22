@@ -14,6 +14,7 @@ import googleapiclient.errors
 import httplib2
 import requests
 import urllib3.connection
+import httpx
 
 import config
 
@@ -65,7 +66,8 @@ network_errors: tuple[type[Exception], ...] = (
     # genai
     google.genai.errors.ServerError,
     google.genai.errors.ClientError,
-    requests.exceptions.ReadTimeout
+    requests.exceptions.ReadTimeout,
+    httpx.NetworkError
 )
 
 ignore_network_error: tuple[type[Exception], ...] = (

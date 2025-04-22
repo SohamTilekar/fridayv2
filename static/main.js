@@ -790,6 +790,123 @@ function displayDeepResearchDetails(functionId) {
         contentItemResponse.function_response.response.output,
       );
       responseDiv.appendChild(outputContainer);
+
+      // Process inline_data if available (research steps and thinking)
+      if (
+        contentItemResponse.function_response.inline_data &&
+        contentItemResponse.function_response.inline_data.length > 0
+      ) {
+        const processDetailsDiv = document.createElement("div");
+        processDetailsDiv.classList.add("mt-3", "mb-2");
+
+        const detailsHeader = document.createElement("div");
+        detailsHeader.classList.add("d-flex", "align-items-center", "mb-2");
+
+        const detailsLabel = document.createElement("h6");
+        detailsLabel.classList.add("mb-0");
+        detailsLabel.textContent = "Research Process Details";
+
+        const toggleAllBtn = createButton(
+          "btn btn-sm btn-outline-secondary ms-2",
+          '<i class="bi bi-arrows-expand"></i> Toggle All',
+        );
+
+        detailsHeader.appendChild(detailsLabel);
+        detailsHeader.appendChild(toggleAllBtn);
+        processDetailsDiv.appendChild(detailsHeader);
+
+        // Create container for all research steps
+        const stepsContainer = document.createElement("div");
+        stepsContainer.classList.add("research-steps-container");
+
+        // Process each inline data item
+        contentItemResponse.function_response.inline_data.forEach(
+          (item, index) => {
+            if (item.text) {
+              const stepDiv = document.createElement("div");
+              stepDiv.classList.add("mb-2");
+
+              if (item.thought) {
+                // Create collapsible thought container
+                const thoughtContainer = document.createElement("div");
+                thoughtContainer.classList.add("thought-container", "mb-2");
+
+                // Create header with toggle button
+                const header = document.createElement("div");
+                header.classList.add(
+                  "d-flex",
+                  "align-items-center",
+                  "cursor-pointer",
+                  "mb-1",
+                );
+
+                const thoughtId = `research-thought-${functionId}-${index}`;
+                const toggleBtn = document.createElement("button");
+                toggleBtn.classList.add(
+                  "btn",
+                  "btn-sm",
+                  "btn-outline-secondary",
+                  "me-2",
+                );
+                toggleBtn.setAttribute("data-bs-toggle", "collapse");
+                toggleBtn.setAttribute("data-bs-target", `#${thoughtId}`);
+                toggleBtn.innerHTML = '<i class="bi bi-chevron-down"></i>';
+
+                const label = document.createElement("span");
+                label.classList.add("text-muted");
+                label.textContent = "Thinking";
+
+                header.appendChild(toggleBtn);
+                header.appendChild(label);
+                thoughtContainer.appendChild(header);
+
+                // Create collapsible content
+                const collapseDiv = document.createElement("div");
+                collapseDiv.classList.add("collapse");
+                collapseDiv.id = thoughtId;
+
+                const thoughtContent = document.createElement("div");
+                thoughtContent.classList.add(
+                  "ms-4",
+                  "border-start",
+                  "border-secondary",
+                  "ps-2",
+                );
+                thoughtContent.innerHTML = marked.parse(item.text);
+
+                collapseDiv.appendChild(thoughtContent);
+                thoughtContainer.appendChild(collapseDiv);
+                stepDiv.appendChild(thoughtContainer);
+              } else {
+                // Regular text content (not thinking)
+                stepDiv.innerHTML = marked.parse(item.text);
+              }
+
+              stepsContainer.appendChild(stepDiv);
+            }
+          },
+        );
+
+        processDetailsDiv.appendChild(stepsContainer);
+        responseDiv.appendChild(processDetailsDiv);
+
+        // Initialize the toggle all button
+        toggleAllBtn.addEventListener("click", () => {
+          const collapses = stepsContainer.querySelectorAll(".collapse");
+          const allHidden = Array.from(collapses).every(
+            (el) => !el.classList.contains("show"),
+          );
+
+          collapses.forEach((collapse) => {
+            if (allHidden) {
+              collapse.classList.add("show");
+            } else {
+              collapse.classList.remove("show");
+            }
+          });
+        });
+      }
+
       const copyButton = createCopyButton(
         contentItemResponse.function_response.response.output,
       );
@@ -1923,7 +2040,64 @@ function renderMessageContent(msgDiv, msg) {
           contentItem.grounding_metadata,
         );
       }
-      contentDiv.innerHTML = marked.parse(textContent);
+
+      if (contentItem.thought) {
+        // Create collapsible thought container
+        const thoughtContainer = document.createElement("div");
+        thoughtContainer.classList.add("thought-container", "mb-2");
+
+        // Create header with toggle button
+        const header = document.createElement("div");
+        header.classList.add(
+          "d-flex",
+          "align-items-center",
+          "cursor-pointer",
+          "mb-1",
+        );
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.classList.add(
+          "btn",
+          "btn-sm",
+          "btn-outline-secondary",
+          "me-2",
+        );
+        toggleBtn.setAttribute("data-bs-toggle", "collapse");
+        toggleBtn.setAttribute("data-bs-target", `#thought-${contentItem.id}`);
+        toggleBtn.innerHTML = '<i class="bi bi-chevron-down"></i>';
+
+        const label = document.createElement("span");
+        label.classList.add("text-muted");
+        label.textContent = "Thinking...";
+
+        header.appendChild(toggleBtn);
+        header.appendChild(label);
+        thoughtContainer.appendChild(header);
+
+        // Create collapsible content
+        const collapseDiv = document.createElement("div");
+        collapseDiv.classList.add("collapse");
+        collapseDiv.id = `thought-${contentItem.id}`;
+        if (msg.processing) {
+          collapseDiv.classList.add("show");
+        }
+
+        const thoughtContent = document.createElement("div");
+        thoughtContent.classList.add(
+          "ms-4",
+          "border-start",
+          "border-secondary",
+          "ps-2",
+        );
+        thoughtContent.innerHTML = marked.parse(textContent);
+
+        collapseDiv.appendChild(thoughtContent);
+        thoughtContainer.appendChild(collapseDiv);
+        contentDiv.appendChild(thoughtContainer);
+      } else {
+        contentDiv.innerHTML = marked.parse(textContent);
+      }
+
       msgDiv.appendChild(contentDiv);
       // Enhance code blocks/inlines
       enhanceCodeBlocks(contentDiv);
@@ -3325,6 +3499,7 @@ const googleSearchButton = document.getElementById("google-search-tool");
 // Global variables to store model compatibility information
 let toolSupportedModels = [];
 let searchGroundingSupportedModels = [];
+let dynamicThinkingModels = [];
 
 // ========== MODEL SELECTION ==========
 
@@ -3372,6 +3547,7 @@ async function fetchModelCompatibility() {
     toolSupportedModels = compatibility.toolSupportedModels || [];
     searchGroundingSupportedModels =
       compatibility.searchGroundingSupportedModels || [];
+    dynamicThinkingModels = compatibility.dynamicThinkingModels || []; // Add this line
 
     // Update tool availability based on current model after compatibility info is loaded
     updateToolAvailability(modelSelect.value);
@@ -3389,11 +3565,11 @@ async function fetchModelCompatibility() {
     ];
     searchGroundingSupportedModels = [
       "Large20",
-      "Large20",
       "Large15",
       "Medium20",
       "Medium15",
     ];
+    dynamicThinkingModels = ["MediumThinking25"]; // Add hardcoded fallback
     updateToolAvailability(modelSelect.value);
   }
 }
@@ -3431,6 +3607,21 @@ function updateModelSelection(selectedModel) {
 function updateToolAvailability(selectedModel) {
   // First clear any existing disabled or selected states for a fresh start
   const allButtons = document.querySelectorAll(".toggle-button");
+  const thinkingBudgetContainer = document.querySelector(
+    ".thinking-budget-container",
+  );
+
+  // Show/hide thinking budget slider based on model support
+  if (
+    selectedModel === "auto" ||
+    dynamicThinkingModels.includes(selectedModel)
+  ) {
+    thinkingBudgetContainer.style.display = "flex";
+  } else {
+    thinkingBudgetContainer.style.display = "none";
+    // When hiding the slider, set thinking budget to zero/off in the backend
+    socket.emit("set_thinking_budget", 0);
+  }
 
   // Special case for 'auto' selection
   if (selectedModel === "auto") {
@@ -3527,6 +3718,21 @@ modelSelect.addEventListener("change", function () {
   const selectedModel = this.value;
   saveSelectedModel(selectedModel);
   updateToolAvailability(selectedModel);
+
+  // Set thinking budget to off if selected model doesn't support thinking
+  if (
+    selectedModel !== "auto" &&
+    !dynamicThinkingModels.includes(selectedModel)
+  ) {
+    socket.emit("set_thinking_budget", 0);
+
+    // Also update the slider value for consistency
+    const slider = document.getElementById("thinking-budget-slider");
+    if (slider) {
+      slider.value = 0;
+      updateThinkingBudgetDisplay(0);
+    }
+  }
 });
 
 // ========== TOOLS SELECTION ==========
@@ -3717,11 +3923,87 @@ function initializeButtonListeners() {
   });
 }
 
+// ========== THINKING BUDGET HANDLING ==========
+
+// Load saved thinking budget value from local storage
+function loadThinkingBudget() {
+  const savedBudget = localStorage.getItem("thinkingBudget");
+  if (savedBudget !== null) {
+    const budgetValue = parseInt(savedBudget, 10);
+    const slider = document.getElementById("thinking-budget-slider");
+    if (slider) {
+      slider.value = budgetValue;
+      updateThinkingBudgetDisplay(budgetValue);
+    }
+    // Send saved value to backend on load
+    socket.emit("set_thinking_budget", budgetValue);
+  }
+}
+
+// Format a token count into a readable string
+function formatTokenCount(tokens) {
+  if (tokens === 0) return "Off";
+  if (tokens < 1000) return `${tokens}`;
+  return `${(tokens / 1024).toFixed(0)}K`;
+}
+
+// Update the display with the current thinking budget value
+function updateThinkingBudgetDisplay(value) {
+  const displayElement = document.getElementById("thinking-budget-value");
+  if (displayElement) {
+    if (parseInt(value) === 0) {
+      displayElement.textContent = `Thinking: Off`;
+    } else {
+      displayElement.textContent = `Thinking: ${formatTokenCount(value)} tokens`;
+    }
+  }
+}
+
+// Save thinking budget to local storage and update backend
+function saveThinkingBudget(value) {
+  localStorage.setItem("thinkingBudget", value);
+  socket.emit("set_thinking_budget", parseInt(value, 10));
+}
+
+// Initialize the thinking budget slider
+function initializeThinkingBudgetSlider() {
+  const slider = document.getElementById("thinking-budget-slider");
+  const thinkingBudgetContainer = document.querySelector(
+    ".thinking-budget-container",
+  );
+
+  // Initially check if the selected model supports thinking
+  const selectedModel = modelSelect.value;
+  if (
+    selectedModel !== "auto" &&
+    !dynamicThinkingModels.includes(selectedModel)
+  ) {
+    thinkingBudgetContainer.style.display = "none";
+  }
+
+  if (slider) {
+    // Load saved value
+    loadThinkingBudget();
+
+    // Add input event listener for realtime updates while dragging
+    slider.addEventListener("input", function () {
+      updateThinkingBudgetDisplay(this.value);
+    });
+
+    // Add change event listener for final value when slider is released
+    slider.addEventListener("change", function () {
+      updateThinkingBudgetDisplay(this.value);
+      saveThinkingBudget(this.value);
+    });
+  }
+}
+
 // Initialize everything when the page loads
 document.addEventListener("DOMContentLoaded", function () {
   fetchModels();
   fetchModelCompatibility();
-
+  // Initialize thinking budget slider
+  initializeThinkingBudgetSlider();
   // Initialize button listeners after a short delay to ensure DOM is ready
   setTimeout(initializeButtonListeners, 500);
 });
@@ -4332,6 +4614,43 @@ document.addEventListener("keydown", function (event) {
     autoSelectButton.click();
     return;
   }
+  // --- Thinking Budget Shortcut (b + [0-4]) ---
+  if (keyState["KeyB"]) {
+    const thinkingSlider = document.getElementById("thinking-budget-slider");
+    const thinkingBudgetContainer = document.querySelector(
+      ".thinking-budget-container",
+    );
+
+    // Only process if the slider is visible (model supports thinking)
+    if (thinkingSlider && thinkingBudgetContainer.style.display !== "none") {
+      if (keyState["Digit0"]) {
+        thinkingSlider.value = 0;
+      } else if (keyState["Digit1"]) {
+        thinkingSlider.value = 4096;
+      } else if (keyState["Digit2"]) {
+        thinkingSlider.value = 8192;
+      } else if (keyState["Digit3"]) {
+        thinkingSlider.value = 16384;
+      } else if (keyState["Digit4"]) {
+        thinkingSlider.value = 24576;
+      }
+
+      // Trigger the change event
+      if (
+        keyState["Digit0"] ||
+        keyState["Digit1"] ||
+        keyState["Digit2"] ||
+        keyState["Digit3"] ||
+        keyState["Digit4"]
+      ) {
+        updateThinkingBudgetDisplay(thinkingSlider.value);
+        saveThinkingBudget(thinkingSlider.value);
+        // Create a simulated change event for any UI updates
+        thinkingSlider.dispatchEvent(new Event("change"));
+      }
+    }
+    return;
+  }
 
   // --- Toggle Tabs Shortcuts (c, N, S) ---
   if (keyState["KeyC"] && !event.ctrlKey) {
@@ -4477,6 +4796,7 @@ function showShortcutsPopup() {
   const shortcuts = [
     "`r + [1-9]`: Resize right panel (10%-90%)",
     "`t + [1-4]`: Toggle tools (Auto, Search, Schedule, Fetch, Computer)",
+    "`b + [0-4]`: Set thinking budget (Off, 4K, 8K, 16K, 24K tokens)",
     "`c`: Toggle Content tab",
     "`n`: Toggle Notification tab",
     "`h`: Toggle Chat History tab",

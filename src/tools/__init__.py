@@ -16,6 +16,7 @@ from .space import CodeExecutionEnvironment
 from .imagen import Imagen
 from .deepresearch import DeepResearch, DeepResearcher
 from lschedule import CreateTask, UpdateTask
+from typing import Optional
 
 RunCommand = CodeExecutionEnvironment.RunCommand
 RunCommandBackground = CodeExecutionEnvironment.RunCommandBackground
@@ -129,6 +130,7 @@ class Tools(enum.Enum):
 def ModelAndToolSelector(
     model: Literal[
         "Large25",
+        "MediumThinking25",
         "Large20",
         "Medium20",
         "MediumThinking20",
@@ -137,63 +139,63 @@ def ModelAndToolSelector(
         "Medium15",
         "Small15",
     ],
-    tools: list[
+    tools: Optional[list[
         Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
-    ],
-) -> tuple[str, bool, list[types.Tool]]:
-    f"""\
-Use this tool to choose the best AI model with tools to respond to the user's request, considering the model capabilities, rate limits, latency, benchmark scores, and tool requirements.
+    ]] = None,
+    thinking_budget: Optional[int] = None
+) -> tuple[str, bool, list[types.Tool], Optional[types.ThinkingConfig]]:
+    """Selects the appropriate AI model and tools based on the user's request.
 
-If No tools want to provided then pass tools as empty list/array
+    This function evaluates the requested model and tools, validates their compatibility,
+    and returns configuration necessary for generating a response.
 
-**AI Model Benchmarks:**
+    Args:
+        model: The model identifier to use for processing the request.
+        tools: Optional list of tool identifiers to make available to the model.
+            Pass an empty list for no tools.
+        thinking_budget: Optional budget for model thinking, must be between 0-24576
+            and only supported by models in DynamicThinkingModels.
 
-Use these benchmarks to guide your model selection. Higher scores generally indicate better performance in that category.
+    Returns:
+        A tuple containing:
+        - model_value: The actual model name string to pass to the API
+        - supports_tools: Boolean indicating if the model supports tools
+        - tool_list: List of Tool objects configured for the model
+        - thinking_config: ThinkingConfig if a thinking budget was specified
 
-**Available AI Models:**
+    Raises:
+        Exception: If thinking_budget is provided for a model not in DynamicThinkingModels
+        Exception: If SearchGrounding is used with other tools
+        Exception: If SearchGrounding is used with a model that doesn't support it
+        Exception: If an unknown tool name is passed
+    """
+    if thinking_budget is not None and model not in config.DynamicThinkingModels:
+        raise Exception(f"Model {model} does not support dynamic thinking")
 
-For each model, consider its rate limit (RPM = requests per minute, req/day = requests per day), latency (time to respond), best uses, and example use cases.
-
-{config.ABOUT_MODELS}
-
-**Available Tools:**
-
-Choose the fewest number of tools necessary to fulfill the user's request. Adding more tools can degrade model performance.
-
-*   **FetchWebsite:** Retrieves text content from a given URL.
-*   **Reminder:** Sets, cancels, etc reminders.
-*   **SearchGrounding:** Provides access to online Google search.  **Important:** If you use this tool, do NOT use any other tools,\
-only {config.SearchGroundingSuportedModels} suports SearchGrounding.
-*   **ComputerTool:** Provides access to a sandboxed computer environment for code execution and file manipulation.
-
-**Instructions:**
-
-1.  Analyze the user's request to understand the requirements (e.g., reasoning, code processing, multimedia analysis, speed).
-2.  Consider the benchmark scores to select a model that excels in the required capabilities.
-3.  Select the most appropriate AI model based on its capabilities, rate limit, latency, and benchmark scores.
-4.  Select the necessary tools. Prioritize using as few tools as possible. If `SearchGrounding` is sufficient, do not select any other tools.
-5.  Output your decision in the following format:
-"""
     ftools: list[types.Tool] = []
-    for tool in tools:
-        if tool == "FetchWebsite":
-            ftools.append(FetchTool)
-        elif tool == "Reminder":
-            ftools.append(ReminderTool)
-        elif tool == "SearchGrounding":
-            if len(tools) != 1:
-                raise Exception("Other tools along side SearchGrounding is not valid")
-            if model not in config.SearchGroundingSuportedModels:
-                raise Exception(f"Model {model} dont suport SearchGrounding")
-            ftools.append(SearchGrounding)
-        elif tool == "ComputerTool":
-            ftools.append(ComputerTool)
-        else:
-            raise Exception("Unknown Tool passed: " + tool)
+    if tools is not None:
+        for tool in tools:
+            if tool == "FetchWebsite":
+                ftools.append(FetchTool)
+            elif tool == "Reminder":
+                ftools.append(ReminderTool)
+            elif tool == "SearchGrounding":
+                if len(tools) != 1:
+                    raise Exception("Other tools along side SearchGrounding is not valid")
+                if model not in config.SearchGroundingSuportedModels:
+                    raise Exception(f"Model {model} dont suport SearchGrounding")
+                ftools.append(SearchGrounding)
+            elif tool == "ComputerTool":
+                ftools.append(ComputerTool)
+            elif tool == "Imagen":
+                ftools.append(ImagenTool)
+            else:
+                raise Exception("Unknown Tool passed: " + tool)
     return (
         config.Models[model].value,
         model in config.ToolSuportedModels and SearchGrounding not in ftools,
         ftools,
+        types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None,
     )
 
 
@@ -231,7 +233,7 @@ For each model, consider its rate limit (RPM = requests per minute, req/day = re
 3.  Select the most appropriate AI model based on its capabilities, rate limit, latency, and benchmark scores.
 5.  Output your decision in the following format:
 """
-    return config.Models[model].value
+    ...
 
 
 def ToolSelector(

@@ -35,6 +35,7 @@ global_shares["client"] = client
 
 model: Optional[str] = None  # None for Auto
 selected_tools: Optional[list[tools.ToolLiteral]] = None  # None for Auto
+thinking_budget: Optional[int] = None # None for desabling thinking & int for budget
 
 permission: Optional[bool] = None
 
@@ -394,6 +395,7 @@ class Content:
     grounding_metadata: Optional[GroundingMetaData] = None
     function_call: Optional[FunctionCall] = None
     function_response: Optional[FunctionResponce] = None
+    thought: bool = False
 
     def __init__(
         self,
@@ -402,12 +404,14 @@ class Content:
         grounding_metadata: Optional[GroundingMetaData] = None,
         function_call: Optional[FunctionCall] = None,
         function_response: Optional[FunctionResponce] = None,
+        thought: bool = False,
     ):
         self.text = text
         self.attachment = attachment
         self.grounding_metadata = grounding_metadata
         self.function_call = function_call
         self.function_response = function_response
+        self.thought = thought
 
     def for_ai(
         self, suport_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
@@ -435,6 +439,7 @@ class Content:
             "function_response": (
                 self.function_response.jsonify() if self.function_response else None
             ),
+            "thought": self.thought,
         }
 
     @staticmethod
@@ -453,6 +458,7 @@ class Content:
                 if data["function_response"]
                 else None
             ),
+            thought=data.get("thought", False),
         )
 
 
@@ -482,7 +488,6 @@ class Chat:
 class Message:
     role: Literal["model", "user"]
     content: list[Content]
-    thought: str
     time_stamp: datetime.datetime
     id: str
     processing: bool
@@ -495,14 +500,12 @@ class Message:
         chat_id: str,
         time_stamp: Optional[datetime.datetime] = None,
         id: Optional[str] = None,
-        thought: str = "",
         processing: bool = False,
     ):
         self.time_stamp = time_stamp if time_stamp else datetime.datetime.now()
         self.content = content
         self.role = role
         self.id = str(uuid.uuid4()) if id is None else id
-        self.thought = thought
         self.processing = processing
         self.chat_id = chat_id
 
@@ -604,7 +607,6 @@ class Message:
             "id": self.id,
             "chat_id": self.chat_id,
             "time_stamp": self.time_stamp.isoformat(),
-            "thought": self.thought,
             "processing": self.processing,
         }
 
@@ -616,7 +618,6 @@ class Message:
             chat_id=data["chat_id"],
             time_stamp=datetime.datetime.fromisoformat(data["time_stamp"]),
             id=data["id"],
-            thought=data["thought"],
         )
 
 
@@ -885,21 +886,20 @@ def generate_content(msg: Message, chat_id: str) -> Message:
 
     # Helper function to handle streaming content parts
     def handle_part(part: types.Part):
-        # Handle thought content
-        if part.thought and part.text:
-            msg.thought += part.text
-
-        # Handle regular text content
-        elif part.text:
+        if part.text:
             # Create initial content if none exists
             if not msg.content:
-                msg.content.append(Content(text=""))
+                msg.content.append(Content(text="", thought=bool(part.thought)))
 
             # Add new content or append to existing
             if msg.content[-1].text is None:
-                msg.content.append(Content(text=part.text))
+                msg.content.append(Content(text=part.text, thought=bool(part.thought)))
             else:
-                msg.content[-1].text += part.text
+                # If existing has different thought status, start new content
+                if msg.content[-1].thought != bool(part.thought):
+                    msg.content.append(Content(text=part.text, thought=bool(part.thought)))
+                else:
+                    msg.content[-1].text += part.text
 
         # Handle function calls
         elif part.function_call:
@@ -1108,8 +1108,14 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     })
                     # Emit the initial message update *once* to show the call box
                     emit_msg_update(msg)
+                    researched_data = []
                     try:
-                        response_payload = {"output": researcher.research()}
+                        researched_data = researcher.research()
+                        report = ""
+                        for content in researched_data:
+                            if content.text and not content.thought:
+                                report += content.text
+                        response_payload = {"output": report}
                     except Exception:
                         response_payload = {"error": traceback.format_exc()}
                     fc.extra_data["status"] = "finished"
@@ -1121,6 +1127,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                                 id=id,
                                 name=func_call.name,
                                 response=response_payload,
+                                inline_data=researched_data
                             )
                         )
                     )
@@ -1202,18 +1209,18 @@ def generate_content(msg: Message, chat_id: str) -> Message:
     @utils.retry(
         exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error
     )
-    def get_model_and_tools() -> tuple[str, bool, list[types.Tool]]:
+    def get_model_and_tools() -> tuple[str, bool, list[types.Tool], Optional[types.ThinkingConfig]]:
         """
         Determines which model and tools to use, with retry logic and optimized prompting using COSTAR principles.
 
         Returns:
-            Tuple of (model_name, tool_compatible_flag, tools_list)
+            Tuple of (model_name, tool_compatible_flag, tools_list, thinking_config)
 
         Raises:
             Exception: If selection fails after multiple attempts
         """
         chat = chat_history.for_ai(msg, support_tools=True, imagen_selected=False, chat_id=chat_id)
-        global model
+        global model, selected_tools, thinking_budget
         allowed_function_names: Optional[list[str]] = None
 
         # Case 1: Both model and tools already selected
@@ -1223,6 +1230,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 config.Models[model].value,
                 model in config.ToolSuportedModels and tools.SearchGrounding not in tools_selected,
                 tools_selected,
+                types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None,
             )
 
         # Case 2: Model is known, select tools
@@ -1232,7 +1240,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 chat.append(types.Content(
                     parts=[types.Part(
                         text="🧠 Your task is to select the most suitable tools to support the user's request. "
-                             "The current model supports SearchGrounding. Think step by step about the user’s intent, "
+                             "The current model supports SearchGrounding. Think step by step about the user's intent, "
                              "and choose tools that match the task. You MUST call ToolSelector(...)."
                     )],
                     role="user"
@@ -1241,12 +1249,12 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 chat.append(types.Content(
                     parts=[types.Part(
                         text="🚫 SearchGrounding is NOT supported by the current model. Your task is to select other relevant tools "
-                             "to help the assistant complete the user’s task. Think step by step and call ToolSelector(...) with only compatible tools."
+                             "to help the assistant complete the user's task. Think step by step and call ToolSelector(...) with only compatible tools."
                     )],
                     role="user"
                 ))
             else:
-                return config.Models[model].value, True, []
+                return config.Models[model].value, True, [], types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None
 
             # Assign tool selector and function call permission
             tools_list = [types.Tool(
@@ -1258,22 +1266,20 @@ def generate_content(msg: Message, chat_id: str) -> Message:
 
         # Case 3: Tools known, select model
         elif selected_tools is not None:
+            model_prompt_text = ""
             if tools.Tools.SearchGrounding.name in selected_tools:
-                chat.append(types.Content(
-                    parts=[types.Part(
-                        text=f"🔍 The tool `SearchGrounding` is selected. You MUST now choose a compatible model from: {config.SearchGroundingSuportedModels}. "
-                             "Think step by step about latency, context size, and fit for the task. Call ModelSelector(...)."
-                    )],
-                    role="user"
-                ))
+                model_prompt_text = f"🔍 The tool `SearchGrounding` is selected. You MUST choose a compatible model from: {config.SearchGroundingSuportedModels}. "
             else:
-                chat.append(types.Content(
-                    parts=[types.Part(
-                        text=f"🧰 Based on the selected tools, choose a model that supports general tool calling. "
-                             f"Allowed models are: {config.ToolSuportedModels}. Think carefully and call ModelSelector(...)."
-                    )],
-                    role="user"
-                ))
+                model_prompt_text = f"🧰 Based on the selected tools, choose a model that supports general tool calling. Allowed models are: {config.ToolSuportedModels}. "
+
+            # Add thinking budget info for dynamic thinking models
+            model_prompt_text += f"For models in {config.DynamicThinkingModels}, you can specify a thinking budget (0-24576). "
+            model_prompt_text += "Think carefully about latency, context size, thinking needs, and fit for the task. Call ModelSelector(...)."
+
+            chat.append(types.Content(
+                parts=[types.Part(text=model_prompt_text)],
+                role="user"
+            ))
 
             tools_list = [types.Tool(
                 function_declarations=[
@@ -1288,6 +1294,8 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 parts=[types.Part(
                     text="🧠 Your task is to select BOTH a compatible model and relevant tools to fulfill the user request. "
                          "Use ABOUT_MODELS and think step by step about capabilities, latency, tool support, and user intent. "
+                         f"For models in {config.DynamicThinkingModels}, you can specify a thinking budget (0-24576) "
+                         "to enable step-by-step reasoning. "
                          "You MUST call ModelAndToolSelector(...) with full valid arguments."
                 )],
                 role="user"
@@ -1334,6 +1342,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                                 config.Models[model].value,
                                 model in config.ToolSuportedModels and tools.SearchGrounding not in selected,
                                 selected,
+                                types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None,
                             )
                         except Exception as e:
                             handle_selector_error(chat, call_id, call_name, e)
@@ -1343,11 +1352,11 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     elif call_name == "ModelSelector" and selected_tools is not None:
                         try:
                             tols = tools.ToolSelector(selected_tools)
-                            model_selected = tools.ModelSelector(**args)
                             return (
-                                model_selected,
-                                model_selected in config.ToolSuportedModels and tools.SearchGrounding not in tols,
+                                config.Models[args["model"]].value,
+                                config.Models[args["model"]].value in config.ToolSuportedModels and tools.SearchGrounding not in tols,
                                 tols,
+                                types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None,
                             )
                         except Exception as e:
                             handle_selector_error(chat, call_id, call_name, e)
@@ -1356,6 +1365,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     # Model & Tool Selection Flow
                     elif call_name == "ModelAndToolSelector":
                         try:
+                            # This function already returns the thinking budget as 4th parameter
                             return tools.ModelAndToolSelector(**args)
                         except Exception as e:
                             handle_selector_error(chat, call_id, call_name, e)
@@ -1402,8 +1412,11 @@ def generate_content(msg: Message, chat_id: str) -> Message:
     msg.processing = True
     emit_msg_update(msg)
     # Get model and tools
-    selected_model, suports_tools, selected_tools_list = get_model_and_tools()
-    print(f"Using model: {selected_model} with tools: {selected_tools_list}")
+    selected_model, suports_tools, selected_tools_list, thinking_budget = get_model_and_tools()
+    print("Selected model:", selected_model)
+    print("Supports tools:", suports_tools)
+    print("Selected tools list:", selected_tools_list)
+    print("Thinking budget:", thinking_budget)
 
     # Main content generation loop
     @utils.retry(
@@ -1434,7 +1447,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(
                         disable=True, maximum_remote_calls=None
                     ),
-                    # thinking_config=types.ThinkingConfig(include_thoughts=True) # Not suported yet
+                    thinking_config=thinking_budget
                 ),
             )
 
@@ -1447,7 +1460,6 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     and content.candidates[0].content
                     and content.candidates[0].content.parts
                 ):
-
                     for part in content.candidates[0].content.parts:
                         handle_part(part)
                         if part.function_call:
@@ -1694,6 +1706,23 @@ def set_tools(ltools: Optional[list[tools.ToolLiteral]] = None) -> None:
     global selected_tools
     selected_tools = ltools
 
+@socketio.on("set_thinking_budget")
+def set_thinking_budget(budget: Optional[int] = None) -> None:
+    global thinking_budget
+    if budget is not None and not isinstance(budget, int):
+        try:
+            budget = int(budget)
+        except (ValueError, TypeError):
+            budget = None
+
+    # If budget is provided but zero, set to None (disable thinking)
+    if budget == 0:
+        budget = None
+    # If budget is provided but exceeds max, cap it
+    elif budget is not None and budget > 24576:
+        budget = 24576
+
+    thinking_budget = budget
 
 @app.route("/get_tools")
 def get_tools() -> list[tools.ToolLiteral]:
@@ -1705,6 +1734,7 @@ def get_model_compatibility() -> dict:
     return {
         "toolSupportedModels": config.ToolSuportedModels,
         "searchGroundingSupportedModels": config.SearchGroundingSuportedModels,
+        "dynamicThinkingModels": config.DynamicThinkingModels
     }
 
 

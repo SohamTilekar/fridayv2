@@ -4,12 +4,15 @@ import concurrent.futures
 import requests
 import traceback
 from rich import print
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional, TYPE_CHECKING, cast
 from google.genai import types
 from global_shares import global_shares
 import prompt
 import threading
 import utils
+
+if TYPE_CHECKING:
+    from main import Content
 
 
 class Topic:
@@ -932,7 +935,7 @@ class DeepResearcher:
         unresearched_topic.failed_fetched_urls = search_state["failed_fetchurl"]
         unresearched_topic.fetched_urls = search_state["researched_fetchurl"]
 
-    def research(self) -> str:
+    def research(self) -> list["Content"]:
         current_depth: int = 0
         visited_urls: set[str] = set()
         failed_urls: set[str] = set()
@@ -1029,7 +1032,7 @@ class DeepResearcher:
         self.call_back({"action": "done_generating_report", "data": report})
         return report
 
-    def _generate_report(self) -> str:
+    def _generate_report(self) -> list["Content"]:
         """Generates a final report summarizing the research."""
         self.call_back({"action": "generating_report"})
         contents = [
@@ -1049,7 +1052,7 @@ class DeepResearcher:
                 ],
             )
         ]
-        report_str: str = ""
+        report_str: list[Content] = []
         while True:
             model = "gemini-2.0-flash-thinking-exp-01-21"
             result = utils.retry(
@@ -1074,7 +1077,7 @@ class DeepResearcher:
             ):
                 for part in result.candidates[0].content.parts:
                     if part.text:
-                        report_str += "" if part.thought else part.text
+                        report_str.append(global_shares["content"](text=part.text, thought=bool(part.thought)))
                         if contents[-1].role != "model":
                             contents.append(
                                 types.Content(
