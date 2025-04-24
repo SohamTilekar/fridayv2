@@ -9,6 +9,7 @@ from google.genai import types
 from global_shares import global_shares
 import prompt
 import threading
+import time
 import utils
 
 if TYPE_CHECKING:
@@ -218,56 +219,46 @@ class DeepResearcher:
         exceptions=utils.network_errors,
         ignore_exceptions=utils.ignore_network_error,
     )
-    def summarize_sites(
-        self,
-        topic: Topic,
-        executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
-    ) -> None:
+    def summarize_sites(self, topic: Topic) -> None:
         self.call_back({"action": "summarize_sites", "topic": topic.id})
-
-        # Create a new executor if one wasn't provided
-        should_close_executor = False
-        if executor is None:
-            executor = concurrent.futures.ThreadPoolExecutor(
-                max_workers=10
-            )  # cz max RPM is 10 & each request will easyly take more than 6 seconds
-            should_close_executor = True
-
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
         try:
-            # Process current topic and its subtopics concurrently
-            topic_future = executor.submit(self._summarize_topic_content, topic)
+            # Use an iterative approach with a worklist instead of recursion
+            topics_to_process = [topic]  # Start with the initial topic
+            futures = {}  # Map of topic.id to its future
 
-            # Process subtopics concurrently using the executor
-            futures = []
-            for stopic in topic.sub_topics:
+            # Process all topics in the worklist
+            i = 0
+            while i < len(topics_to_process):
+                current_topic = topics_to_process[i]
+                i += 1
+
                 if self.stop:
                     break
-                futures.append(executor.submit(self.summarize_sites, stopic, executor))
 
-            # Wait for current topic summarization to complete
-            try:
-                topic_future.result()  # Ensure the current topic is summarized
-                self.call_back(
-                    {"action": "summarize_sites_complete", "topic": topic.id}
-                )
-            except Exception as e:
-                print(f"Error summarizing topic content: {e}")
-                traceback.print_exc()
+                # Process current topic content
+                self.call_back({"action": "summarize_sites", "topic": current_topic.id})
+                future = executor.submit(self._summarize_topic_content, current_topic)
+                futures[current_topic.id] = future
 
-            # Wait for all subtopic summarizations to complete
-            for future in concurrent.futures.as_completed(futures):
+                # Add subtopics to the worklist
+                topics_to_process.extend(current_topic.sub_topics)
+
+            # Wait for all futures to complete
+            for topic_id, future in futures.items():
                 if self.stop:
                     break
                 try:
                     future.result()  # Get the result to propagate any exceptions
+                    self.call_back(
+                        {"action": "summarize_sites_complete", "topic": topic_id}
+                    )
                 except Exception as e:
-                    print(f"Error summarizing subtopic: {e}")
+                    print(f"Error summarizing topic content: {e}")
                     traceback.print_exc()
 
         finally:
-            # Only close the executor if we created it
-            if should_close_executor:
-                executor.shutdown()
+            pass
 
     def _summarize_topic_content(self, topic: Topic) -> None:
         """Helper method to summarize a single topic's content using AI."""
@@ -436,7 +427,7 @@ class DeepResearcher:
             topic.sumarized_fetched_content = contents[-1].parts[-1].text  # type: ignore
             topic.fetched_content = None
 
-    def analyse_add_topic(self, use_thinking: bool) -> str:
+    def analyse_add_topic(self, use_thinking: bool, thinking_id: str) -> None:
         def add_topic(
             parent_id: str,
             topic: str,
@@ -529,72 +520,97 @@ class DeepResearcher:
             )
         ]
         text: str = ""
+        uicontents: list[Content] = []
+        backoff = 1
         while True:
-            result = utils.retry(
-                exceptions=utils.network_errors,
-                ignore_exceptions=utils.ignore_network_error,
-            )(global_shares["client"].models.generate_content)(
-                model=(
-                    "gemini-2.5-flash-preview-04-17"
-                    if use_thinking
-                    else "gemini-2.0-flash"
-                ),
-                contents=[*self.planer_content, *contents],
-                config=types.GenerateContentConfig(
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                        disable=True, maximum_remote_calls=None
+            try:
+                stream = utils.retry(
+                    exceptions=utils.network_errors,
+                    ignore_exceptions=utils.ignore_network_error,
+                )(global_shares["client"].models.generate_content_stream)(
+                    model=(
+                        "gemini-2.5-flash-preview-04-17"
+                        if use_thinking
+                        else "gemini-2.0-flash"
                     ),
-                    tools=[add_topic_tool],
-                    system_instruction=prompt.ADD_TOPIC_SYS_INSTR.format(
-                        max_search_queries=self.max_search_queries,
-                        tree_depth_limit=self.tree_depth_limit,
-                        branch_width_limit=self.branch_width_limit,
-                        semantic_drift_limit=self.semantic_drift_limit,
-                        research_detail_level=self.research_detail_level,
+                    contents=[*self.planer_content, *contents],
+                    config=types.GenerateContentConfig(
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                            disable=True, maximum_remote_calls=None
+                        ),
+                        tools=[add_topic_tool],
+                        system_instruction=prompt.ADD_TOPIC_SYS_INSTR.format(
+                            max_search_queries=self.max_search_queries,
+                            tree_depth_limit=self.tree_depth_limit,
+                            branch_width_limit=self.branch_width_limit,
+                            semantic_drift_limit=self.semantic_drift_limit,
+                            research_detail_level=self.research_detail_level,
+                        ),
                     ),
-                ),
-            )
-            called: bool = False
-            if (
-                result
-                and result.candidates
-                and result.candidates[0].content
-                and result.candidates[0].content.parts
-            ):
-                for part in result.candidates[0].content.parts:
-                    if part.text:
-                        if contents[-1].role == "model":
-                            if part.thought and contents[-1].parts[-1].thought:  # type: ignore
-                                contents[-1].parts[-1].text += part.text  # type: ignore
-                            elif not part.thought and contents[-1].parts[-1].thought:  # type: ignore
-                                contents[-1].parts.append(types.Part(text=part.text, thought=False))  # type: ignore
-                            elif part.thought and not contents[-1].parts[-1].thought:  # type: ignore
-                                contents[-1].parts.append(types.Part(text=part.text, thought=True))  # type: ignore
-                            elif not part.thought and not contents[-1].parts[-1].thought:  # type: ignore
-                                contents[-1].parts[-1].text += part.text  # type: ignore
-                        else:
-                            contents.append(
-                                types.Content(
-                                    role="model",
-                                    parts=[
-                                        types.Part(text=part.text, thought=part.thought)
-                                    ],
-                                )
-                            )
-                        text += part.text
-                    elif part.function_call:
-                        if (
-                            part.function_call.name == "add_topic"
-                            and part.function_call.args
-                        ):
-                            try:
-                                added_topic_id = add_topic(
-                                    part.function_call.args["parent_id"],
-                                    part.function_call.args["topic"],
-                                    part.function_call.args.get("sites"),
-                                    part.function_call.args.get("queries"),
-                                )
-                            except Exception as e:
+                )
+                called: bool = False
+                for result in stream:
+                    if (
+                        result
+                        and result.candidates
+                        and result.candidates[0].content
+                        and result.candidates[0].content.parts
+                    ):
+                        part = result.candidates[0].content.parts[0]
+                        if part.text:
+                            if contents[-1].role == "model":
+                                if part.thought and contents[-1].parts[-1].thought:  # type: ignore
+                                    contents[-1].parts[-1].text += part.text  # type: ignore
+                                    uicontents[-1].text += part.text # type: ignore
+                                elif not part.thought and contents[-1].parts[-1].thought:  # type: ignore
+                                    contents[-1].parts.append(types.Part(text=part.text, thought=False))  # type: ignore
+                                    uicontents.append(global_shares["content"](text=part.text, thought=False))
+                                elif part.thought and not contents[-1].parts[-1].thought:  # type: ignore
+                                    contents[-1].parts.append(types.Part(text=part.text, thought=True))  # type: ignore
+                                    uicontents.append(global_shares["content"](text=part.text, thought=True))
+                                elif not part.thought and not contents[-1].parts[-1].thought:  # type: ignore
+                                    contents[-1].parts[-1].text += part.text  # type: ignore
+                                    uicontents[-1].text += part.text # type: ignore
+                            else:
+                                contents.append(types.Content(role="model", parts=[part]))
+                                uicontents.append(global_shares["content"](text=part.text, thought=bool(part.thought)))
+                        elif part.function_call:
+                            uicontents.append(global_shares["content"](function_call=global_shares["function_call"](name=part.function_call.name, args=part.function_call.args)))
+                            if (
+                                part.function_call.name == "add_topic"
+                                and part.function_call.args
+                            ):
+                                try:
+                                    added_topic_id = add_topic(
+                                        part.function_call.args["parent_id"],
+                                        part.function_call.args["topic"],
+                                        part.function_call.args.get("sites"),
+                                        part.function_call.args.get("queries"),
+                                    )
+                                except Exception as e:
+                                    if contents[-1].role == "model":
+                                        contents[-1].parts.append(part)  # type: ignore
+                                    else:
+                                        contents.append(
+                                            types.Content(role="model", parts=[part])
+                                        )
+                                    contents.append(
+                                        types.Content(
+                                            role="user",
+                                            parts=[
+                                                types.Part(
+                                                    function_response=types.FunctionResponse(
+                                                        name="add_topic",
+                                                        id=part.function_call.id,
+                                                        response={"error": str(e)},
+                                                    )
+                                                )
+                                            ],
+                                        )
+                                    )
+                                    uicontents.append(global_shares["content"](function_response=global_shares["function_responce"](name=part.function_call.name, response={"error": str(e)})))
+                                    called = True
+                                    continue
                                 if contents[-1].role == "model":
                                     contents[-1].parts.append(part)  # type: ignore
                                 else:
@@ -609,49 +625,49 @@ class DeepResearcher:
                                                 function_response=types.FunctionResponse(
                                                     name="add_topic",
                                                     id=part.function_call.id,
-                                                    response={"error": str(e)},
+                                                    response={
+                                                        "output": f"Topic Added with ID {added_topic_id}"
+                                                    },
                                                 )
                                             )
                                         ],
                                     )
                                 )
+                                uicontents.append(global_shares["content"](function_response=global_shares["function_responce"](name=part.function_call.name, response={"output": None})))
                                 called = True
-                                text += f'- Failed Call `add_topic(parent_id: "{part.function_call.args.get("parent_id")}", topic: "{part.function_call.args.get("topic")}", sites: {part.function_call.args.get("sites")}, queries: {part.function_call.args.get("queries")}) -> **Error:** {e}`\n\n'
-                                continue
-                            if contents[-1].role == "model":
-                                contents[-1].parts.append(part)  # type: ignore
-                            else:
-                                contents.append(
-                                    types.Content(role="model", parts=[part])
-                                )
-                            contents.append(
-                                types.Content(
-                                    role="user",
-                                    parts=[
-                                        types.Part(
-                                            function_response=types.FunctionResponse(
-                                                name="add_topic",
-                                                id=part.function_call.id,
-                                                response={
-                                                    "output": f"Topic Added with ID {added_topic_id}"
-                                                },
-                                            )
+                            elif (
+                                part.function_call.name == "add_site"
+                                and part.function_call.args
+                            ):
+                                try:
+                                    add_site(
+                                        part.function_call.args["id"],
+                                        part.function_call.args["site"],
+                                    )
+                                except Exception as e:
+                                    if contents[-1].role == "model":
+                                        contents[-1].parts.append(part)  # type: ignore
+                                    else:
+                                        contents.append(
+                                            types.Content(role="model", parts=[part])
                                         )
-                                    ],
-                                )
-                            )
-                            called = True
-                            text += f'- Call `add_topic(parent_id: "{part.function_call.args.get("parent_id")}", topic: "{part.function_call.args.get("topic")}", sites: {part.function_call.args.get("sites")}, queries: {part.function_call.args.get("queries")})`\n\n'
-                        elif (
-                            part.function_call.name == "add_site"
-                            and part.function_call.args
-                        ):
-                            try:
-                                add_site(
-                                    part.function_call.args["id"],
-                                    part.function_call.args["site"],
-                                )
-                            except Exception as e:
+                                    contents.append(
+                                        types.Content(
+                                            role="user",
+                                            parts=[
+                                                types.Part(
+                                                    function_response=types.FunctionResponse(
+                                                        name="add_site",
+                                                        id=part.function_call.id,
+                                                        response={"error": str(e)},
+                                                    )
+                                                )
+                                            ],
+                                        )
+                                    )
+                                    uicontents.append(global_shares["content"](function_response=global_shares["function_responce"](name=part.function_call.name, response={"error": str(e)})))
+                                    called = True
+                                    continue
                                 if contents[-1].role == "model":
                                     contents[-1].parts.append(part)  # type: ignore
                                 else:
@@ -666,52 +682,36 @@ class DeepResearcher:
                                                 function_response=types.FunctionResponse(
                                                     name="add_site",
                                                     id=part.function_call.id,
-                                                    response={"error": str(e)},
+                                                    response={
+                                                        "output": f"Succesfully Added url to reseaearch for topic with id {part.function_call.args['id']}"
+                                                    },
                                                 )
                                             )
                                         ],
                                     )
                                 )
+                                uicontents.append(global_shares["content"](function_response=global_shares["function_responce"](name=part.function_call.name, response={"output": None})))
                                 called = True
-                                continue
-                                text += f'- Failed Call `add site(id: "{part.function_call.args.get("id")}", site: {part.function_call.args.get("site")}") -> **Error:** {e}`\n\n'
-                            if contents[-1].role == "model":
-                                contents[-1].parts.append(part)  # type: ignore
-                            else:
-                                contents.append(
-                                    types.Content(role="model", parts=[part])
-                                )
-                            contents.append(
-                                types.Content(
-                                    role="user",
-                                    parts=[
-                                        types.Part(
-                                            function_response=types.FunctionResponse(
-                                                name="add_site",
-                                                id=part.function_call.id,
-                                                response={
-                                                    "output": f"Succesfully Added url to reseaearch for topic with id {part.function_call.args['id']}"
-                                                },
-                                            )
-                                        )
-                                    ],
-                                )
-                            )
-                            called = True
-                            text += f'- Call `add site (id: "{part.function_call.args.get("id")}", site: "{part.function_call.args.get("site")}")`\n\n'
-            if not called:
-                break
-            if self.stop:
-                raise DeepResearcher.StopResearch()
+                        self.call_back({"action": "update_thinking", "id": thinking_id, "content": [_.jsonify() for _ in uicontents]})
+                if not called:
+                    break
+                if self.stop:
+                    raise DeepResearcher.StopResearch()
+            except Exception as e:
+                if isinstance(e, utils.network_errors) and not isinstance(e, utils.ignore_network_error):
+                    time.sleep(backoff)
+                    backoff *= backoff
+                    continue
+                raise
             contents[0].parts[0].text = f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai()}"  # type: ignore
         self.planer_content.extend(contents[1:])
         self.planer_content.append(types.Content(
             role="user",
             parts=[
-                types.Part(text="Previous topic content has been truncated due to system context window limits. The full conversation history may contain additional context not shown here.")
+                types.Part(text="old topic content has been truncated due to system context window limits. The full conversation history may contain additional context not shown here.")
             ]
         ))
-        return text
+        self.call_back({"action": "done_thinking", "id": thinking_id, "content": [_.jsonify() for _ in uicontents],})
 
     def _generate_queries(self, topic: str) -> list[str]:
         """Generates search queries for a given topic using AI."""
@@ -1019,17 +1019,14 @@ class DeepResearcher:
                     )
                 if tc > 9_00_000:
                     break
-                self.call_back(
-                    {
-                        "action": "thinking",
-                        "thoughts": self.analyse_add_topic(tc < 1_86_000),
-                    }
-                )
+                thinking_id = str(uuid.uuid4())
+                self.call_back({"action": "start_thinking", "id": thinking_id})
+                self.analyse_add_topic(tc < 1_86_000, thinking_id)
         except DeepResearcher.StopResearch:
             pass  # Dont care abot how much reacsher has complited
 
         report = self._generate_report()
-        self.call_back({"action": "done_generating_report", "data": report})
+        self.call_back({"action": "done_generating_report", "data": [_.jsonify() for _ in report]})
         return report
 
     def _generate_report(self) -> list["Content"]:
@@ -1052,7 +1049,9 @@ class DeepResearcher:
                 ],
             )
         ]
-        report_str: list[Content] = []
+        for content in contents:
+            print(content)
+        report: list[Content] = []
         while True:
             model = "gemini-2.0-flash-thinking-exp-01-21"
             result = utils.retry(
@@ -1077,7 +1076,7 @@ class DeepResearcher:
             ):
                 for part in result.candidates[0].content.parts:
                     if part.text:
-                        report_str.append(global_shares["content"](text=part.text, thought=bool(part.thought)))
+                        report.append(global_shares["content"](text=part.text, thought=bool(part.thought)))
                         if contents[-1].role != "model":
                             contents.append(
                                 types.Content(
@@ -1086,11 +1085,11 @@ class DeepResearcher:
                                 )
                             )
                         else:
-                            contents[1].parts.append(part)  # type: ignore
+                            contents[-1].parts.append(part)  # type: ignore
                 if result.candidates[0].finish_reason != types.FinishReason.MAX_TOKENS:
                     break
 
-        return report_str
+        return report
 
     def fetch_url(self, url: str, wait_for: int = 4000) -> Optional[utils.ScrapedData]:
         scrape_result = utils.scrape_url(

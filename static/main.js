@@ -184,7 +184,7 @@ function renderTopicTree(topicData, parentElement, level = 0) {
   }
 }
 
-// --- Helper function to render a single step (Updated for Search Grid & Tooltip Init) ---
+// --- Helper function to render a single step (Updated for Thinking Steps, Search Grid & Tooltip Init) ---
 function renderStep(stepData, index, container, functionId) {
   // Global URL metadata storage - create if it doesn't exist
   if (!window.SHARED_URL_METADATA) {
@@ -212,34 +212,159 @@ function renderStep(stepData, index, container, functionId) {
     "border-secondary",
   );
 
-  // Assign ID if the step has one (e.g., search steps)
+  // Assign ID if the step has one (e.g., search, thinking steps)
   if (stepData.id) {
-    stepDiv.dataset.stepId = stepData.id;
-    stepDiv.id = `research-step-${functionId}-${stepData.id}`; // Unique DOM ID
+    stepDiv.dataset.stepId = stepData.id; // Store the step-specific ID
+    stepDiv.id = `research-step-${functionId}-${stepData.id}`; // Unique DOM ID including functionId and stepId
   } else {
-    stepDiv.id = `research-step-${functionId}-${index}`; // Fallback ID
+    // Fallback ID using index if no specific step ID is provided
+    stepDiv.id = `research-step-${functionId}-${index}`;
   }
 
   let stepTitle = `<strong>Step ${index + 1}: ${stepData.type.charAt(0).toUpperCase() + stepData.type.slice(1)}</strong>`;
   let stepDetailsHTML = "";
 
-  if (stepData.type === "thinking" && stepData.content) {
-    const thinkingCollapseId = `thinking-collapse-${functionId}-${index}`;
-    stepTitle += `
-            <button class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" type="button" data-bs-toggle="collapse" data-bs-target="#${thinkingCollapseId}" aria-expanded="false" aria-controls="${thinkingCollapseId}">
-                <i class="bi bi-arrows-expand"></i> Toggle Thoughts
+  // --- Handle Thinking Steps ---
+  if (stepData.type === "start_thinking") {
+    stepTitle = `<strong>Step ${index + 1}: Thinking...</strong>`; // Indicate thinking is starting
+    stepDetailsHTML = `<div class="d-flex align-items-center text-muted small mt-1">
+                            <div class="spinner-border spinner-border-sm me-2" role="status">
+                                <span class="visually-hidden">Thinking...</span>
+                            </div>
+                            Analyzing and planning next steps...
+                         </div>`;
+  } else if (
+    stepData.type === "thinking" ||
+    stepData.type === "update_thinking" ||
+    stepData.type === "done_thinking" // Apply the same detailed rendering for done_thinking
+  ) {
+    // Unified rendering for thinking, update_thinking, and done_thinking
+    if (stepData.type === "done_thinking") {
+      stepTitle = `<strong>Step ${index + 1}: Thinking Complete</strong> <i class="bi bi-check-circle-fill text-success"></i>`;
+    } else {
+      stepTitle = `<strong>Step ${index + 1}: Thinking</strong>`;
+    }
+
+    if (stepData.content && stepData.content.length > 0) {
+      const thinkingCollapseId = `thinking-collapse-${functionId}-${stepData.id || index}`;
+      stepTitle += `
+            <button class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" type="button" data-bs-toggle="collapse" data-bs-target="#${thinkingCollapseId}" aria-expanded="${stepData.type === "done_thinking" ? "false" : "true"}" aria-controls="${thinkingCollapseId}">
+                <i class="bi bi-arrows-expand"></i> ${stepData.type === "done_thinking" ? "View Final Thoughts" : "Toggle Thoughts"}
             </button>
         `;
-    stepDetailsHTML = `
-            <div class="collapse" id="${thinkingCollapseId}">
+
+      let renderedContent = "";
+      const functionCallStates = {}; // Store state of function calls within this step
+
+      stepData.content.forEach((contentPart) => {
+        if (contentPart.text) {
+          if (contentPart.thought) {
+            renderedContent += `<div class="thought-content my-1 p-1 border-start border-info ps-2 fst-italic text-info-emphasis small">${marked.parse(contentPart.text)}</div>`;
+          } else {
+            renderedContent += marked.parse(contentPart.text);
+          }
+        } else if (contentPart.function_call) {
+          const callId = contentPart.function_call.id;
+          functionCallStates[callId] = {
+            status: "pending",
+            name: contentPart.function_call.name,
+          };
+          const argsString = JSON.stringify(
+            contentPart.function_call.args,
+            null,
+            2,
+          );
+          const argsCollapseId = `args-collapse-${callId}`;
+
+          renderedContent += `
+                    <div id="thought-fn-call-${callId}" class="function-call-thought border border-warning border-opacity-50 p-2 rounded my-2 small">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-gear me-1 text-warning"></i> Function Call: <strong>${contentPart.function_call.name}</strong></span>
+                            <button class="btn btn-sm btn-outline-secondary py-0 px-1" type="button" data-bs-toggle="collapse" data-bs-target="#${argsCollapseId}" aria-expanded="false" aria-controls="${argsCollapseId}">
+                                Args
+                            </button>
+                        </div>
+                        <div class="collapse" id="${argsCollapseId}">
+                            <pre class="mt-1 mb-0 p-1 bg-dark text-light rounded small"><code>${argsString}</code></pre>
+                        </div>
+                        <div class="function-call-status mt-1">
+                            <span class="badge bg-warning text-dark">Pending</span>
+                        </div>
+                    </div>`;
+        } else if (contentPart.function_response) {
+          const responseId = contentPart.function_response.id;
+          if (responseId && functionCallStates[responseId]) {
+            if (contentPart.function_response.response?.output) {
+              functionCallStates[responseId].status = "success";
+            } else if (contentPart.function_response.response?.error) {
+              functionCallStates[responseId].status = "error";
+            } else {
+              functionCallStates[responseId].status = "unknown";
+            }
+          }
+        }
+      });
+
+      // Post-process the rendered content to update function call styles based on responses
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = renderedContent;
+
+      Object.keys(functionCallStates).forEach((callId) => {
+        const callDiv = tempDiv.querySelector(`#thought-fn-call-${callId}`);
+        if (callDiv) {
+          const state = functionCallStates[callId];
+          const statusDiv = callDiv.querySelector(".function-call-status");
+          const icon = callDiv.querySelector(".bi-gear");
+
+          callDiv.classList.remove("border-warning"); // Remove pending style
+
+          if (state.status === "success") {
+            callDiv.classList.add("border-success", "border-opacity-75");
+            if (icon)
+              icon.className = "bi bi-check-circle-fill me-1 text-success";
+            if (statusDiv)
+              statusDiv.innerHTML = `<span class="badge bg-success">Success</span>`;
+          } else if (state.status === "error") {
+            callDiv.classList.add("border-danger", "border-opacity-75");
+            if (icon) icon.className = "bi bi-x-octagon-fill me-1 text-danger";
+            if (statusDiv)
+              statusDiv.innerHTML = `<span class="badge bg-danger">Error</span>`;
+          } else if (state.status === "unknown") {
+            callDiv.classList.add("border-secondary", "border-opacity-50");
+            if (icon)
+              icon.className = "bi bi-question-circle-fill me-1 text-secondary";
+            if (statusDiv)
+              statusDiv.innerHTML = `<span class="badge bg-secondary">Unknown</span>`;
+          }
+        }
+      });
+
+      renderedContent = tempDiv.innerHTML; // Get the updated HTML
+
+      stepDetailsHTML = `
+            <div class="collapse ${stepData.type !== "done_thinking" ? "show" : ""}" id="${thinkingCollapseId}">
                 <div class="mt-1 mb-0 p-2 bg-darker text-light rounded small border border-secondary">
-                    ${marked.parse(stepData.content)}
+                    ${renderedContent}
                 </div>
             </div>
         `;
+    } else {
+      // Handle cases where there is no content (e.g., still thinking or finished without output)
+      if (stepData.type === "done_thinking") {
+        stepDetailsHTML = `<small class="text-muted d-block mt-1">Finished analysis for this stage.</small>`;
+      } else {
+        stepDetailsHTML = `<div class="d-flex align-items-center text-muted small mt-1">
+                              <div class="spinner-border spinner-border-sm me-2" role="status">
+                                  <span class="visually-hidden">Thinking...</span>
+                              </div>
+                              Processing...
+                           </div>`;
+      }
+    }
+
+    // --- Handle Search Steps ---
   } else if (stepData.type === "search") {
     const searchCollapseId = `search-collapse-${functionId}-${stepData.id || index}`;
-    // Display the topic name with the search
     stepTitle += ` for Topic: <span class="text-info fst-italic">${stepData.topic_name || "Unknown"}</span>`;
     stepTitle += `
           <button class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" type="button" data-bs-toggle="collapse" data-bs-target="#${searchCollapseId}" aria-expanded="true" aria-controls="${searchCollapseId}">
@@ -249,7 +374,7 @@ function renderStep(stepData, index, container, functionId) {
 
     const renderGridItem = (item, type) => {
       if (type === "query") {
-        let statusClass = "planned"; // Default: planned
+        let statusClass = "planned";
         let statusIcon = "bi-hourglass-split";
         let tooltipText = "Planned";
         if (stepData.researched_queries?.includes(item)) {
@@ -257,18 +382,16 @@ function renderStep(stepData, index, container, functionId) {
           statusIcon = "bi-check-lg";
           tooltipText = "Searched";
         }
-        // Keep query rendering simple (or adjust if needed)
         return `
             <div class="research-grid-item query-item ${statusClass}" data-bs-toggle="tooltip" title="${tooltipText}">
                 <i class="bi ${statusIcon} me-1"></i>
                 <code>${item}</code>
             </div>`;
       } else if (type === "url") {
-        let statusClass = ""; // Base class for state
+        let statusClass = "";
         let tooltipText = "Planning...";
-        let shimmerClass = ""; // Shimmer applied via CSS based on 'planned' and 'shimmer-active' states
+        let shimmerClass = "";
 
-        // Determine status and apply classes/tooltip text
         const fetchedUrlsInStep = new Set(stepData.fetched_urls || []);
         const failedUrlsInStep = new Set(stepData.fetched_failed_urls || []);
         const fetchedUrlsPreviously = new Set(
@@ -277,53 +400,45 @@ function renderStep(stepData, index, container, functionId) {
         const failedUrlsPreviously = new Set(stepData.failed_fetchurl || []);
 
         if (fetchedUrlsInStep.has(item) || fetchedUrlsPreviously.has(item)) {
-          statusClass = "fetched"; // Class for fetched state
+          statusClass = "fetched";
           tooltipText = "Fetched";
         } else if (
           failedUrlsInStep.has(item) ||
           failedUrlsPreviously.has(item)
         ) {
-          statusClass = "failed"; // Class for failed state
+          statusClass = "failed";
           tooltipText = "Failed";
         } else {
-          statusClass = "planned"; // Class for planned state (default)
-          // Add shimmer class only if actively planning
+          statusClass = "planned";
           if (stepData.status === "planning") {
+            // Assuming a status field exists in stepData for search
             shimmerClass = "shimmer-active";
           }
         }
 
-        // Get URL metadata from shared global storage first, then fall back to step-specific data
         const urlMeta =
           window.SHARED_URL_METADATA[item] ||
           stepData.url_metadata?.[item] ||
           {};
         const urlTitle = urlMeta.title || "";
-        let favicon = `<i class="bi bi-globe url-favicon-placeholder"></i>`; // Default placeholder icon
+        let favicon = `<i class="bi bi-globe url-favicon-placeholder"></i>`;
 
-        // Extract domain for display
         let displayUrl = item;
         let urlObject;
         try {
           urlObject = new URL(item);
-          displayUrl = urlObject.hostname.replace(/^www\./, ""); // Show domain without www.
+          displayUrl = urlObject.hostname.replace(/^www\./, "");
 
-          // Try to use metadata favicon if available, otherwise attempt to use default favicon URL
           if (urlMeta.favicon) {
             favicon = `<img src="${urlMeta.favicon}" class="url-favicon" alt="">`;
           } else if (urlObject) {
-            // Create a default favicon URL to try
             const defaultFaviconUrl = `${urlObject.origin}/favicon.ico`;
-
-            // Check if favicon exists without blocking UI
             favicon = `<img src="${defaultFaviconUrl}" class="url-favicon" alt="" onerror="this.outerHTML=\`<i class='bi bi-globe url-favicon-placeholder'></i>\`;">`;
           }
         } catch (e) {
-          // Keep original item if URL parsing fails
           console.warn(`Could not parse URL: ${item}`, e);
         }
 
-        // Construct the HTML structure matching the image
         return `
             <div class="research-grid-item url-item ${statusClass} ${shimmerClass}" data-bs-toggle="tooltip"
                  title="${tooltipText}: ${item}${urlTitle ? " - " + urlTitle : ""}">
@@ -337,7 +452,6 @@ function renderStep(stepData, index, container, functionId) {
       return "";
     };
 
-    // Combine all relevant queries and URLs for display in this step
     const queriesToShow = new Set([
       ...(stepData.planed_queries || []),
       ...(stepData.researched_queries || []),
@@ -351,7 +465,6 @@ function renderStep(stepData, index, container, functionId) {
       ...(stepData.fetched_failed_urls || []),
     ]);
 
-    // Use specific classes for query and URL grids
     stepDetailsHTML = `
             <div class="collapse show" id="${searchCollapseId}">
                  <div class="mt-2 p-2 bg-darker text-light rounded border border-secondary">
@@ -370,6 +483,7 @@ function renderStep(stepData, index, container, functionId) {
                 </div>
             </div>
         `;
+    // --- Other Step Types ---
   } else if (stepData.type === "report_gen") {
     stepDetailsHTML = `<div class="d-flex align-items-center text-muted small mt-1">
                             <div class="spinner-border spinner-border-sm me-2" role="status">
@@ -394,27 +508,43 @@ function renderStep(stepData, index, container, functionId) {
                             <i class="bi bi-check-circle-fill me-2"></i>
                             Completed summarizing sites for topic "${stepData.topic || "Unknown"}"
                          </div>`;
-  }
-  // Keep the old fetch type rendering if needed (though likely covered by search)
-  else if (stepData.type === "fetch" && stepData.url) {
+  } else if (stepData.type === "fetch" && stepData.url) {
+    // Keep old fetch rendering if needed
     stepDetailsHTML = `<small class="d-block mt-1">Fetched URL: <a href="${stepData.url}" target="_blank">${stepData.url}</a></small>`;
   }
 
   stepDiv.innerHTML = stepTitle + stepDetailsHTML;
-  container.appendChild(stepDiv); // Append the fully constructed step
+
+  // --- Append or Replace ---
+  // The logic to append or replace will now be handled primarily by the caller (the socket listener)
+  // This function just focuses on rendering the HTML for a given stepData.
+
+  // Append to the container provided by the caller
+  container.appendChild(stepDiv);
 
   // Initialize tooltips AFTER appending, specifically for search steps
   if (stepData.type === "search") {
-    // Use requestAnimationFrame to ensure the browser has processed the DOM update
     requestAnimationFrame(() => {
       const tooltipTriggerList = stepDiv.querySelectorAll(
         '[data-bs-toggle="tooltip"]',
       );
       tooltipTriggerList.forEach((tooltipTriggerEl) => {
-        // Avoid re-initializing if it somehow already exists
         if (!bootstrap.Tooltip.getInstance(tooltipTriggerEl)) {
           new bootstrap.Tooltip(tooltipTriggerEl);
         }
+      });
+    });
+  }
+
+  // Initialize collapse toggles AFTER appending if a collapse was added
+  if (stepDetailsHTML.includes('class="collapse"')) {
+    requestAnimationFrame(() => {
+      const collapseTriggerList = stepDiv.querySelectorAll(
+        '[data-bs-toggle="collapse"]',
+      );
+      collapseTriggerList.forEach((el) => {
+        // Basic re-initialization or ensure event listeners are attached if needed
+        // Bootstrap might handle this automatically if elements are added correctly
       });
     });
   }
@@ -784,14 +914,6 @@ function displayDeepResearchDetails(functionId) {
 
   if (contentItemResponse && contentItemResponse.function_response) {
     if (contentItemResponse.function_response.response?.output) {
-      const outputContainer = document.createElement("div");
-      outputContainer.classList.add("text-attachment-panel", "bg-darker");
-      outputContainer.innerHTML = marked.parse(
-        contentItemResponse.function_response.response.output,
-      );
-      responseDiv.appendChild(outputContainer);
-
-      // Process inline_data if available (research steps and thinking)
       if (
         contentItemResponse.function_response.inline_data &&
         contentItemResponse.function_response.inline_data.length > 0
@@ -817,7 +939,7 @@ function displayDeepResearchDetails(functionId) {
 
         // Create container for all research steps
         const stepsContainer = document.createElement("div");
-        stepsContainer.classList.add("research-steps-container");
+        stepsContainer.classList.add("text-attachment-panel", "bg-darker");
 
         // Process each inline data item
         contentItemResponse.function_response.inline_data.forEach(

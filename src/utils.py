@@ -594,6 +594,7 @@ class DDGSearcher:
             return results
 
         except DuckDuckGoSearchException as e:
+            traceback.print_exc()
             error_str = str(e)
 
             # Check if this is a rate limit error

@@ -5,7 +5,7 @@ from google import genai
 from typing import Any, TypedDict, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from main import ChatHistory, Content, File
+    from main import ChatHistory, Content, File, FunctionCall, FunctionResponce
 
 
 class Shared(TypedDict):
@@ -16,6 +16,8 @@ class Shared(TypedDict):
     chat_history: "ChatHistory"
     file: type["File"]
     content: type["Content"]
+    function_call: type["FunctionCall"]
+    function_responce: type["FunctionResponce"]
 
 
 global_shares: Shared = {
@@ -26,4 +28,6 @@ global_shares: Shared = {
     "chat_history": None,
     "file": None,
     "content": None,
+    "function_call": None,
+    "function_responce": None
 }  # type: ignore

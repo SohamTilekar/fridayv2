@@ -1,11 +1,18 @@
 # main.py
 import faulthandler
 faulthandler.enable()
+import os
+from flask import Flask, render_template, redirect, url_for
+from flask_socketio import SocketIO
+app = Flask("Friday")
+socketio = SocketIO(app)
+# just start reloader no need to run other code
+if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+    socketio.run(app, host="127.0.0.1", port=5000, debug=True)
+    exit(0)
 import re
 import traceback
 from rich import print
-from flask import Flask, render_template, redirect, url_for
-from flask_socketio import SocketIO
 from google import genai
 from google.genai import types
 import prompt
@@ -18,7 +25,6 @@ from global_shares import global_shares
 import notification
 import lschedule
 import json
-import os
 import base64
 import time
 import datetime
@@ -26,8 +32,6 @@ import utils
 import threading
 import tools
 
-app = Flask("Friday")
-socketio = SocketIO(app)
 global_shares["socketio"] = socketio
 
 client = genai.Client(api_key=config.GOOGLE_API)
@@ -329,6 +333,7 @@ class FunctionCall:
     def from_jsonify(data: dict[str, Any]) -> "FunctionCall":
         return FunctionCall(**data)
 
+global_shares["function_call"] = FunctionCall
 
 class FunctionResponce:
     id: str
@@ -388,6 +393,7 @@ class FunctionResponce:
             [Content.from_jsonify(_) for _ in data["inline_data"]],
         )
 
+global_shares["function_responce"] = FunctionResponce
 
 class Content:
     text: Optional[str] = None
@@ -938,10 +944,25 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             "data": update_data # Send the original data payload
                         }
                         # Map actions to update types if needed, or use action directly
-                        if update_data.get("action") == "thinking":
+                        if update_data.get("action") == "start_thinking":
                             event_payload["update_type"] = "step" # More specific type
-                            event_payload["data"] = {"type": "thinking", "content": update_data.get("thoughts")}
+                            event_payload["data"] = {"type": "start_thinking", "id": update_data.get("id")}
                             fc.extra_data["steps"].append(event_payload["data"])
+                        if update_data.get("action") == "update_thinking":
+                            event_payload["update_type"] = "step" # More specific type
+                            event_payload["data"] = {"type": "update_thinking", "id": update_data["id"], "content": update_data["content"]}
+                            for step in fc.extra_data["steps"]:
+                                if step.get("id") == update_data["id"]:
+                                    step["type"] = "thinking"
+                                    step["content"] = update_data["content"]
+                                    break
+                        if update_data.get("action") == "done_thinking":
+                            event_payload["update_type"] = "step" # More specific type
+                            event_payload["data"] = {"type": "done_thinking", "id": update_data["id"], "content": update_data["content"]}
+                            for step in fc.extra_data["steps"]:
+                                if step.get("id") == update_data["id"]:
+                                    step["content"] = update_data["content"]
+                                    break
                         elif update_data.get("action") == "topic_updated":
                             event_payload["update_type"] = "topic_tree"
                             event_payload["data"] = researcher.topic.jsonify()
@@ -1933,13 +1954,13 @@ if __name__ == "__main__":
     )
     mail_checker = threading.Thread(target=start_checking_mail, daemon=True)
     mail_checker.start()
+    reminder_runer = threading.Thread(target=tools.run_reminders, daemon=True)
+    reminder_runer.start()
     try:
-        reminder_runer = threading.Thread(target=tools.run_reminders, daemon=True)
-        reminder_runer.start()
-        socketio.run(app, host="127.0.0.1", port=5000, debug=True, use_reloader=False)
+        socketio.run(app, host="127.0.0.1", port=5000, debug=True)
     finally:
-        chat_history.save_to_json(chat_history_file)
-        notification.notifications.save_to_json(notification_file)
+        chat_history.save_to_json(chat_history_file) # type: ignore
+        notification.notifications.save_to_json(notification_file) # type: ignore
         lschedule.schedule.save_to_json(config.AI_DIR / "schedule.json")
         tools.save_jobs()
         print("Chat history saved.")
