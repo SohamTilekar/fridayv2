@@ -1,13 +1,15 @@
 # main.py
 import faulthandler
+
 faulthandler.enable()
 import os
 from flask import Flask, render_template, redirect, url_for
 from flask_socketio import SocketIO
+
 app = Flask("Friday")
 socketio = SocketIO(app)
 # just start reloader no need to run other code
-if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
     socketio.run(app, host="127.0.0.1", port=5000, debug=True)
     exit(0)
 import re
@@ -39,7 +41,7 @@ global_shares["client"] = client
 
 model: Optional[str] = None  # None for Auto
 selected_tools: Optional[list[tools.ToolLiteral]] = None  # None for Auto
-thinking_budget: Optional[int] = None # None for desabling thinking & int for budget
+thinking_budget: Optional[int] = None  # None for desabling thinking & int for budget
 
 permission: Optional[bool] = None
 
@@ -333,7 +335,9 @@ class FunctionCall:
     def from_jsonify(data: dict[str, Any]) -> "FunctionCall":
         return FunctionCall(**data)
 
+
 global_shares["function_call"] = FunctionCall
+
 
 class FunctionResponce:
     id: str
@@ -393,7 +397,9 @@ class FunctionResponce:
             [Content.from_jsonify(_) for _ in data["inline_data"]],
         )
 
+
 global_shares["function_responce"] = FunctionResponce
+
 
 class Content:
     text: Optional[str] = None
@@ -452,8 +458,14 @@ class Content:
     def from_jsonify(data: dict[str, Any]) -> "Content":
         return Content(
             text=data["text"],
-            attachment=File.from_jsonify(data["attachment"]) if data["attachment"] else None,
-            grounding_metadata=GroundingMetaData.from_jsonify(data["grounding_metadata"]) if data["grounding_metadata"] else None,
+            attachment=(
+                File.from_jsonify(data["attachment"]) if data["attachment"] else None
+            ),
+            grounding_metadata=(
+                GroundingMetaData.from_jsonify(data["grounding_metadata"])
+                if data["grounding_metadata"]
+                else None
+            ),
             function_call=(
                 FunctionCall.from_jsonify(data["function_call"])
                 if data["function_call"]
@@ -576,7 +588,10 @@ class Message:
                     return
 
     def for_ai(
-        self, support_tools: bool, imagen_selected: bool, msg: Optional["Message"] = None
+        self,
+        support_tools: bool,
+        imagen_selected: bool,
+        msg: Optional["Message"] = None,
     ) -> list[types.Content]:
         if msg is None:
             raise ValueError("msg parameter is required.")
@@ -903,7 +918,9 @@ def generate_content(msg: Message, chat_id: str) -> Message:
             else:
                 # If existing has different thought status, start new content
                 if msg.content[-1].thought != bool(part.thought):
-                    msg.content.append(Content(text=part.text, thought=bool(part.thought)))
+                    msg.content.append(
+                        Content(text=part.text, thought=bool(part.thought))
+                    )
                 else:
                     msg.content[-1].text += part.text
 
@@ -931,7 +948,10 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 raise ValueError("Function with no name specified")
             if func_call.name == "DeepResearch":
                 if func_call.args:
-                    def research_callback(update_data: Optional[dict[str, Any]]) -> None:
+
+                    def research_callback(
+                        update_data: Optional[dict[str, Any]],
+                    ) -> None:
                         # print(update_data)
                         if not update_data:
                             # No specific update, maybe just a state check internally
@@ -939,26 +959,37 @@ def generate_content(msg: Message, chat_id: str) -> Message:
 
                         # Prepare data for the frontend event
                         event_payload = {
-                            "function_id": id, # Pass the function call ID
+                            "function_id": id,  # Pass the function call ID
                             "update_type": update_data.get("action"),
-                            "data": update_data # Send the original data payload
+                            "data": update_data,  # Send the original data payload
                         }
                         # Map actions to update types if needed, or use action directly
                         if update_data.get("action") == "start_thinking":
-                            event_payload["update_type"] = "step" # More specific type
-                            event_payload["data"] = {"type": "start_thinking", "id": update_data.get("id")}
+                            event_payload["update_type"] = "step"  # More specific type
+                            event_payload["data"] = {
+                                "type": "start_thinking",
+                                "id": update_data.get("id"),
+                            }
                             fc.extra_data["steps"].append(event_payload["data"])
                         if update_data.get("action") == "update_thinking":
-                            event_payload["update_type"] = "step" # More specific type
-                            event_payload["data"] = {"type": "update_thinking", "id": update_data["id"], "content": update_data["content"]}
+                            event_payload["update_type"] = "step"  # More specific type
+                            event_payload["data"] = {
+                                "type": "update_thinking",
+                                "id": update_data["id"],
+                                "content": update_data["content"],
+                            }
                             for step in fc.extra_data["steps"]:
                                 if step.get("id") == update_data["id"]:
                                     step["type"] = "thinking"
                                     step["content"] = update_data["content"]
                                     break
                         if update_data.get("action") == "done_thinking":
-                            event_payload["update_type"] = "step" # More specific type
-                            event_payload["data"] = {"type": "done_thinking", "id": update_data["id"], "content": update_data["content"]}
+                            event_payload["update_type"] = "step"  # More specific type
+                            event_payload["data"] = {
+                                "type": "done_thinking",
+                                "id": update_data["id"],
+                                "content": update_data["content"],
+                            }
                             for step in fc.extra_data["steps"]:
                                 if step.get("id") == update_data["id"]:
                                     step["content"] = update_data["content"]
@@ -968,15 +999,18 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             event_payload["data"] = researcher.topic.jsonify()
                             fc.extra_data["topic"] = event_payload["data"]
                         elif update_data.get("action") == "search":
-                            event_payload["update_type"] = "step" # More specific type
+                            event_payload["update_type"] = "step"  # More specific type
                             event_payload["data"] = update_data
                             fc.extra_data["steps"].append(update_data)
                         elif update_data.get("action") == "update_search":
-                            event_payload["update_type"] = "step" # More specific type
+                            event_payload["update_type"] = "step"  # More specific type
                             event_payload["data"] = update_data.copy()
                             idx = None
                             for idx, step in enumerate(fc.extra_data["steps"]):
-                                if step.get("type") == "search" and step["id"] == update_data["id"]:
+                                if (
+                                    step.get("type") == "search"
+                                    and step["id"] == update_data["id"]
+                                ):
                                     break
                             fc.extra_data["steps"][idx] = update_data
                         elif update_data.get("action") == "generating_report":
@@ -985,148 +1019,208 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             fc.extra_data["steps"].append(event_payload["data"])
                         elif update_data.get("action") == "done_generating_report":
                             event_payload["update_type"] = "done_generating_report"
-                            event_payload["data"] = {"type": "done_generating_report", "report": update_data["data"]}
+                            event_payload["data"] = {
+                                "type": "done_generating_report",
+                                "report": update_data["data"],
+                            }
                             fc.extra_data["steps"].pop()
                             fc.extra_data["steps"].append(event_payload["data"])
                         elif update_data.get("action") == "summarize_sites":
                             event_payload["update_type"] = "step"
-                            event_payload["data"] = {"type": "summarize_sites", "topic": update_data.get("topic")}
+                            event_payload["data"] = {
+                                "type": "summarize_sites",
+                                "topic": update_data.get("topic"),
+                            }
                             fc.extra_data["steps"].append(event_payload["data"])
                             print(event_payload["data"])
                         elif update_data.get("action") == "summarize_sites_complete":
                             event_payload["update_type"] = "step"
-                            event_payload["data"] = {"type": "summarize_sites_complete", "topic": update_data.get("topic")}
+                            event_payload["data"] = {
+                                "type": "summarize_sites_complete",
+                                "topic": update_data.get("topic"),
+                            }
                             print(event_payload["data"])
                             # Find and remove the summarize_sites step
                             for idx, step in enumerate(fc.extra_data["steps"]):
-                                if step.get("type") == "summarize_sites" and step.get("topic") == update_data.get("topic"):
+                                if step.get("type") == "summarize_sites" and step.get(
+                                    "topic"
+                                ) == update_data.get("topic"):
                                     del fc.extra_data["steps"][idx]
                                     break
 
-                        socketio.emit('research_update', event_payload)
-                        emit_msg_update(msg) # cz fc is updated but the content in the message is not get to the website
+                        socketio.emit("research_update", event_payload)
+                        emit_msg_update(
+                            msg
+                        )  # cz fc is updated but the content in the message is not get to the website
 
-                    researcher = tools.DeepResearcher(
-                        **func_call.args, call_back=research_callback # Use the new callback
+                    researcher: tools.DeepResearcher = tools.DeepResearcher(
+                        **func_call.args,
+                        call_back=research_callback,  # Use the new callback
                     )
                     # Store initial state in extra_data (no change here)
                     fc.extra_data["topic"] = researcher.topic.jsonify()
-                    fc.extra_data["steps"] = [] # Steps will be added via events
+                    fc.extra_data["steps"] = []  # Steps will be added via events
                     fc.extra_data["max_topics"] = researcher.max_topics
                     fc.extra_data["max_search_queries"] = researcher.max_search_queries
                     fc.extra_data["max_search_results"] = researcher.max_search_results
                     fc.extra_data["tree_depth_limit"] = researcher.tree_depth_limit
                     fc.extra_data["branch_width_limit"] = researcher.branch_width_limit
-                    fc.extra_data["semantic_drift_limit"] = researcher.semantic_drift_limit
-                    fc.extra_data["research_detail_level"] = researcher.research_detail_level
+                    fc.extra_data["semantic_drift_limit"] = (
+                        researcher.semantic_drift_limit
+                    )
+                    fc.extra_data["research_detail_level"] = (
+                        researcher.research_detail_level
+                    )
                     fc.extra_data["stop"] = False
-                    fc.extra_data["status"] = "running" # Add initial status
+                    fc.extra_data["status"] = "running"  # Add initial status
 
                     # --- Modify Config Update Handlers ---
                     def update_max_topics(max_topics: Optional[int]):
                         researcher.max_topics = max_topics
                         fc.extra_data["max_topics"] = max_topics
                         # Emit config update event
-                        socketio.emit('research_update', {
-                            "function_id": id,
-                            "update_type": "config",
-                            "data": {"max_topics": max_topics}
-                        })
+                        socketio.emit(
+                            "research_update",
+                            {
+                                "function_id": id,
+                                "update_type": "config",
+                                "data": {"max_topics": max_topics},
+                            },
+                        )
 
                     def update_max_search_queries(max_search_queries: Optional[int]):
                         researcher.max_search_queries = max_search_queries
                         fc.extra_data["max_search_queries"] = max_search_queries
-                        socketio.emit('research_update', {
-                            "function_id": id,
-                            "update_type": "config",
-                            "data": {"max_search_queries": max_search_queries}
-                        })
+                        socketio.emit(
+                            "research_update",
+                            {
+                                "function_id": id,
+                                "update_type": "config",
+                                "data": {"max_search_queries": max_search_queries},
+                            },
+                        )
 
                     def update_max_search_results(max_search_results: Optional[int]):
                         researcher.max_search_results = max_search_results
                         fc.extra_data["max_search_results"] = max_search_results
-                        socketio.emit('research_update', {
-                            "function_id": id,
-                            "update_type": "config",
-                            "data": {"max_search_results": max_search_results}
-                        })
+                        socketio.emit(
+                            "research_update",
+                            {
+                                "function_id": id,
+                                "update_type": "config",
+                                "data": {"max_search_results": max_search_results},
+                            },
+                        )
 
                     def update_tree_depth_limit(tree_depth_limit: int):
                         researcher.tree_depth_limit = tree_depth_limit
                         fc.extra_data["tree_depth_limit"] = tree_depth_limit
-                        socketio.emit('research_update', {
-                            "function_id": id,
-                            "update_type": "config",
-                            "data": {"tree_depth_limit": tree_depth_limit}
-                        })
+                        socketio.emit(
+                            "research_update",
+                            {
+                                "function_id": id,
+                                "update_type": "config",
+                                "data": {"tree_depth_limit": tree_depth_limit},
+                            },
+                        )
 
                     def update_branch_width_limit(branch_width_limit: int):
                         researcher.branch_width_limit = branch_width_limit
                         fc.extra_data["branch_width_limit"] = branch_width_limit
-                        socketio.emit('research_update', {
-                            "function_id": id,
-                            "update_type": "config",
-                            "data": {"branch_width_limit": branch_width_limit}
-                        })
+                        socketio.emit(
+                            "research_update",
+                            {
+                                "function_id": id,
+                                "update_type": "config",
+                                "data": {"branch_width_limit": branch_width_limit},
+                            },
+                        )
 
                     def update_semantic_drift_limit(semantic_drift_limit: float):
                         # Ensure value is between 0 and 1
                         if semantic_drift_limit is not None:
-                            semantic_drift_limit = max(0.0, min(1.0, semantic_drift_limit))
+                            semantic_drift_limit = max(
+                                0.0, min(1.0, semantic_drift_limit)
+                            )
                         researcher.semantic_drift_limit = semantic_drift_limit
                         fc.extra_data["semantic_drift_limit"] = semantic_drift_limit
-                        socketio.emit('research_update', {
-                            "function_id": id,
-                            "update_type": "config",
-                            "data": {"semantic_drift_limit": semantic_drift_limit}
-                        })
+                        socketio.emit(
+                            "research_update",
+                            {
+                                "function_id": id,
+                                "update_type": "config",
+                                "data": {"semantic_drift_limit": semantic_drift_limit},
+                            },
+                        )
 
                     def update_research_detail_level(research_detail_level: float):
                         # Ensure value is between 0 and 1
                         if research_detail_level is not None:
-                            research_detail_level = max(0.0, min(1.0, research_detail_level))
+                            research_detail_level = max(
+                                0.0, min(1.0, research_detail_level)
+                            )
                         researcher.research_detail_level = research_detail_level
                         fc.extra_data["research_detail_level"] = research_detail_level
-                        socketio.emit('research_update', {
-                            "function_id": id,
-                            "update_type": "config",
-                            "data": {"research_detail_level": research_detail_level}
-                        })
+                        socketio.emit(
+                            "research_update",
+                            {
+                                "function_id": id,
+                                "update_type": "config",
+                                "data": {
+                                    "research_detail_level": research_detail_level
+                                },
+                            },
+                        )
 
                     def stop_research():
                         researcher.stop = True
                         fc.extra_data["stop"] = True
                         fc.extra_data["status"] = "stopping"
-                        socketio.emit('research_update', {
-                            "function_id": id,
-                            "update_type": "status",
-                            "data": {"stopped": True, "status": "stopping"}
-                        })
+                        socketio.emit(
+                            "research_update",
+                            {
+                                "function_id": id,
+                                "update_type": "status",
+                                "data": {"stopped": True, "status": "stopping"},
+                            },
+                        )
 
                     # Store handlers for later removal (no change here)
                     registered_events = {}
+
                     def make_event(event_name, handler_func):
                         # Use unique event names per research instance
                         full_event_name = f"{event_name}_{id}"
                         socketio.on(full_event_name)(handler_func)
-                        registered_events[full_event_name] = handler_func # Store the full name
+                        registered_events[full_event_name] = (
+                            handler_func  # Store the full name
+                        )
 
                     make_event("research-update_max_topics", update_max_topics)
                     make_event("research-update_max_queries", update_max_search_queries)
                     make_event("research-update_max_results", update_max_search_results)
                     make_event("research-update_tree_depth", update_tree_depth_limit)
-                    make_event("research-update_branch_width", update_branch_width_limit)
-                    make_event("research-update_semantic_drift", update_semantic_drift_limit)
-                    make_event("research-update_detail_level", update_research_detail_level)
+                    make_event(
+                        "research-update_branch_width", update_branch_width_limit
+                    )
+                    make_event(
+                        "research-update_semantic_drift", update_semantic_drift_limit
+                    )
+                    make_event(
+                        "research-update_detail_level", update_research_detail_level
+                    )
                     make_event("research-stop", stop_research)
 
                     # --- Run Research and Handle Completion/Error ---
                     # Emit initial state update (optional, but good practice)
-                    socketio.emit('research_update', {
-                        "function_id": id,
-                        "update_type": "initial_state",
-                        "data": fc.extra_data
-                    })
+                    socketio.emit(
+                        "research_update",
+                        {
+                            "function_id": id,
+                            "update_type": "initial_state",
+                            "data": fc.extra_data,
+                        },
+                    )
                     # Emit the initial message update *once* to show the call box
                     emit_msg_update(msg)
                     researched_data = []
@@ -1148,7 +1242,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                                 id=id,
                                 name=func_call.name,
                                 response=response_payload,
-                                inline_data=researched_data
+                                inline_data=researched_data,
                             )
                         )
                     )
@@ -1156,18 +1250,24 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     emit_msg_update(msg)
 
                     # Emit a final status update event
-                    socketio.emit('research_update', {
-                        "function_id": id,
-                        "update_type": "status",
-                        "data": {"status": fc.extra_data["status"], "stopped": fc.extra_data["stop"]}
-                    })
+                    socketio.emit(
+                        "research_update",
+                        {
+                            "function_id": id,
+                            "update_type": "status",
+                            "data": {
+                                "status": fc.extra_data["status"],
+                                "stopped": fc.extra_data["stop"],
+                            },
+                        },
+                    )
                     # Emit a specific event to signal frontend cleanup is safe
-                    socketio.emit('research_finished', {"function_id": id})
+                    socketio.emit("research_finished", {"function_id": id})
 
                     # Return from handle_function_call (important!)
                     # Since research runs synchronously here, we don't return early.
                     # The final message update happens after research completes.
-                    return # Explicitly return after handling
+                    return  # Explicitly return after handling
 
                 else:
                     raise ValueError("DeepResearch call without args")
@@ -1230,7 +1330,9 @@ def generate_content(msg: Message, chat_id: str) -> Message:
     @utils.retry(
         exceptions=utils.network_errors, ignore_exceptions=utils.ignore_network_error
     )
-    def get_model_and_tools() -> tuple[str, bool, list[types.Tool], Optional[types.ThinkingConfig]]:
+    def get_model_and_tools() -> (
+        tuple[str, bool, list[types.Tool], Optional[types.ThinkingConfig]]
+    ):
         """
         Determines which model and tools to use, with retry logic and optimized prompting using COSTAR principles.
 
@@ -1240,7 +1342,9 @@ def generate_content(msg: Message, chat_id: str) -> Message:
         Raises:
             Exception: If selection fails after multiple attempts
         """
-        chat = chat_history.for_ai(msg, support_tools=True, imagen_selected=False, chat_id=chat_id)
+        chat = chat_history.for_ai(
+            msg, support_tools=True, imagen_selected=False, chat_id=chat_id
+        )
         global model, selected_tools, thinking_budget
         allowed_function_names: Optional[list[str]] = None
 
@@ -1249,40 +1353,72 @@ def generate_content(msg: Message, chat_id: str) -> Message:
             tools_selected = [tools.Tools[tool].value for tool in selected_tools]
             return (
                 config.Models[model].value,
-                model in config.ToolSuportedModels and tools.SearchGrounding not in tools_selected,
+                model in config.ToolSuportedModels
+                and tools.SearchGrounding not in tools_selected,
                 tools_selected,
-                types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None,
+                (
+                    types.ThinkingConfig(
+                        include_thoughts=bool(thinking_budget),
+                        thinking_budget=thinking_budget,
+                    )
+                    if model in config.DynamicThinkingModels
+                    else None
+                ),
             )
 
         # Case 2: Model is known, select tools
         elif model is not None:
             # Prepare the tool selection prompt
             if model in config.SearchGroundingSuportedModels:
-                chat.append(types.Content(
-                    parts=[types.Part(
-                        text="🧠 Your task is to select the most suitable tools to support the user's request. "
-                             "The current model supports SearchGrounding. Think step by step about the user's intent, "
-                             "and choose tools that match the task. You MUST call ToolSelector(...)."
-                    )],
-                    role="user"
-                ))
+                chat.append(
+                    types.Content(
+                        parts=[
+                            types.Part(
+                                text="🧠 Your task is to select the most suitable tools to support the user's request. "
+                                "The current model supports SearchGrounding. Think step by step about the user's intent, "
+                                "and choose tools that match the task. You MUST call ToolSelector(...)."
+                            )
+                        ],
+                        role="user",
+                    )
+                )
             elif model in config.ToolSuportedModels:
-                chat.append(types.Content(
-                    parts=[types.Part(
-                        text="🚫 SearchGrounding is NOT supported by the current model. Your task is to select other relevant tools "
-                             "to help the assistant complete the user's task. Think step by step and call ToolSelector(...) with only compatible tools."
-                    )],
-                    role="user"
-                ))
+                chat.append(
+                    types.Content(
+                        parts=[
+                            types.Part(
+                                text="🚫 SearchGrounding is NOT supported by the current model. Your task is to select other relevant tools "
+                                "to help the assistant complete the user's task. Think step by step and call ToolSelector(...) with only compatible tools."
+                            )
+                        ],
+                        role="user",
+                    )
+                )
             else:
-                return config.Models[model].value, True, [], types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None
+                return (
+                    config.Models[model].value,
+                    True,
+                    [],
+                    (
+                        types.ThinkingConfig(
+                            include_thoughts=bool(thinking_budget),
+                            thinking_budget=thinking_budget,
+                        )
+                        if model in config.DynamicThinkingModels
+                        else None
+                    ),
+                )
 
             # Assign tool selector and function call permission
-            tools_list = [types.Tool(
-                function_declarations=[
-                    types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ToolSelector)
-                ]
-            )]
+            tools_list = [
+                types.Tool(
+                    function_declarations=[
+                        types.FunctionDeclaration.from_callable_with_api_option(
+                            callable=tools.ToolSelector
+                        )
+                    ]
+                )
+            ]
             allowed_function_names = [tools.ToolSelector.__name__]
 
         # Case 3: Tools known, select model
@@ -1297,36 +1433,47 @@ def generate_content(msg: Message, chat_id: str) -> Message:
             model_prompt_text += f"For models in {config.DynamicThinkingModels}, you can specify a thinking budget (0-24576). "
             model_prompt_text += "Think carefully about latency, context size, thinking needs, and fit for the task. Call ModelSelector(...)."
 
-            chat.append(types.Content(
-                parts=[types.Part(text=model_prompt_text)],
-                role="user"
-            ))
+            chat.append(
+                types.Content(parts=[types.Part(text=model_prompt_text)], role="user")
+            )
 
-            tools_list = [types.Tool(
-                function_declarations=[
-                    types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ModelSelector)
-                ]
-            )]
+            tools_list = [
+                types.Tool(
+                    function_declarations=[
+                        types.FunctionDeclaration.from_callable_with_api_option(
+                            callable=tools.ModelSelector
+                        )
+                    ]
+                )
+            ]
             allowed_function_names = [tools.ModelSelector.__name__]
 
         # Case 4: Neither model nor tools are selected
         else:
-            chat.append(types.Content(
-                parts=[types.Part(
-                    text="🧠 Your task is to select BOTH a compatible model and relevant tools to fulfill the user request. "
-                         "Use ABOUT_MODELS and think step by step about capabilities, latency, tool support, and user intent. "
-                         f"For models in {config.DynamicThinkingModels}, you can specify a thinking budget (0-24576) "
-                         "to enable step-by-step reasoning. "
-                         "You MUST call ModelAndToolSelector(...) with full valid arguments."
-                )],
-                role="user"
-            ))
+            chat.append(
+                types.Content(
+                    parts=[
+                        types.Part(
+                            text="🧠 Your task is to select BOTH a compatible model and relevant tools to fulfill the user request. "
+                            "Use ABOUT_MODELS and think step by step about capabilities, latency, tool support, and user intent. "
+                            f"For models in {config.DynamicThinkingModels}, you can specify a thinking budget (0-24576) "
+                            "to enable step-by-step reasoning. "
+                            "You MUST call ModelAndToolSelector(...) with full valid arguments."
+                        )
+                    ],
+                    role="user",
+                )
+            )
 
-            tools_list = [types.Tool(
-                function_declarations=[
-                    types.FunctionDeclaration.from_callable_with_api_option(callable=tools.ModelAndToolSelector)
-                ]
-            )]
+            tools_list = [
+                types.Tool(
+                    function_declarations=[
+                        types.FunctionDeclaration.from_callable_with_api_option(
+                            callable=tools.ModelAndToolSelector
+                        )
+                    ]
+                )
+            ]
             allowed_function_names = [tools.ModelAndToolSelector.__name__]
 
         # --- Retry Loop with Selector ---
@@ -1338,8 +1485,10 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     config=types.GenerateContentConfig(
                         system_instruction=prompt.ModelAndToolSelectorSYSTEM_INSTUNCTION,
                         temperature=0.1,
-                        tools=tools_list, # type: ignore
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                        tools=tools_list,  # type: ignore
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                            disable=True
+                        ),
                         tool_config=types.ToolConfig(
                             function_calling_config=types.FunctionCallingConfig(
                                 mode=types.FunctionCallingConfigMode.ANY,
@@ -1350,7 +1499,10 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                 )
 
                 # Process function call response
-                if selector_response.function_calls and selector_response.function_calls[0].args:
+                if (
+                    selector_response.function_calls
+                    and selector_response.function_calls[0].args
+                ):
                     call_name = selector_response.function_calls[0].name
                     args = selector_response.function_calls[0].args
                     call_id = selector_response.function_calls[0].id
@@ -1361,9 +1513,17 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             selected = tools.ToolSelector(**args)
                             return (
                                 config.Models[model].value,
-                                model in config.ToolSuportedModels and tools.SearchGrounding not in selected,
+                                model in config.ToolSuportedModels
+                                and tools.SearchGrounding not in selected,
                                 selected,
-                                types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None,
+                                (
+                                    types.ThinkingConfig(
+                                        include_thoughts=bool(thinking_budget),
+                                        thinking_budget=thinking_budget,
+                                    )
+                                    if model in config.DynamicThinkingModels
+                                    else None
+                                ),
                             )
                         except Exception as e:
                             handle_selector_error(chat, call_id, call_name, e)
@@ -1375,9 +1535,18 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             tols = tools.ToolSelector(selected_tools)
                             return (
                                 config.Models[args["model"]].value,
-                                config.Models[args["model"]].value in config.ToolSuportedModels and tools.SearchGrounding not in tols,
+                                config.Models[args["model"]].value
+                                in config.ToolSuportedModels
+                                and tools.SearchGrounding not in tols,
                                 tols,
-                                types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None,
+                                (
+                                    types.ThinkingConfig(
+                                        include_thoughts=bool(thinking_budget),
+                                        thinking_budget=thinking_budget,
+                                    )
+                                    if model in config.DynamicThinkingModels
+                                    else None
+                                ),
                             )
                         except Exception as e:
                             handle_selector_error(chat, call_id, call_name, e)
@@ -1393,47 +1562,63 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                             continue
 
                     else:
-                        handle_selector_error(chat, call_id, call_name, f"Unknown function: {call_name}")
+                        handle_selector_error(
+                            chat, call_id, call_name, f"Unknown function: {call_name}"
+                        )
                         continue
 
                 else:
                     # No function called
-                    chat.append(types.Content(
-                        parts=[types.Part(
-                            text="⚠️ You did not call any of the required selection functions. You MUST retry and select using one of:\n"
-                                 "- ToolSelector(...)\n- ModelSelector(...)\n- ModelAndToolSelector(...)"
-                        )],
-                        role="user"
-                    ))
+                    chat.append(
+                        types.Content(
+                            parts=[
+                                types.Part(
+                                    text="⚠️ You did not call any of the required selection functions. You MUST retry and select using one of:\n"
+                                    "- ToolSelector(...)\n- ModelSelector(...)\n- ModelAndToolSelector(...)"
+                                )
+                            ],
+                            role="user",
+                        )
+                    )
                     continue
 
             except Exception as e:
                 print(f"[Retry {attempt + 1}/3] Selection failed: {str(e)}")
                 if attempt == 2:
-                    raise Exception(f"❌ Failed to select model/tools after 3 retries. Last error: {str(e)}")
+                    raise Exception(
+                        f"❌ Failed to select model/tools after 3 retries. Last error: {str(e)}"
+                    )
 
-        raise Exception("🚫 Final failure: could not automatically determine model/tools.")
+        raise Exception(
+            "🚫 Final failure: could not automatically determine model/tools."
+        )
 
     def handle_selector_error(chat, call_id, call_name, error):
         error_msg = f"❌ Error occurred while calling `{call_name}`: {error}"
         print(error_msg)
-        chat.append(types.Content(
-            parts=[
-                types.Part(function_response=types.FunctionResponse(
-                    id=call_id,
-                    name=call_name,
-                    response={"error": error_msg}
-                )),
-                types.Part(text="Please retry with corrected arguments and proper function call.")
-            ],
-            role="user"
-        ))
+        chat.append(
+            types.Content(
+                parts=[
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            id=call_id, name=call_name, response={"error": error_msg}
+                        )
+                    ),
+                    types.Part(
+                        text="Please retry with corrected arguments and proper function call."
+                    ),
+                ],
+                role="user",
+            )
+        )
 
     # Main execution flow
     msg.processing = True
     emit_msg_update(msg)
     # Get model and tools
-    selected_model, suports_tools, selected_tools_list, thinking_budget = get_model_and_tools()
+    selected_model, suports_tools, selected_tools_list, thinking_budget = (
+        get_model_and_tools()
+    )
     print("Selected model:", selected_model)
     print("Supports tools:", suports_tools)
     print("Selected tools list:", selected_tools_list)
@@ -1468,7 +1653,7 @@ def generate_content(msg: Message, chat_id: str) -> Message:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(
                         disable=True, maximum_remote_calls=None
                     ),
-                    thinking_config=thinking_budget
+                    thinking_config=thinking_budget,
                 ),
             )
 
@@ -1727,6 +1912,7 @@ def set_tools(ltools: Optional[list[tools.ToolLiteral]] = None) -> None:
     global selected_tools
     selected_tools = ltools
 
+
 @socketio.on("set_thinking_budget")
 def set_thinking_budget(budget: Optional[int] = None) -> None:
     global thinking_budget
@@ -1745,6 +1931,7 @@ def set_thinking_budget(budget: Optional[int] = None) -> None:
 
     thinking_budget = budget
 
+
 @app.route("/get_tools")
 def get_tools() -> list[tools.ToolLiteral]:
     return tools.Tools.tool_names()
@@ -1755,7 +1942,7 @@ def get_model_compatibility() -> dict:
     return {
         "toolSupportedModels": config.ToolSuportedModels,
         "searchGroundingSupportedModels": config.SearchGroundingSuportedModels,
-        "dynamicThinkingModels": config.DynamicThinkingModels
+        "dynamicThinkingModels": config.DynamicThinkingModels,
     }
 
 
@@ -1959,8 +2146,8 @@ if __name__ == "__main__":
     try:
         socketio.run(app, host="127.0.0.1", port=5000, debug=True)
     finally:
-        chat_history.save_to_json(chat_history_file) # type: ignore
-        notification.notifications.save_to_json(notification_file) # type: ignore
+        chat_history.save_to_json(chat_history_file)  # type: ignore
+        notification.notifications.save_to_json(notification_file)  # type: ignore
         lschedule.schedule.save_to_json(config.AI_DIR / "schedule.json")
         tools.save_jobs()
         print("Chat history saved.")

@@ -1,6 +1,8 @@
 # deepresearch.py
 import uuid
+import logging
 import concurrent.futures
+from threading import Lock
 import requests
 import traceback
 from rich import print
@@ -15,6 +17,10 @@ import utils
 if TYPE_CHECKING:
     from main import Content
 
+# Configure logging
+logging.basicConfig(filename='deep_researcher.log', level=logging.DEBUG,
+format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class Topic:
     topic: str
@@ -35,6 +41,7 @@ class Topic:
     ] = None
     sumarized_fetched_content: str = ""
     researched: bool = False
+    _lock: Lock
 
     def __init__(
         self,
@@ -63,36 +70,38 @@ class Topic:
         self.urls = sites if sites else []
         self.fetched_urls = fetched_urls if fetched_urls else []
         self.failed_fetched_urls = failed_fetched_urls if failed_fetched_urls else []
+        self._lock = Lock()
 
     def for_ai(self, depth: int = 0, include_details: bool = True) -> str:
         """Format topic details for AI processing in Markdown format."""
-        header = "#" * (depth + 1)  # Determine heading level
-        details = f"{header} {self.topic}\n\n"
-        if include_details:
-            details += f"{"This is the main Topic/Question Searched by user." if not depth else ""}\n"
-            details += f"**ID:** {self.id}\n"
-            details += f"**Researched:** {'Yes' if self.researched else 'No'}  \n\n"
+        with self._lock:
+            header = "#" * (depth + 1)  # Determine heading level
+            details = f"{header} {self.topic}\n\n"
+            if include_details:
+                details += f"{"This is the main Topic/Question Searched by user." if not depth else ""}\n"
+                details += f"**ID:** {self.id}\n"
+                details += f"**Researched:** {'Yes' if self.researched else 'No'}  \n\n"
 
-        if include_details and self.queries:
-            details += f"#{header} Queries Searched online: \n"
-            for query in self.queries:
-                details += f"- {query}\n"
-            details += "\n"
+            if include_details and self.queries:
+                details += f"#{header} Queries Searched online: \n"
+                for query in self.queries:
+                    details += f"- {query}\n"
+                details += "\n"
 
-        if self.sumarized_fetched_content:
-            details += f"#{header} Sumarized Fetched Content:\n"
+            if self.sumarized_fetched_content:
+                details += f"#{header} Sumarized Fetched Content:\n"
 
-        if self.fetched_content:
-            details += f"#{header} {"Additional" if self.sumarized_fetched_content else ""} Fetched Content:\n"
-            for url, markdown, links, link_info in self.fetched_content:
-                details += f"- {url}:\n```md\n{markdown}\nExtracted Linkes in Webpage:\n{"\n".join(links)}```\n\n"
+            if self.fetched_content:
+                details += f"#{header} {"Additional" if self.sumarized_fetched_content else ""} Fetched Content:\n"
+                for url, markdown, links, link_info in self.fetched_content:
+                    details += f"- {url}:\n```md\n{markdown}\nExtracted Linkes in Webpage:\n{"\n".join(links)}```\n\n"
 
-        if include_details and self.sub_topics:
-            details += f"#{header} Subtopics:\n"
-            for sub in self.sub_topics:
-                details += sub.for_ai(depth + 1) + "\n"
+            if include_details and self.sub_topics:
+                details += f"#{header} Subtopics:\n"
+                for sub in self.sub_topics:
+                    details += sub.for_ai(depth + 1) + "\n"
 
-        return details
+            return details
 
     def get_unresearched_topic(self) -> list["Topic"]:
         """
@@ -100,53 +109,55 @@ class Topic:
         Returns list of Topic objects that have researched=False.
         """
         unresearched = []
-        for topic in self.sub_topics:
-            unresearched.extend(topic.get_unresearched_topic())
-        if not self.researched:
-            unresearched.append(self)
+        with self._lock:
+            for topic in self.sub_topics:
+                unresearched.extend(topic.get_unresearched_topic())
+            if not self.researched:
+                unresearched.append(self)
         return unresearched
 
     def add_topic(self, parent_id: str, topic: "Topic") -> bool:
         if self.id == parent_id:
-            self.sub_topics.append(topic)
-            return True
-        for sub_topic in self.sub_topics:
-            if sub_topic.add_topic(parent_id, topic):
+            with self._lock:
+                self.sub_topics.append(topic)
                 return True
+        for sub_topic in self.sub_topics:
+            if sub_topic.add_topic(parent_id, topic): return True
         return False
 
     def add_site(self, id: str, site: str):
         if self.id == id:
-            self.urls.append(site)
-            self.researched = False
-        for sub_topic in self.sub_topics:
-            if sub_topic.add_site(id, site):
+            with self._lock:
                 self.urls.append(site)
                 self.researched = False
+                return True
+        for sub_topic in self.sub_topics:
+            if sub_topic.add_site(id, site): return True
+        return False
 
     def topic_tree(self, indent: str = "") -> str:
         """Returns a string representation of the topic tree in ANSI format."""
-        tree = f"{indent}{self.topic}\n"
-        for i, sub_topic in enumerate(self.sub_topics):
-            if i < len(self.sub_topics) - 1:
-                tree += sub_topic.topic_tree(indent + "├── ")
-            else:
-                tree += sub_topic.topic_tree(indent + "└── ")
+        with self._lock:
+            tree = f"{indent}{self.topic}\n"
+            for i, sub_topic in enumerate(self.sub_topics):
+                if i < len(self.sub_topics) - 1: tree += sub_topic.topic_tree(indent + "├── ")
+                else: tree += sub_topic.topic_tree(indent + "└── ")
         return tree
 
     def jsonify(self) -> dict[str, Any]:
-        return {
-            "topic": self.topic,
-            "id": self.id,
-            "sub_topics": [_.jsonify() for _ in self.sub_topics],
-            "queries": self.queries,
-            "searched_queries": self.searched_queries,
-            "urls": self.urls,
-            "fetched_urls": self.fetched_urls,
-            "failed_fetched_urls": self.fetched_urls,
-            "fetched_content": self.fetched_content,
-            "researched": self.researched,
-        }
+        with self._lock:
+            return {
+                "topic": self.topic,
+                "id": self.id,
+                "sub_topics": [_.jsonify() for _ in self.sub_topics],
+                "queries": self.queries,
+                "searched_queries": self.searched_queries,
+                "urls": self.urls,
+                "fetched_urls": self.fetched_urls,
+                "failed_fetched_urls": self.fetched_urls,
+                "fetched_content": self.fetched_content,
+                "researched": self.researched,
+            }
 
     @staticmethod
     def from_jsonify(data: dict[str, Any]) -> "Topic":
@@ -189,7 +200,7 @@ class DeepResearcher:
         max_search_results: int = 4,
         tree_depth_limit: int = 13,
         branch_width_limit: int = 8,
-        semantic_drift_limit: float = 0.2,
+        semantic_drift_limit: float = 0.4,
         research_detail_level: float = 0.85,
         call_back: Callable[[dict[str, Any] | None], None] = lambda x: None,
     ):
@@ -221,8 +232,8 @@ class DeepResearcher:
     )
     def summarize_sites(self, topic: Topic) -> None:
         self.call_back({"action": "summarize_sites", "topic": topic.id})
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
-        try:
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             # Use an iterative approach with a worklist instead of recursion
             topics_to_process = [topic]  # Start with the initial topic
             futures = {}  # Map of topic.id to its future
@@ -257,9 +268,6 @@ class DeepResearcher:
                     print(f"Error summarizing topic content: {e}")
                     traceback.print_exc()
 
-        finally:
-            pass
-
     def _summarize_topic_content(self, topic: Topic) -> None:
         """Helper method to summarize a single topic's content using AI."""
         tc = (
@@ -273,111 +281,114 @@ class DeepResearcher:
             or 0
         )  # type: ignore
         if tc > 6_00_000:
-            if topic.fetched_content:
-                summarized_sites = []
-                for url, content, links, metadata in topic.fetched_content:
-                    # Check if individual site content is too large
-                    site_content = [
-                        types.Content(
-                            role="user",
-                            parts=[
-                                types.Part(
-                                    text=f"Content from {url}:\n```md\n{content}\n```"
-                                ),
-                                types.Part(text=prompt.SUMMARIZE_SITES_USER_INSTR),
-                            ],
-                        )
-                    ]
+            with topic._lock:
+                if topic.fetched_content:
+                    summarized_sites = []
+                    for url, content, links, metadata in topic.fetched_content:
+                        # Check if individual site content is too large
+                        site_content = [
+                            types.Content(
+                                role="user",
+                                parts=[
+                                    types.Part(
+                                        text=f"Content from {url}:\n```md\n{content}\n```"
+                                    ),
+                                    types.Part(text=prompt.SUMMARIZE_SITES_USER_INSTR),
+                                ],
+                            )
+                        ]
 
-                    site_tc = (
-                        utils.retry(
-                            exceptions=utils.network_errors,
-                            ignore_exceptions=utils.ignore_network_error,
-                        )(global_shares["client"].models.count_tokens)(
-                            model="gemini-2.0-flash", contents=site_content  # type: ignore
-                        ).total_tokens
-                        or 0
-                    )
-
-                    if site_tc > 3_00_000:
-                        # Skip this site as it's too large
-                        continue
-
-                    # Summarize the site content if it's a reasonable size
-                    if site_tc > 15_000:  # Only summarize if the content is substantial
-                        # Initialize empty summary and context for continuation
-                        site_summary_contents = site_content
-                        summarized_content = ""
-
-                        # Loop until summarization is complete
-                        while True:
-                            if self.stop:
-                                break
-
-                            site_summary_result = utils.retry(
+                        site_tc = (
+                            utils.retry(
                                 exceptions=utils.network_errors,
                                 ignore_exceptions=utils.ignore_network_error,
-                            )(global_shares["client"].models.generate_content)(
-                                model="gemini-1.5-flash-8b",
-                                contents=cast(
-                                    types.ContentListUnion, site_summary_contents
-                                ),
-                                config=types.GenerateContentConfig(
-                                    system_instruction="Create a concise summary of the key information."
-                                ),
-                            )
-
-                            if (
-                                site_summary_result
-                                and site_summary_result.candidates
-                                and site_summary_result.candidates[0].content
-                                and site_summary_result.candidates[0].content.parts
-                            ):
-
-                                # Append the new content to our summary
-                                new_content = (
-                                    site_summary_result.candidates[0]
-                                    .content.parts[0]
-                                    .text
-                                )
-                                summarized_content += new_content or ""
-
-                                # If there's already a model response in our contents, add to it
-                                # Otherwise, create a new model response
-                                if (
-                                    len(site_summary_contents) > 1
-                                    and site_summary_contents[-1].role == "model"
-                                ):
-                                    site_summary_contents[-1].parts[-1].text += new_content  # type: ignore
-                                else:
-                                    site_summary_contents.append(
-                                        types.Content(
-                                            role="model",
-                                            parts=[types.Part(text=new_content)],
-                                        )
-                                    )
-
-                                # Break the loop if we're done (not truncated by token limit)
-                                if (
-                                    site_summary_result.candidates[0].finish_reason
-                                    != types.FinishReason.MAX_TOKENS
-                                ):
-                                    break
-                            else:
-                                # No valid result, use original content
-                                summarized_content = content
-                                break
-
-                        # Add the summarized content to our sites
-                        summarized_sites.append(
-                            (url, summarized_content, links, metadata)
+                            )(global_shares["client"].models.count_tokens)(
+                                model="gemini-2.0-flash", contents=site_content  # type: ignore
+                            ).total_tokens
+                            or 0
                         )
-                    else:
-                        # Content is small enough, keep as is
-                        summarized_sites.append((url, content, links, metadata))
 
-                # Replace the original fetched_content with summarized content
-                topic.fetched_content = summarized_sites
+                        if site_tc > 3_00_000:
+                            # Skip this site as it's too large
+                            continue
+
+                        # Summarize the site content if it's a reasonable size
+                        if (
+                            site_tc > 15_000
+                        ):  # Only summarize if the content is substantial
+                            # Initialize empty summary and context for continuation
+                            site_summary_contents = site_content
+                            summarized_content = ""
+
+                            # Loop until summarization is complete
+                            while True:
+                                if self.stop:
+                                    break
+
+                                site_summary_result = utils.retry(
+                                    exceptions=utils.network_errors,
+                                    ignore_exceptions=utils.ignore_network_error,
+                                )(global_shares["client"].models.generate_content)(
+                                    model="gemini-1.5-flash-8b",
+                                    contents=cast(
+                                        types.ContentListUnion, site_summary_contents
+                                    ),
+                                    config=types.GenerateContentConfig(
+                                        system_instruction="Create a concise summary of the key information."
+                                    ),
+                                )
+
+                                if (
+                                    site_summary_result
+                                    and site_summary_result.candidates
+                                    and site_summary_result.candidates[0].content
+                                    and site_summary_result.candidates[0].content.parts
+                                ):
+
+                                    # Append the new content to our summary
+                                    new_content = (
+                                        site_summary_result.candidates[0]
+                                        .content.parts[0]
+                                        .text
+                                    )
+                                    summarized_content += new_content or ""
+
+                                    # If there's already a model response in our contents, add to it
+                                    # Otherwise, create a new model response
+                                    if (
+                                        len(site_summary_contents) > 1
+                                        and site_summary_contents[-1].role == "model"
+                                    ):
+                                        site_summary_contents[-1].parts[-1].text += new_content  # type: ignore
+                                    else:
+                                        site_summary_contents.append(
+                                            types.Content(
+                                                role="model",
+                                                parts=[types.Part(text=new_content)],
+                                            )
+                                        )
+
+                                    # Break the loop if we're done (not truncated by token limit)
+                                    if (
+                                        site_summary_result.candidates[0].finish_reason
+                                        != types.FinishReason.MAX_TOKENS
+                                    ):
+                                        break
+                                else:
+                                    # No valid result, use original content
+                                    summarized_content = content
+                                    break
+
+                            # Add the summarized content to our sites
+                            summarized_sites.append(
+                                (url, summarized_content, links, metadata)
+                            )
+                        else:
+                            # Content is small enough, keep as is
+                            summarized_sites.append((url, content, links, metadata))
+
+                    # Replace the original fetched_content with summarized content
+                    topic.fetched_content = summarized_sites
         contents = [
             types.Content(
                 role="user",
@@ -462,7 +473,9 @@ class DeepResearcher:
                 ✅ You MAY call this multiple times if each new subtopic meets all quality criteria
             """
             _topic = Topic(topic=topic, sites=sites, queries=queries)
-            self.topic.add_topic(parent_id, _topic)
+            success = self.topic.add_topic(parent_id, _topic)
+            if not success:
+                raise Exception(f"Parent topic with ID {parent_id} not found")
             self.call_back({"action": "topic_updated"})
             return _topic.id
 
@@ -519,8 +532,8 @@ class DeepResearcher:
                 ],
             )
         ]
-        text: str = ""
-        uicontents: list[Content] = []
+
+        uicontents: list["Content"] = []
         backoff = 1
         while True:
             try:
@@ -561,21 +574,44 @@ class DeepResearcher:
                             if contents[-1].role == "model":
                                 if part.thought and contents[-1].parts[-1].thought:  # type: ignore
                                     contents[-1].parts[-1].text += part.text  # type: ignore
-                                    uicontents[-1].text += part.text # type: ignore
+                                    uicontents[-1].text += part.text  # type: ignore
                                 elif not part.thought and contents[-1].parts[-1].thought:  # type: ignore
                                     contents[-1].parts.append(types.Part(text=part.text, thought=False))  # type: ignore
-                                    uicontents.append(global_shares["content"](text=part.text, thought=False))
+                                    uicontents.append(
+                                        global_shares["content"](
+                                            text=part.text, thought=False
+                                        )
+                                    )
                                 elif part.thought and not contents[-1].parts[-1].thought:  # type: ignore
                                     contents[-1].parts.append(types.Part(text=part.text, thought=True))  # type: ignore
-                                    uicontents.append(global_shares["content"](text=part.text, thought=True))
+                                    uicontents.append(
+                                        global_shares["content"](
+                                            text=part.text, thought=True
+                                        )
+                                    )
                                 elif not part.thought and not contents[-1].parts[-1].thought:  # type: ignore
                                     contents[-1].parts[-1].text += part.text  # type: ignore
-                                    uicontents[-1].text += part.text # type: ignore
+                                    uicontents[-1].text += part.text  # type: ignore
                             else:
-                                contents.append(types.Content(role="model", parts=[part]))
-                                uicontents.append(global_shares["content"](text=part.text, thought=bool(part.thought)))
+                                contents.append(
+                                    types.Content(role="model", parts=[part])
+                                )
+                                uicontents.append(
+                                    global_shares["content"](
+                                        text=part.text, thought=bool(part.thought)
+                                    )
+                                )
                         elif part.function_call:
-                            uicontents.append(global_shares["content"](function_call=global_shares["function_call"](name=part.function_call.name, args=part.function_call.args)))
+                            uicontents.append(
+                                global_shares["content"](
+                                    function_call=global_shares["function_call"](
+                                        name=part.function_call.name,
+                                        args=part.function_call.args,
+                                        id=part.function_call.id
+                                    )
+                                )
+                            )
+                            uicontents_id = uicontents[-1].function_call.id # type: ignore
                             if (
                                 part.function_call.name == "add_topic"
                                 and part.function_call.args
@@ -608,7 +644,17 @@ class DeepResearcher:
                                             ],
                                         )
                                     )
-                                    uicontents.append(global_shares["content"](function_response=global_shares["function_responce"](name=part.function_call.name, response={"error": str(e)})))
+                                    uicontents.append(
+                                        global_shares["content"](
+                                            function_response=global_shares[
+                                                "function_responce"
+                                            ](
+                                                name=part.function_call.name,
+                                                response={"error": str(e)},
+                                                id=uicontents_id
+                                            )
+                                        )
+                                    )
                                     called = True
                                     continue
                                 if contents[-1].role == "model":
@@ -633,7 +679,17 @@ class DeepResearcher:
                                         ],
                                     )
                                 )
-                                uicontents.append(global_shares["content"](function_response=global_shares["function_responce"](name=part.function_call.name, response={"output": None})))
+                                uicontents.append(
+                                    global_shares["content"](
+                                        function_response=global_shares[
+                                            "function_responce"
+                                        ](
+                                            name=part.function_call.name,
+                                            response={"output": None},
+                                            id=uicontents_id
+                                        )
+                                    )
+                                )
                                 called = True
                             elif (
                                 part.function_call.name == "add_site"
@@ -665,7 +721,17 @@ class DeepResearcher:
                                             ],
                                         )
                                     )
-                                    uicontents.append(global_shares["content"](function_response=global_shares["function_responce"](name=part.function_call.name, response={"error": str(e)})))
+                                    uicontents.append(
+                                        global_shares["content"](
+                                            function_response=global_shares[
+                                                "function_responce"
+                                            ](
+                                                name=part.function_call.name,
+                                                response={"error": str(e)},
+                                                id=uicontents_id
+                                            )
+                                        )
+                                    )
                                     called = True
                                     continue
                                 if contents[-1].role == "model":
@@ -690,28 +756,57 @@ class DeepResearcher:
                                         ],
                                     )
                                 )
-                                uicontents.append(global_shares["content"](function_response=global_shares["function_responce"](name=part.function_call.name, response={"output": None})))
+                                uicontents.append(
+                                    global_shares["content"](
+                                        function_response=global_shares[
+                                            "function_responce"
+                                        ](
+                                            name=part.function_call.name,
+                                            response={"output": None},
+                                            id=uicontents_id
+                                        )
+                                    )
+                                )
                                 called = True
-                        self.call_back({"action": "update_thinking", "id": thinking_id, "content": [_.jsonify() for _ in uicontents]})
+                        self.call_back(
+                            {
+                                "action": "update_thinking",
+                                "id": thinking_id,
+                                "content": [_.jsonify() for _ in uicontents],
+                            }
+                        )
                 if not called:
                     break
                 if self.stop:
                     raise DeepResearcher.StopResearch()
             except Exception as e:
-                if isinstance(e, utils.network_errors) and not isinstance(e, utils.ignore_network_error):
+                if isinstance(e, utils.network_errors) and not isinstance(
+                    e, utils.ignore_network_error
+                ):
+                    print("Error occured: ", str(e), "Sleeping :", backoff, "s")
                     time.sleep(backoff)
-                    backoff *= backoff
+                    backoff *= 2
                     continue
                 raise
             contents[0].parts[0].text = f"Topic Tree:\n{self.topic.topic_tree()}\n\n{self.topic.for_ai()}"  # type: ignore
         self.planer_content.extend(contents[1:])
-        self.planer_content.append(types.Content(
-            role="user",
-            parts=[
-                types.Part(text="old topic content has been truncated due to system context window limits. The full conversation history may contain additional context not shown here.")
-            ]
-        ))
-        self.call_back({"action": "done_thinking", "id": thinking_id, "content": [_.jsonify() for _ in uicontents],})
+        self.planer_content.append(
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(
+                        text="old topic content has been truncated due to system context window limits. The full conversation history may contain additional context not shown here."
+                    )
+                ],
+            )
+        )
+        self.call_back(
+            {
+                "action": "done_thinking",
+                "id": thinking_id,
+                "content": [_.jsonify() for _ in uicontents],
+            }
+        )
 
     def _generate_queries(self, topic: str) -> list[str]:
         """Generates search queries for a given topic using AI."""
@@ -767,10 +862,9 @@ class DeepResearcher:
             and result.candidates[0].content.parts[0].text
         ):
             raise ValueError("Failed to generate queries.")
-        queries = queries_str.splitlines()
         return [
             q.strip()[:-1] if i == 0 else q.strip()[1:-1]
-            for i, q in enumerate(queries)
+            for i, q in enumerate(queries_str.splitlines())
             if q.strip()
         ]
 
@@ -780,13 +874,22 @@ class DeepResearcher:
     )
     def _search_online(self, query: str) -> list[str]:
         """Searches DuckDuckGo for a query and returns a list of URLs."""
-        results = utils.searcher(query, safesearch="off", max_results=self.max_search_results)
+        results = utils.searcher(
+            query, safesearch="off", max_results=self.max_search_results
+        )
         links = [result["href"] for result in results]
         return links
 
     def _search_and_fetch(
         self, unresearched_topic: Topic, visited_urls: set[str], failed_urls: set[str]
     ):
+        if not unresearched_topic.queries:
+            with unresearched_topic._lock:
+                unresearched_topic.queries = self._generate_queries(
+                    unresearched_topic.topic
+                )
+            self.call_back({"action": "topic_updated"})
+
         search_state = {
             "action": "search",
             "type": "search",
@@ -811,12 +914,10 @@ class DeepResearcher:
             fetch_model = self.fetch_url(url)
             if is_not_searched:  # whether it is in extra sites of topic
                 search_state["planed_fetchurl"].remove(url)
-                unresearched_topic.urls.remove(url)
             search_state["urls"].remove(url)
             if fetch_model:
                 if is_not_searched:
                     search_state["researched_fetchurl"].append(url)
-                    unresearched_topic.fetched_urls.append(url)
                 search_state["fetched_urls"].append(url)
                 url_info = fetch_model.get(
                     "url_display_info", {"url": url, "title": "", "favicon": ""}
@@ -827,7 +928,6 @@ class DeepResearcher:
             failed_urls.add(url)
             if is_not_searched:
                 search_state["failed_fetchurl"].append(url)
-                unresearched_topic.failed_fetched_urls.append(url)
             search_state["fetched_failed_urls"].append(url)
             self.call_back(search_state)
             return None
@@ -836,6 +936,7 @@ class DeepResearcher:
             urls: list[str],
             is_not_searched: bool,
             executor: concurrent.futures.ThreadPoolExecutor,
+            executor_lock: Lock,
         ) -> list[tuple[str, str, list[str], dict]]:
             results = []
             search_state["urls"].extend(urls)
@@ -846,7 +947,10 @@ class DeepResearcher:
                 if url not in visited_urls:
                     visited_urls.add(url)
                     # Submit the fetch task to the thread pool
-                    future = executor.submit(fetch_with_handling, url, is_not_searched)
+                    with executor_lock:
+                        future = executor.submit(
+                            fetch_with_handling, url, is_not_searched
+                        )
                     futures.append(future)
                 else:
                     # to not append alrady visited but failed url in fetched urls
@@ -868,39 +972,43 @@ class DeepResearcher:
             return results
 
         def search_and_fetch_query(
-            query: str, executor: concurrent.futures.ThreadPoolExecutor
+            query: str,
+            executor: concurrent.futures.ThreadPoolExecutor,
+            executor_lock: Lock,
         ):
             urls = self._search_online(query)
-            result = process_urls(urls, False, executor)
+            result = process_urls(urls, False, executor, executor_lock)
             search_state["planed_queries"].remove(query)
             search_state["researched_queries"].append(query)
-            try:
+            with unresearched_topic._lock:
                 unresearched_topic.searched_queries.append(query)
-            except ValueError:
-                print(
-                    unresearched_topic.queries,
-                    unresearched_topic.searched_queries,
-                    query,
-                )
-                traceback.print_exc()
+                unresearched_topic.queries = search_state["planed_queries"]
             self.call_back(search_state)
             self.call_back({"action": "topic_updated"})
             return result
 
-        if unresearched_topic.fetched_content is None:
-            unresearched_topic.fetched_content = []
-
-        queries = unresearched_topic.queries or []
-        urls = unresearched_topic.urls or []
-
         # Somewhere in your method:
         with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
-
-            futures = [
-                executor.submit(search_and_fetch_query, query, executor)
-                for query in queries
-            ]
-            futures.append(executor.submit(process_urls, urls, True, executor))
+            executor_lock = Lock()
+            with unresearched_topic._lock:
+                if unresearched_topic.fetched_content is None:
+                    unresearched_topic.fetched_content = []
+                with executor_lock:
+                    futures = [
+                        executor.submit(
+                            search_and_fetch_query, query, executor, executor_lock
+                        )
+                        for query in unresearched_topic.queries
+                    ]
+                    futures.append(
+                        executor.submit(
+                            process_urls,
+                            unresearched_topic.urls,
+                            True,
+                            executor,
+                            executor_lock,
+                        )
+                    )
 
             completed = set()
 
@@ -922,18 +1030,22 @@ class DeepResearcher:
 
                         try:
                             results = future.result()
-                            unresearched_topic.fetched_content.extend(results)
+                            with unresearched_topic._lock:
+                                unresearched_topic.fetched_content.extend(results)
                         except Exception as e:
                             print(f"Error during concurrent execution: {e}")
                             traceback.print_exc()
                 except concurrent.futures.TimeoutError:
                     # No futures completed during this 0.1s window; check self.stop again
                     continue
-        unresearched_topic.queries = search_state["planed_queries"]
-        unresearched_topic.searched_queries = search_state["researched_queries"]
-        unresearched_topic.urls = search_state["planed_fetchurl"]
-        unresearched_topic.failed_fetched_urls = search_state["failed_fetchurl"]
-        unresearched_topic.fetched_urls = search_state["researched_fetchurl"]
+        with unresearched_topic._lock:
+            unresearched_topic.queries = search_state["planed_queries"]
+            unresearched_topic.searched_queries = search_state["researched_queries"]
+            unresearched_topic.urls = search_state["planed_fetchurl"]
+            unresearched_topic.failed_fetched_urls = search_state["failed_fetchurl"]
+            unresearched_topic.fetched_urls = search_state["researched_fetchurl"]
+            unresearched_topic.researched = True
+        self.call_back({"action": "topic_updated"})
 
     def research(self) -> list["Content"]:
         current_depth: int = 0
@@ -949,14 +1061,10 @@ class DeepResearcher:
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=min(6, len(unresearched_topics))
                 ) as executor:
-                    topic_futures = []
+                    futures = []
 
                     # Submit tasks for each unresearched topic
                     for topic in unresearched_topics:
-                        if not topic.queries:
-                            topic.queries = self._generate_queries(topic.topic)
-                            self.call_back({"action": "topic_updated"})
-
                         if self.stop:
                             raise DeepResearcher.StopResearch()
 
@@ -964,17 +1072,32 @@ class DeepResearcher:
                         future = executor.submit(
                             self._search_and_fetch, topic, visited_urls, failed_urls
                         )
-                        topic_futures.append((topic, future))
+                        futures.append(future)
 
-                    # Process results as they complete
-                    for topic, future in topic_futures:
+                    completed = set()
+
+                    while len(completed) < len(futures):
                         try:
-                            future.result()  # Wait for completion and handle any exceptions
-                            topic.researched = True
-                            self.call_back({"action": "topic_updated"})
-                        except Exception as e:
-                            print(f"Error researching topic {topic.topic}: {e}")
-                            traceback.print_exc()
+                            # Process results as they complete
+                            for future in concurrent.futures.as_completed(
+                                futures, timeout=0.1
+                            ):
+                                if future in completed:
+                                    continue
+
+                                if self.stop:
+                                    raise DeepResearcher.StopResearch(
+                                        "Research was manually stopped."
+                                    )
+
+                                completed.add(future)
+                                try:
+                                    future.result()  # Wait for any exceptions
+                                except Exception as e:
+                                    traceback.print_exc()
+                        except concurrent.futures.TimeoutError:
+                            # No futures completed during this 0.1s window; check self.stop again
+                            continue
 
                 # Check if we've reached the maximum topic depth
                 current_depth += 1
@@ -1026,7 +1149,9 @@ class DeepResearcher:
             pass  # Dont care abot how much reacsher has complited
 
         report = self._generate_report()
-        self.call_back({"action": "done_generating_report", "data": [_.jsonify() for _ in report]})
+        self.call_back(
+            {"action": "done_generating_report", "data": [_.jsonify() for _ in report]}
+        )
         return report
 
     def _generate_report(self) -> list["Content"]:
@@ -1076,14 +1201,13 @@ class DeepResearcher:
             ):
                 for part in result.candidates[0].content.parts:
                     if part.text:
-                        report.append(global_shares["content"](text=part.text, thought=bool(part.thought)))
-                        if contents[-1].role != "model":
-                            contents.append(
-                                types.Content(
-                                    role="model",
-                                    parts=[part]
-                                )
+                        report.append(
+                            global_shares["content"](
+                                text=part.text, thought=bool(part.thought)
                             )
+                        )
+                        if contents[-1].role != "model":
+                            contents.append(types.Content(role="model", parts=[part]))
                         else:
                             contents[-1].parts.append(part)  # type: ignore
                 if result.candidates[0].finish_reason != types.FinishReason.MAX_TOKENS:

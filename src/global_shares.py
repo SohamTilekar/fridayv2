@@ -29,5 +29,5 @@ global_shares: Shared = {
     "file": None,
     "content": None,
     "function_call": None,
-    "function_responce": None
+    "function_responce": None,
 }  # type: ignore

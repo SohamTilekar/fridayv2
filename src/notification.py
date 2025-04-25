@@ -249,6 +249,7 @@ class Notifications:
             if notification.id == id:
                 if notification.type == "Mail":
                     import mail
+
                     mail.mark_as_read(notification.id)
                 del self.notifications[idx]
 

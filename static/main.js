@@ -265,6 +265,7 @@ function renderStep(stepData, index, container, functionId) {
           }
         } else if (contentPart.function_call) {
           const callId = contentPart.function_call.id;
+          console.log("Fc-Call: ", callId);
           functionCallStates[callId] = {
             status: "pending",
             name: contentPart.function_call.name,
@@ -293,13 +294,15 @@ function renderStep(stepData, index, container, functionId) {
                     </div>`;
         } else if (contentPart.function_response) {
           const responseId = contentPart.function_response.id;
+          console.log("Fc-Responce: ", responseId);
           if (responseId && functionCallStates[responseId]) {
-            if (contentPart.function_response.response?.output) {
+            if (contentPart.function_response.response.output !== undefined) {
+              console.log("success");
               functionCallStates[responseId].status = "success";
-            } else if (contentPart.function_response.response?.error) {
+            } else if (
+              contentPart.function_response.response.error !== undefined
+            ) {
               functionCallStates[responseId].status = "error";
-            } else {
-              functionCallStates[responseId].status = "unknown";
             }
           }
         }

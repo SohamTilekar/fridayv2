@@ -139,10 +139,14 @@ def ModelAndToolSelector(
         "Medium15",
         "Small15",
     ],
-    tools: Optional[list[
-        Literal["Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"]
-    ]] = None,
-    thinking_budget: Optional[int] = None
+    tools: Optional[
+        list[
+            Literal[
+                "Imagen", "FetchWebsite", "Reminder", "SearchGrounding", "ComputerTool"
+            ]
+        ]
+    ] = None,
+    thinking_budget: Optional[int] = None,
 ) -> tuple[str, bool, list[types.Tool], Optional[types.ThinkingConfig]]:
     """Selects the appropriate AI model and tools based on the user's request.
 
@@ -181,7 +185,9 @@ def ModelAndToolSelector(
                 ftools.append(ReminderTool)
             elif tool == "SearchGrounding":
                 if len(tools) != 1:
-                    raise Exception("Other tools along side SearchGrounding is not valid")
+                    raise Exception(
+                        "Other tools along side SearchGrounding is not valid"
+                    )
                 if model not in config.SearchGroundingSuportedModels:
                     raise Exception(f"Model {model} dont suport SearchGrounding")
                 ftools.append(SearchGrounding)
@@ -195,7 +201,13 @@ def ModelAndToolSelector(
         config.Models[model].value,
         model in config.ToolSuportedModels and SearchGrounding not in ftools,
         ftools,
-        types.ThinkingConfig(include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget) if model in config.DynamicThinkingModels else None,
+        (
+            types.ThinkingConfig(
+                include_thoughts=bool(thinking_budget), thinking_budget=thinking_budget
+            )
+            if model in config.DynamicThinkingModels
+            else None
+        ),
     )
 
 

@@ -67,7 +67,7 @@ network_errors: tuple[type[Exception], ...] = (
     google.genai.errors.ServerError,
     google.genai.errors.ClientError,
     requests.exceptions.ReadTimeout,
-    httpx.NetworkError
+    httpx.NetworkError,
 )
 
 ignore_network_error: tuple[type[Exception], ...] = (
@@ -182,6 +182,7 @@ def retry(
 
     return decorator_retry
 
+
 class ScrapedMetadata(TypedDict, total=False):
     title: str
     ogTitle: str
@@ -199,6 +200,7 @@ class ScrapedMetadata(TypedDict, total=False):
     statusCode: int
     error: Optional[str]
 
+
 class ScrapedData(TypedDict):
     markdown: str
     links: list[str]
@@ -212,9 +214,10 @@ class ScrapedData(TypedDict):
     changeTracking: Optional[dict[str, Any]]
     url_display_info: dict[str, str]
 
+
 class FireFetcher:
-    class APICreditsOver(Exception):
-        ...
+    class APICreditsOver(Exception): ...
+
     _instance = None
     _lock = threading.Lock()
 
@@ -225,24 +228,28 @@ class FireFetcher:
             return cls._instance
 
     def __init__(self):
-        if not hasattr(self, 'initialized'):
+        if not hasattr(self, "initialized"):
             self.apis = config.FIRECRAWL_APIS
-            self.api_semaphores = {api[1]: threading.Semaphore(2) for api in self.apis if api[1]}
-            self.api_calls: dict[str | None, int] = {api[1]: 0 for api in self.apis if api[1]}
+            self.api_semaphores = {
+                api[1]: threading.Semaphore(2) for api in self.apis if api[1]
+            }
+            self.api_calls: dict[str | None, int] = {
+                api[1]: 0 for api in self.apis if api[1]
+            }
             self.api_reset_times = {api[1]: time.time() for api in self.apis if api[1]}
             self.api_credits = {}
             self.api_index = 0
             # Track when each API was last used
-            self.last_request_times = {api[1]: 0. for api in self.apis if api[1]}
+            self.last_request_times = {api[1]: 0.0 for api in self.apis if api[1]}
             # Track current active requests per API
             self.active_requests = {api[1]: 0 for api in self.apis if api[1]}
             self.initialized = True
 
             # Initialize API credits
             self._initialize_api_credits()
-        if not self.apis:
-            raise ValueError("No Firecrawl APIs configured")
-        print(self.api_credits)
+            if not self.apis:
+                raise ValueError("No Firecrawl APIs configured")
+            print(self.api_credits)
 
     def _initialize_api_credits(self):
         """Initialize the credit count for each API key."""
@@ -259,7 +266,7 @@ class FireFetcher:
         url = f"{config.FIRECRAWL_ENDPOINT or "http://api.firecrawl.dev"}/v1/team/credit-usage"
         headers = {
             "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         response = requests.get(url, headers=headers, timeout=15)
@@ -348,7 +355,11 @@ class FireFetcher:
             # First identify APIs to remove (0 credits)
             apis_to_remove = []
             for rpm_limit, api_key in self.apis:
-                if api_key and api_key in self.api_credits and self.api_credits[api_key] <= 0:
+                if (
+                    api_key
+                    and api_key in self.api_credits
+                    and self.api_credits[api_key] <= 0
+                ):
                     apis_to_remove.append(api_key)
 
             # Remove dead APIs
@@ -366,7 +377,7 @@ class FireFetcher:
 
             # Now choose the best API from available ones
             best_api = None
-            best_score = float('-inf')
+            best_score = float("-inf")
 
             for rpm_limit, api_key in available_apis:
                 # Available parameters for scoring
@@ -386,7 +397,11 @@ class FireFetcher:
                 freshness = min(time_since_last_req, 5) / 5
 
                 # Simple score based primarily on credits and freshness
-                score = (credits * 0.7) + (active_reqs_normalized * 0.15) + (freshness * 0.15)
+                score = (
+                    (credits * 0.7)
+                    + (active_reqs_normalized * 0.15)
+                    + (freshness * 0.15)
+                )
 
                 if score > best_score:
                     best_score = score
@@ -416,13 +431,17 @@ class FireFetcher:
             if not self.apis:
                 print("WARNING: No API keys with credits remaining!")
 
-    def _make_request(self, url: str, request_params: dict[str, Any], api_key: Optional[str] = None) -> Optional[ScrapedData]:
+    def _make_request(
+        self, url: str, request_params: dict[str, Any], api_key: Optional[str] = None
+    ) -> Optional[ScrapedData]:
         request_params["url"] = url
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        endpoint = f"{config.FIRECRAWL_ENDPOINT or 'http://api.firecrawl.dev'}/v1/scrape"
+        endpoint = (
+            f"{config.FIRECRAWL_ENDPOINT or 'http://api.firecrawl.dev'}/v1/scrape"
+        )
 
         attempt = 0
         back_off = 1
@@ -439,10 +458,7 @@ class FireFetcher:
                         self._remove_dead_api(api_key)
 
                 response = requests.post(
-                    endpoint,
-                    json=request_params,
-                    headers=headers,
-                    timeout=timeout
+                    endpoint, json=request_params, headers=headers, timeout=timeout
                 )
 
                 # Handle successful response
@@ -463,11 +479,20 @@ class FireFetcher:
                     self.api_credits[api_key] += 1
                     self.api_calls[api_key] -= 1
                     return None
-                elif response.status_code not in (408, 429):  # Don't count rate limit or timeout errors
+                elif response.status_code == 429:
                     self.api_credits[api_key] += 1
                     self.api_calls[api_key] -= 1
                     continue  # Retry immediately on timeout errors
-                elif response.status_code == 500 and response.json().get("error").find("net::") != -1:
+                elif (
+                    response.status_code == 500
+                    and (response.json().get("error").find("net::") != -1
+                        or response.json().get("error").find("ERR_PROXY_CONNECTION_FAILED") != -1
+                        or response.json().get("error").find("ERR_CONNECTION_RESET") != -1
+                        or response.json().get("error").find("ERR_CONNECTION_REFUSED") != -1
+                        or response.json().get("error").find("ERR_CONNECTION_ABORTED") != -1
+                        or response.json().get("error").find("ERR_CONNECTION_CLOSED") != -1
+                        or response.json().get("error").find("timeout") != -1)
+                ):
                     self.api_credits[api_key] += 1
                     self.api_calls[api_key] -= 1
                     return None
@@ -482,7 +507,9 @@ class FireFetcher:
                 continue
             except Exception as e:
                 # Handle network errors differently
-                if isinstance(e, network_errors) and not isinstance(e, ignore_network_error):
+                if isinstance(e, network_errors) and not isinstance(
+                    e, ignore_network_error
+                ):
                     back_off *= 2
                     time.sleep(min(config.RETRY_DELAY * back_off, 128))
                     continue
@@ -493,7 +520,9 @@ class FireFetcher:
 
         raise  # Max retries exceeded
 
+
 scrape_url = FireFetcher()
+
 
 class DDGSearcher:
     _instance: Optional["DDGSearcher"] = None
@@ -508,13 +537,13 @@ class DDGSearcher:
             return cls._instance
 
     def __init__(self):
-        if not hasattr(self, 'initialized'):
+        if not hasattr(self, "initialized"):
             self.ddg = DDGS(verify=False)
 
             # Backend state tracking
             self.backends = {
-                'lite': {'available': True, 'backoff_until': 0},
-                'html': {'available': True, 'backoff_until': 0}
+                "lite": {"available": True, "backoff_until": 0},
+                "html": {"available": True, "backoff_until": 0},
             }
 
             # Fixed backoff time in seconds when rate limited
@@ -533,12 +562,12 @@ class DDGSearcher:
                 self._wait_for_backends()
 
             # First try with lite backend
-            result = self._try_backend('lite', query, max_results, **kwargs)
+            result = self._try_backend("lite", query, max_results, **kwargs)
             if result is not None:
                 return result
 
             # If lite is rate-limited, try html backend
-            result = self._try_backend('html', query, max_results, **kwargs)
+            result = self._try_backend("html", query, max_results, **kwargs)
             if result is not None:
                 return result
 
@@ -550,15 +579,19 @@ class DDGSearcher:
         """Check if all backends are currently rate-limited."""
         now = time.time()
         with self._lock:
-            return all(not info['available'] and info['backoff_until'] > now
-                      for info in self.backends.values())
+            return all(
+                not info["available"] and info["backoff_until"] > now
+                for info in self.backends.values()
+            )
 
     def _wait_for_backends(self):
         """Wait until at least one backend becomes available."""
         with self._lock:
             now = time.time()
             # Find the earliest time when any backend will become available
-            min_backoff_time = min(info['backoff_until'] for info in self.backends.values())
+            min_backoff_time = min(
+                info["backoff_until"] for info in self.backends.values()
+            )
             wait_time = max(0, min_backoff_time - now)
 
             if wait_time > 0:
@@ -568,18 +601,18 @@ class DDGSearcher:
             # Reset availability for backends whose backoff period has expired
             now = time.time()
             for backend, info in self.backends.items():
-                if info['backoff_until'] <= now:
-                    info['available'] = True
+                if info["backoff_until"] <= now:
+                    info["available"] = True
                     print(f"Backend {backend} is now available")
 
     def _try_backend(self, backend: str, query: str, max_results: int | None, **kwargs):
         """Try to perform a search using the specified backend."""
         with self._lock:
             # Check if backend is available
-            if not self.backends[backend]['available']:
-                if self.backends[backend]['backoff_until'] <= time.time():
+            if not self.backends[backend]["available"]:
+                if self.backends[backend]["backoff_until"] <= time.time():
                     # Backoff period has expired, reset availability
-                    self.backends[backend]['available'] = True
+                    self.backends[backend]["available"] = True
                     print(f"Backend {backend} is now available")
                 else:
                     # Backend still in backoff period
@@ -590,7 +623,9 @@ class DDGSearcher:
 
         try:
             # Perform the search
-            results = self.ddg.text(query, max_results=max_results, backend=backend, **kwargs)
+            results = self.ddg.text(
+                query, max_results=max_results, backend=backend, **kwargs
+            )
             return results
 
         except DuckDuckGoSearchException as e:
@@ -598,14 +633,21 @@ class DDGSearcher:
             error_str = str(e)
 
             # Check if this is a rate limit error
-            if any(domain in error_str for domain in [f"{backend}.duckduckgo.com", "duckduckgo.com"]):
+            if any(
+                domain in error_str
+                for domain in [f"{backend}.duckduckgo.com", "duckduckgo.com"]
+            ):
                 print(f"Rate limit hit for {backend} backend: {error_str}")
 
                 with self._lock:
                     # Mark this backend as unavailable for the fixed backoff time
-                    self.backends[backend]['available'] = False
-                    self.backends[backend]['backoff_until'] = time.time() + self.backoff_time
-                    print(f"Backend {backend} backed off for {self.backoff_time} seconds")
+                    self.backends[backend]["available"] = False
+                    self.backends[backend]["backoff_until"] = (
+                        time.time() + self.backoff_time
+                    )
+                    print(
+                        f"Backend {backend} backed off for {self.backoff_time} seconds"
+                    )
 
                 return None
             else:
@@ -621,5 +663,6 @@ class DDGSearcher:
             time.sleep(self.min_request_interval - time_since_last)
 
         self.last_request_time = time.time()
+
 
 searcher = DDGSearcher()
