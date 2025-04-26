@@ -483,15 +483,15 @@ class FireFetcher:
                     self.api_credits[api_key] += 1
                     self.api_calls[api_key] -= 1
                     continue  # Retry immediately on timeout errors
-                elif (
-                    response.status_code == 500
-                    and (response.json().get("error").find("net::") != -1
-                        or response.json().get("error").find("ERR_PROXY_CONNECTION_FAILED") != -1
-                        or response.json().get("error").find("ERR_CONNECTION_RESET") != -1
-                        or response.json().get("error").find("ERR_CONNECTION_REFUSED") != -1
-                        or response.json().get("error").find("ERR_CONNECTION_ABORTED") != -1
-                        or response.json().get("error").find("ERR_CONNECTION_CLOSED") != -1
-                        or response.json().get("error").find("timeout") != -1)
+                elif response.status_code == 500 and (
+                    response.json().get("error").find("net::") != -1
+                    or response.json().get("error").find("ERR_PROXY_CONNECTION_FAILED")
+                    != -1
+                    or response.json().get("error").find("ERR_CONNECTION_RESET") != -1
+                    or response.json().get("error").find("ERR_CONNECTION_REFUSED") != -1
+                    or response.json().get("error").find("ERR_CONNECTION_ABORTED") != -1
+                    or response.json().get("error").find("ERR_CONNECTION_CLOSED") != -1
+                    or response.json().get("error").find("timeout") != -1
                 ):
                     self.api_credits[api_key] += 1
                     self.api_calls[api_key] -= 1

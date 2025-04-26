@@ -3,7 +3,8 @@ data/*
 */__pycache__/*
 .vscode/*
 *.swp
-*/config.py
+config.py
+!src/config.py
 *.pyc
 credentials.json
 token.json

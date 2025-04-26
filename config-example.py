@@ -1,22 +1,20 @@
-import pathlib
 import enum
-from typing import Literal, Optional
 
 # Remove the -example part
-GOOGLE_API: str = "Your-Google-API-Gose-Here"
+GOOGLE_API = "Your-Google-API-Gose-Here"
 # This is just if your self hosted option have multiple API keys for concrunt browsers
 # RPM ( Request per minute limit, None for not any limit ), API key
-FIRECRAWL_APIS: list[tuple[Optional[int], Optional[str]]] = [(None, None)]
-FIRECRAWL_ENDPOINT: Optional[str] = (
+FIRECRAWL_APIS = [(None, None)]
+FIRECRAWL_ENDPOINT = (
     None  # None for firecrawl.dev hosted endpoint (FIRECRAWL_API requires if None)
 )
-AI_DIR: pathlib.Path = pathlib.Path("~/friday/")
+AI_DIR = "~/friday/"
 
-USR_NAME: str = "LastName FirstName"  # e.g Musk Elon
-ABOUT_YOU: str = """\
+USR_NAME = "LastName FirstName"  # e.g Musk Elon
+ABOUT_YOU = """\
 """
 # this is example update it as your liking
-# ABOUT_YOU: str = """
+# ABOUT_YOU = """
 # - Profesion: XYZ
 # - Age: 69
 # - Country: XYZ
@@ -53,19 +51,7 @@ model_RPM_map = {
     "gemini-1.5-flash-8b-001": 15,
 }
 
-type ModelsLiteral = Literal[
-    "Large25",
-    "MediumThinking25",
-    "Large20",
-    "Medium20",
-    "MediumThinking20",
-    "Small20",
-    "Large15",
-    "Medium15",
-    "Small15",
-]
-
-SearchGroundingSuportedModels: list[str] = [
+SearchGroundingSuportedModels = [
     Models.Large25.name,
     Models.MediumThinking25.name,
     Models.Large20.name,
@@ -73,7 +59,7 @@ SearchGroundingSuportedModels: list[str] = [
     Models.Medium20.name,
     Models.Medium15.name,
 ]
-ToolSuportedModels: list[str] = [
+ToolSuportedModels = [
     Models.Large25.name,
     Models.MediumThinking25.name,
     Models.Large20.name,
@@ -83,8 +69,8 @@ ToolSuportedModels: list[str] = [
     Models.Medium15.name,
     Models.Small15.name,
 ]
-DynamicThinkingModels: list[str] = [Models.MediumThinking25.name]
-ModelsSet: list[str] = [
+DynamicThinkingModels = [Models.MediumThinking25.name]
+ModelsSet = [
     Models.Large25.name,
     Models.MediumThinking25.name,
     Models.Large20.name,

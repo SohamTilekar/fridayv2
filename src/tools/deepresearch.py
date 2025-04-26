@@ -18,9 +18,13 @@ if TYPE_CHECKING:
     from main import Content
 
 # Configure logging
-logging.basicConfig(filename='deep_researcher.log', level=logging.DEBUG,
-format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    filename="deep_researcher.log",
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
+
 
 class Topic:
     topic: str
@@ -122,7 +126,8 @@ class Topic:
                 self.sub_topics.append(topic)
                 return True
         for sub_topic in self.sub_topics:
-            if sub_topic.add_topic(parent_id, topic): return True
+            if sub_topic.add_topic(parent_id, topic):
+                return True
         return False
 
     def add_site(self, id: str, site: str):
@@ -132,7 +137,8 @@ class Topic:
                 self.researched = False
                 return True
         for sub_topic in self.sub_topics:
-            if sub_topic.add_site(id, site): return True
+            if sub_topic.add_site(id, site):
+                return True
         return False
 
     def topic_tree(self, indent: str = "") -> str:
@@ -140,8 +146,10 @@ class Topic:
         with self._lock:
             tree = f"{indent}{self.topic}\n"
             for i, sub_topic in enumerate(self.sub_topics):
-                if i < len(self.sub_topics) - 1: tree += sub_topic.topic_tree(indent + "├── ")
-                else: tree += sub_topic.topic_tree(indent + "└── ")
+                if i < len(self.sub_topics) - 1:
+                    tree += sub_topic.topic_tree(indent + "├── ")
+                else:
+                    tree += sub_topic.topic_tree(indent + "└── ")
         return tree
 
     def jsonify(self) -> dict[str, Any]:
@@ -607,11 +615,11 @@ class DeepResearcher:
                                     function_call=global_shares["function_call"](
                                         name=part.function_call.name,
                                         args=part.function_call.args,
-                                        id=part.function_call.id
+                                        id=part.function_call.id,
                                     )
                                 )
                             )
-                            uicontents_id = uicontents[-1].function_call.id # type: ignore
+                            uicontents_id = uicontents[-1].function_call.id  # type: ignore
                             if (
                                 part.function_call.name == "add_topic"
                                 and part.function_call.args
@@ -651,7 +659,7 @@ class DeepResearcher:
                                             ](
                                                 name=part.function_call.name,
                                                 response={"error": str(e)},
-                                                id=uicontents_id
+                                                id=uicontents_id,
                                             )
                                         )
                                     )
@@ -686,7 +694,7 @@ class DeepResearcher:
                                         ](
                                             name=part.function_call.name,
                                             response={"output": None},
-                                            id=uicontents_id
+                                            id=uicontents_id,
                                         )
                                     )
                                 )
@@ -728,7 +736,7 @@ class DeepResearcher:
                                             ](
                                                 name=part.function_call.name,
                                                 response={"error": str(e)},
-                                                id=uicontents_id
+                                                id=uicontents_id,
                                             )
                                         )
                                     )
@@ -763,7 +771,7 @@ class DeepResearcher:
                                         ](
                                             name=part.function_call.name,
                                             response={"output": None},
-                                            id=uicontents_id
+                                            id=uicontents_id,
                                         )
                                     )
                                 )
@@ -1093,7 +1101,7 @@ class DeepResearcher:
                                 completed.add(future)
                                 try:
                                     future.result()  # Wait for any exceptions
-                                except Exception as e:
+                                except Exception:
                                     traceback.print_exc()
                         except concurrent.futures.TimeoutError:
                             # No futures completed during this 0.1s window; check self.stop again
